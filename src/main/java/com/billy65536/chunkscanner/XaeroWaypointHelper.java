@@ -92,8 +92,8 @@ public final class XaeroWaypointHelper {
         if (client.player != null) {
             client.player.sendMessage(
                     Text.literal("[ChunkScanner] ").formatted(Formatting.GOLD)
-                            .append(Text.literal("坐标: ").formatted(Formatting.WHITE))
-                            .append(Text.literal(pos.toString()).formatted(Formatting.AQUA)),
+                            .append(Text.translatable("chunkscanner.waypoint.coordinates",
+                                    pos.toString()).formatted(Formatting.AQUA)),
                     false);
         }
         return false;
@@ -442,8 +442,8 @@ public final class XaeroWaypointHelper {
         if (client.player != null) {
             client.player.sendMessage(
                     Text.literal("[ChunkScanner] ").formatted(Formatting.GOLD)
-                            .append(Text.literal("已创建路径点 \"" + WAYPOINT_NAME + "\" → ").formatted(Formatting.GREEN))
-                            .append(Text.literal(pos.toString()).formatted(Formatting.AQUA)),
+                            .append(Text.translatable("chunkscanner.waypoint.created",
+                                    WAYPOINT_NAME, pos.toString()).formatted(Formatting.GREEN)),
                     false);
         }
     }

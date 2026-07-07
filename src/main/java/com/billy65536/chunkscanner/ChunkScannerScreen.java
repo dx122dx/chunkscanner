@@ -121,7 +121,7 @@ public class ChunkScannerScreen extends Screen {
 
     private Text getAnalyzerButtonText() {
         if (analyzerList.isEmpty()) {
-            return Text.literal("(none)").formatted(Formatting.GRAY);
+            return Text.translatable("chunkscanner.label.none").formatted(Formatting.GRAY);
         }
         ChunkAnalyzer a = analyzerList.get(selectedAnalyzerIdx);
         return a.getName().copy().formatted(Formatting.YELLOW);
@@ -137,6 +137,7 @@ public class ChunkScannerScreen extends Screen {
         }
         if (analyzerList.isEmpty()) return;
         String analyzerId = analyzerList.get(selectedAnalyzerIdx).getId();
+        ChunkScannerMod.LOGGER.debug("GUI create scan: analyzer={} id={}", analyzerId, id);
         MinecraftClient client = MinecraftClient.getInstance();
         scanner.start(client, analyzerId, id, null);
     }
@@ -259,25 +260,33 @@ public class ChunkScannerScreen extends Screen {
             tooltip.add(Text.literal(s.analyzer.getName().getString() + " — " + s.scanId)
                     .formatted(Formatting.GOLD));
             tooltip.add(Text.literal(""));
-            tooltip.add(Text.literal("待扫描: " + bd.pending())
+            tooltip.add(Text.translatable("chunkscanner.tooltip.session.pending", bd.pending())
                     .formatted(Formatting.WHITE));
-            tooltip.add(Text.literal("已扫描: " + (bd.scannedNoFind() + bd.scannedFound())
-                    + " (无发现: " + bd.scannedNoFind() + ", 有发现: " + bd.scannedFound() + ")")
+            tooltip.add(Text.translatable("chunkscanner.tooltip.session.scanned",
+                    bd.scannedNoFind() + bd.scannedFound(),
+                    bd.scannedNoFind(), bd.scannedFound())
                     .formatted(Formatting.GREEN));
-            tooltip.add(Text.literal("超重访: " + (bd.pastRevisitNoFind() + bd.pastRevisitFound())
-                    + " (无发现: " + bd.pastRevisitNoFind() + ", 有发现: " + bd.pastRevisitFound() + ")")
+            tooltip.add(Text.translatable("chunkscanner.tooltip.session.past_revisit",
+                    bd.pastRevisitNoFind() + bd.pastRevisitFound(),
+                    bd.pastRevisitNoFind(), bd.pastRevisitFound())
                     .formatted(Formatting.BLUE));
-            tooltip.add(Text.literal("错误: " + bd.error() + "  |  有发现+错误: " + bd.foundError())
+            tooltip.add(Text.translatable("chunkscanner.tooltip.session.errors",
+                    bd.error(), bd.foundError())
                     .formatted(Formatting.RED));
             tooltip.add(Text.literal(""));
-            tooltip.add(Text.literal("累计已扫描: " + s.totalScannedChunks.get()
-                    + "  |  累计发现: " + s.totalFoundChunks.get()
-                    + "  |  累计错误: " + s.totalErrors.get())
+            tooltip.add(Text.translatable("chunkscanner.tooltip.session.total",
+                    s.totalScannedChunks.get(), s.totalFoundChunks.get(), s.totalErrors.get())
                     .formatted(Formatting.GRAY));
-            tooltip.add(Text.literal("DB 记录: " + (s.db != null ? s.db.size() : 0)
-                    + "  |  速率: " + s.tasksPerTick + "/tick"
-                    + (s.paused ? "  [已暂停]" : ""))
-                    .formatted(Formatting.GRAY));
+            int dbSize = s.db != null ? s.db.size() : 0;
+            Text dbRateText;
+            if (s.paused) {
+                dbRateText = Text.translatable("chunkscanner.tooltip.session.db_rate_paused", dbSize, s.tasksPerTick)
+                        .formatted(Formatting.GRAY);
+            } else {
+                dbRateText = Text.translatable("chunkscanner.tooltip.session.db_rate", dbSize, s.tasksPerTick)
+                        .formatted(Formatting.GRAY);
+            }
+            tooltip.add(dbRateText);
             context.drawTooltip(textRenderer, tooltip, mouseX, mouseY);
         }
     }

@@ -103,9 +103,12 @@ public class QShopFilterScreen extends Screen {
 
         // === 文本筛选字段 ===
         int fy = topY + 48;
-        dimField = createTextField(fieldX, fy, dimFilter, "维度...");
-        ownerField = createTextField(fieldX, fy + ROW_SPACING, ownerFilter, "所有者...");
-        itemField = createTextField(fieldX, fy + ROW_SPACING * 2, itemFilter, "商品...");
+        dimField = createTextField(fieldX, fy, dimFilter,
+                Text.translatable("chunkscanner.filter.placeholder.dimension").getString());
+        ownerField = createTextField(fieldX, fy + ROW_SPACING, ownerFilter,
+                Text.translatable("chunkscanner.filter.placeholder.owner").getString());
+        itemField = createTextField(fieldX, fy + ROW_SPACING * 2, itemFilter,
+                Text.translatable("chunkscanner.filter.placeholder.item").getString());
 
         addDrawableChild(dimField);
         addDrawableChild(ownerField);

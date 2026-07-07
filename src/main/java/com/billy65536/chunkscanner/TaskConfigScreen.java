@@ -209,7 +209,7 @@ public class TaskConfigScreen extends Screen {
 
     private Text getAnalyzerButtonText() {
         if (analyzerList.isEmpty()) {
-            return Text.literal("(none)").formatted(Formatting.GRAY);
+            return Text.translatable("chunkscanner.label.none").formatted(Formatting.GRAY);
         }
         ChunkAnalyzer a = analyzerList.get(selectedAnalyzerIdx);
         return a.getName().copy().formatted(Formatting.YELLOW);

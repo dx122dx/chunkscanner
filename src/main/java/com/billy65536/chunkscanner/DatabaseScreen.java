@@ -128,6 +128,7 @@ public class DatabaseScreen extends Screen {
         if (openedDb != null) {
             openedDb.close();
         }
+        ChunkScannerMod.LOGGER.debug("Opening database: scanId={} analyzer={}", meta.scanId(), meta.analyzerName());
         BinaryChunkDb db = new BinaryChunkDb(meta.scanId(), meta.analyzerName(), true);
         openedDb = db;
         try {
@@ -235,6 +236,7 @@ public class DatabaseScreen extends Screen {
     private void cycleViewType() {
         if (viewTypes.isEmpty()) return;
         selectedViewTypeIdx = (selectedViewTypeIdx + 1) % viewTypes.size();
+        ChunkScannerMod.LOGGER.debug("Cycled to view type: {}", viewTypes.get(selectedViewTypeIdx).getId());
         rebuildPageRenderer(true);
         kvPanel.setOffset(0);
         kvHScroll.setOffset(0);
@@ -449,11 +451,11 @@ public class DatabaseScreen extends Screen {
         if (showingKvView && hoveredKvIdx >= 0 && hoveredKvCol >= 0
                 && pageRenderer instanceof KvPageRenderer.Specialized spec) {
             if (spec.isPositionColumn(hoveredKvCol)) {
-                String tip = XaeroWaypointHelper.isAvailable()
-                        ? "点击创建 Xaero 路径点"
-                        : "点击打印坐标到聊天框";
+                String key = XaeroWaypointHelper.isAvailable()
+                        ? "chunkscanner.tooltip.create_waypoint"
+                        : "chunkscanner.tooltip.print_coords";
                 context.drawTooltip(textRenderer,
-                        Text.literal(tip).formatted(Formatting.AQUA),
+                        Text.translatable(key).formatted(Formatting.AQUA),
                         mouseX, mouseY);
             }
         }

@@ -46,7 +46,7 @@
     "chunkscanner.status.found": "已发现",
     "chunkscanner.status.errors": "错误",
     "chunkscanner.status.rate": "速率",
-    "chunkscanner.status.db": "数据库",
+    "chunkscanner.status.db": "记录",
 
     "chunkscanner.list.title": "========== 已注册的分析器 ==========",
     "chunkscanner.help.title": "======== ChunkScanner 帮助 ========",
@@ -71,7 +71,6 @@
     "chunkscanner.gui.open_database": "数据库",
     "chunkscanner.gui.no_scans": "没有活跃的扫描任务。输入 ID 并点击创建以开始。",
     "chunkscanner.gui.pending": "待处理",
-    "chunkscanner.gui.not_in_memory": "未加载",
     "chunkscanner.gui.scanned": "已扫描",
     "chunkscanner.gui.found": "已发现",
     "chunkscanner.gui.errors": "错误",
@@ -129,5 +128,30 @@
     "chunkscanner.task_config.field.targetNs": "目标 (纳秒):",
     "chunkscanner.task_config.field.flush": "刷盘间隔:",
     "chunkscanner.task_config.field.threads": "线程数:",
-    "chunkscanner.task_config.field.radius": "半径:"
+    "chunkscanner.task_config.field.radius": "半径:",
+
+    "chunkscanner.label.id": "id",
+    "chunkscanner.label.analyzer": "analyzer",
+    "chunkscanner.label.revisit": "revisit",
+    "chunkscanner.label.none": "(无)",
+    "chunkscanner.label.paused": "[已暂停]",
+    "chunkscanner.label.rebooted": "(已恢复)",
+
+    "chunkscanner.tooltip.create_waypoint": "点击创建 Xaero 路径点",
+    "chunkscanner.tooltip.print_coords": "点击打印坐标到聊天框",
+
+    "chunkscanner.tooltip.session.pending": "待扫描: %d",
+    "chunkscanner.tooltip.session.scanned": "已扫描: %d (无发现: %d, 有发现: %d)",
+    "chunkscanner.tooltip.session.past_revisit": "超重访: %d (无发现: %d, 有发现: %d)",
+    "chunkscanner.tooltip.session.errors": "错误: %d  |  有发现+错误: %d",
+    "chunkscanner.tooltip.session.total": "累计已扫描: %d  |  累计发现: %d  |  累计错误: %d",
+    "chunkscanner.tooltip.session.db_rate": "记录: %d  |  速率: %d/tick",
+    "chunkscanner.tooltip.session.db_rate_paused": "记录: %d  |  速率: %d/tick  [已暂停]",
+
+    "chunkscanner.waypoint.coordinates": "坐标: %s",
+    "chunkscanner.waypoint.created": "已创建路径点 \"%s\" → %s",
+
+    "chunkscanner.filter.placeholder.dimension": "维度...",
+    "chunkscanner.filter.placeholder.owner": "所有者...",
+    "chunkscanner.filter.placeholder.item": "商品..."
 }

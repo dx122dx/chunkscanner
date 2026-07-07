@@ -55,7 +55,7 @@ public class ChunkScanner {
 
     public void registerAnalyzer(ChunkAnalyzer analyzer) {
         analyzerRegistry.put(analyzer.getId(), analyzer);
-        ChunkScannerMod.LOGGER.info("Registered analyzer: {}", analyzer.getId());
+        ChunkScannerMod.LOGGER.debug("Registered analyzer: {}", analyzer.getId());
     }
 
     public Collection<ChunkAnalyzer> getAnalyzers() {
@@ -158,16 +158,20 @@ public class ChunkScanner {
 
         sendMsg(client, Text.translatable(KEY_SCAN_STARTED).formatted(Formatting.GREEN)
                 .append(Text.literal(" | "))
-                .append(Text.literal("id: ").formatted(Formatting.WHITE))
+                .append(Text.translatable("chunkscanner.label.id").formatted(Formatting.WHITE)
+                        .append(Text.literal(": ")))
                 .append(Text.literal("\"" + scanId + "\"").formatted(Formatting.GOLD))
                 .append(Text.literal(" ").formatted(Formatting.WHITE))
-                .append(Text.literal("analyzer: ").formatted(Formatting.WHITE))
+                .append(Text.translatable("chunkscanner.label.analyzer").formatted(Formatting.WHITE)
+                        .append(Text.literal(": ")))
                 .append(Text.literal(analyzer.getId()).formatted(Formatting.YELLOW))
                 .append(Text.literal(" ").formatted(Formatting.WHITE))
                 .append(Text.translatable(KEY_STATUS_PENDING).formatted(Formatting.WHITE))
                 .append(Text.literal(": ").formatted(Formatting.WHITE))
                 .append(Text.literal(String.valueOf(session.pendingChunks.size())).formatted(Formatting.YELLOW))
-                .append(Text.literal(" revisit: ").formatted(Formatting.WHITE))
+                .append(Text.literal(" "))
+                .append(Text.translatable("chunkscanner.label.revisit").formatted(Formatting.WHITE)
+                        .append(Text.literal(": ")))
                 .append(Text.literal(effectiveRevisit + "s").formatted(Formatting.YELLOW))
                 .append(taskConfig != null && taskConfig.toDisplayString().length() > 0
                         ? Text.literal(" (" + taskConfig.toDisplayString() + ")").formatted(Formatting.GRAY)
@@ -184,7 +188,8 @@ public class ChunkScanner {
 
         sendMsg(client, Text.translatable(KEY_SCAN_STOPPED).formatted(Formatting.GREEN)
                 .append(Text.literal(" | "))
-                .append(Text.literal("id: ").formatted(Formatting.WHITE))
+                .append(Text.translatable("chunkscanner.label.id").formatted(Formatting.WHITE)
+                        .append(Text.literal(": ")))
                 .append(Text.literal("\"" + scanId + "\"").formatted(Formatting.GOLD))
                 .append(Text.literal(" ").formatted(Formatting.WHITE))
                 .append(Text.translatable(KEY_STATUS_SCANNED).formatted(Formatting.WHITE))
@@ -217,8 +222,11 @@ public class ChunkScanner {
         }
         session.paused = true;
         session.enqueuedChunks.clear();
+        ChunkScannerMod.LOGGER.debug("[scan:{}] Paused", scanId);
         sendMsg(client, Text.translatable(KEY_SCAN_PAUSED).formatted(Formatting.YELLOW)
-                .append(Text.literal(" | id: ").formatted(Formatting.WHITE))
+                .append(Text.literal(" | "))
+                .append(Text.translatable("chunkscanner.label.id").formatted(Formatting.WHITE)
+                        .append(Text.literal(": ")))
                 .append(Text.literal("\"" + scanId + "\"").formatted(Formatting.GOLD)));
     }
 
@@ -233,8 +241,11 @@ public class ChunkScanner {
             return;
         }
         session.paused = false;
+        ChunkScannerMod.LOGGER.debug("[scan:{}] Resumed", scanId);
         sendMsg(client, Text.translatable(KEY_SCAN_RESUMED).formatted(Formatting.GREEN)
-                .append(Text.literal(" | id: ").formatted(Formatting.WHITE))
+                .append(Text.literal(" | "))
+                .append(Text.translatable("chunkscanner.label.id").formatted(Formatting.WHITE)
+                        .append(Text.literal(": ")))
                 .append(Text.literal("\"" + scanId + "\"").formatted(Formatting.GOLD)));
     }
 
@@ -269,9 +280,12 @@ public class ChunkScanner {
         sessions.put(scanId, session);
         session.start(client);
         sendMsg(client, Text.translatable(KEY_SCAN_STARTED).formatted(Formatting.GREEN)
-                .append(Text.literal(" | id: ").formatted(Formatting.WHITE))
+                .append(Text.literal(" | "))
+                .append(Text.translatable("chunkscanner.label.id").formatted(Formatting.WHITE)
+                        .append(Text.literal(": ")))
                 .append(Text.literal("\"" + scanId + "\"").formatted(Formatting.GOLD))
-                .append(Text.literal(" (rebooted)").formatted(Formatting.GRAY)));
+                .append(Text.literal(" "))
+                .append(Text.translatable("chunkscanner.label.rebooted").formatted(Formatting.GRAY)));
     }
 
     public void stopAll(MinecraftClient client) {
@@ -334,7 +348,7 @@ public class ChunkScanner {
                     .append(stopBtn)
                     .append(Text.literal(" ").formatted(Formatting.WHITE))
                     .append(Text.literal("\"" + s.scanId + "\"").formatted(Formatting.GOLD))
-                    .append(s.paused ? Text.literal(" [PAUSED]").formatted(Formatting.YELLOW) : Text.literal(""))
+                    .append(s.paused ? Text.literal(" ").append(Text.translatable("chunkscanner.label.paused").formatted(Formatting.YELLOW)) : Text.literal(""))
                     .append(Text.literal(" [").formatted(Formatting.GRAY))
                     .append(Text.literal(s.analyzer.getId()).formatted(Formatting.YELLOW))
                     .append(Text.literal("]").formatted(Formatting.GRAY)));
@@ -635,6 +649,9 @@ public class ChunkScanner {
         public final AtomicInteger totalErrors = new AtomicInteger(0);
         /** 刷写计数器：每 tick 递增，达到 flushIntervalTicks 时刷写数据库。 */
         int flushCounter = 0;
+        /** Debug 统计计数器：每 ~200 ticks 输出一次扫描速率统计。 */
+        private int debugTickCounter = 0;
+        private int debugSubmittedTotal = 0;
 
         /** 每个区块是否有发现（packedPos → true），用于 GUI 状态条渲染。 */
         final Set<Long> foundChunks = ConcurrentHashMap.newKeySet();
@@ -705,6 +722,8 @@ public class ChunkScanner {
             if (db instanceof BinaryChunkDb bdb) {
                 bdb.setTaskConfig(this.taskConfig);
             }
+            ChunkScannerMod.LOGGER.debug("[scan:{}] Session started (analyzer={}, threads={}, radius={})",
+                    scanId, analyzer.getId(), sessionConfig.workerThreads, sessionConfig.scanRadiusMultiplier);
         }
 
         /**
@@ -721,6 +740,8 @@ public class ChunkScanner {
                 try { scanExecutor.awaitTermination(2, TimeUnit.SECONDS); } catch (InterruptedException ignored) {}
             }
             if (db != null) db.close();
+            ChunkScannerMod.LOGGER.debug("[scan:{}] Session stopped (scanned={}, found={}, errors={})",
+                    scanId, totalScannedChunks.get(), totalFoundChunks.get(), totalErrors.get());
         }
 
         /**
@@ -822,6 +843,19 @@ public class ChunkScanner {
             if (++flushCounter >= sessionConfig.flushIntervalTicks) {
                 flushCounter = 0;
                 db.flush();
+            }
+
+            // 每 ~200 ticks 输出一次调试统计
+            debugTickCounter++;
+            debugSubmittedTotal += submitted;
+            if (debugTickCounter >= 200) {
+                int queueSize = pendingChunks.size();
+                ChunkScannerMod.LOGGER.debug(
+                        "[scan:{}] Tick stats: submitted={}/200t rate={}/tick queue={} scanned={} found={} errors={}",
+                        scanId, debugSubmittedTotal, tasksPerTick, queueSize,
+                        totalScannedChunks.get(), totalFoundChunks.get(), totalErrors.get());
+                debugTickCounter = 0;
+                debugSubmittedTotal = 0;
             }
         }
 

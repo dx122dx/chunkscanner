@@ -46,7 +46,7 @@
     "chunkscanner.status.found": "found",
     "chunkscanner.status.errors": "errors",
     "chunkscanner.status.rate": "rate",
-    "chunkscanner.status.db": "DB",
+    "chunkscanner.status.db": "records",
 
     "chunkscanner.list.title": "===== Registered Analyzers =====",
     "chunkscanner.help.title": "======== ChunkScanner Help ========",
@@ -128,5 +128,30 @@
     "chunkscanner.task_config.field.targetNs": "Target (ns):",
     "chunkscanner.task_config.field.flush": "Flush:",
     "chunkscanner.task_config.field.threads": "Threads:",
-    "chunkscanner.task_config.field.radius": "Radius:"
+    "chunkscanner.task_config.field.radius": "Radius:",
+
+    "chunkscanner.label.id": "id",
+    "chunkscanner.label.analyzer": "analyzer",
+    "chunkscanner.label.revisit": "revisit",
+    "chunkscanner.label.none": "(none)",
+    "chunkscanner.label.paused": "[PAUSED]",
+    "chunkscanner.label.rebooted": "(rebooted)",
+
+    "chunkscanner.tooltip.create_waypoint": "Click to create Xaero waypoint",
+    "chunkscanner.tooltip.print_coords": "Click to print coordinates to chat",
+
+    "chunkscanner.tooltip.session.pending": "Pending: %d",
+    "chunkscanner.tooltip.session.scanned": "Scanned: %d (No find: %d, Found: %d)",
+    "chunkscanner.tooltip.session.past_revisit": "Past revisit: %d (No find: %d, Found: %d)",
+    "chunkscanner.tooltip.session.errors": "Errors: %d  |  Found+Errors: %d",
+    "chunkscanner.tooltip.session.total": "Total scanned: %d  |  Total found: %d  |  Total errors: %d",
+    "chunkscanner.tooltip.session.db_rate": "Records: %d  |  Rate: %d/tick",
+    "chunkscanner.tooltip.session.db_rate_paused": "Records: %d  |  Rate: %d/tick  [PAUSED]",
+
+    "chunkscanner.waypoint.coordinates": "Coordinates: %s",
+    "chunkscanner.waypoint.created": "Waypoint \"%s\" created → %s",
+
+    "chunkscanner.filter.placeholder.dimension": "Dimension...",
+    "chunkscanner.filter.placeholder.owner": "Owner...",
+    "chunkscanner.filter.placeholder.item": "Item..."
 }
