@@ -76,11 +76,10 @@ public class ScrollManager {
             return true;
         }
 
-        // 点击轨道跳跃
+        // 点击轨道跳跃（不启动拖拽模式，避免后续 mouseDragged 被误捕获）
         if (ScrollbarUtil.isOnVerticalTrack(mx, my, sbX, top, bottom)) {
             int newOff = ScrollbarUtil.verticalOffsetFromMouse(my, top, bottom, total, maxVisible);
             offset = GuiUtil.clamp(newOff, 0, Math.max(0, total - maxVisible));
-            dragging = true;
             return true;
         }
 
@@ -128,11 +127,10 @@ public class ScrollManager {
             return true;
         }
 
-        // 点击轨道跳跃
+        // 点击轨道跳跃（不启动拖拽模式，避免后续 mouseDragged 被误捕获）
         if (ScrollbarUtil.isOnHorizontalTrack(mx, my, hY, left, right)) {
             int newOff = ScrollbarUtil.horizontalOffsetFromMouse(mx, left, right, totalWidth);
             offset = GuiUtil.clamp(newOff, 0, Math.max(0, totalWidth - visibleW));
-            dragging = true;
             return true;
         }
 

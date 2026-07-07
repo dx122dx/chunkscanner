@@ -51,8 +51,8 @@ import com.billy65536.chunkscanner.gui.GuiUtil;
 public class BinaryChunkDb implements ChunkDb, DbViewProvider {
     /** 数据库文件存放子目录名（位于 gameDir 下按上下文分类的子目录中）。 */
     private static final String DB_DIR = "chunkscanner";
-    /** 文件魔数："CHNKSCAN"（little-endian uint64）。 */
-    private static final long MAGIC = 0x4E4143534B4E4843L; // "CHNKSCAN" (little-endian)
+    /** 文件魔数："CHNKSCAN"（little-endian uint64）。package-private 供 DbFileUtil 引用。 */
+    static final long MAGIC = 0x4E4143534B4E4843L; // "CHNKSCAN" (little-endian)
     /** 任务配置元数据键（存储在 KV store 中，JSON 序列化）。 */
     private static final byte[] TASK_CONFIG_KEY = "__taskConfig__".getBytes(StandardCharsets.UTF_8);
 
@@ -107,7 +107,7 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
         this.scanId = scanId;
         this.analyzerName = analyzerName;
         this.dbDir = getDbDir();
-        this.safeFileName = "chunkscanner_" + Math.abs(scanId.hashCode()) + ".dat";
+        this.safeFileName = safeFileName(scanId);
         this.stringPool = new ConcurrentHashMap<>();
         this.stringPoolReverse = new ConcurrentHashMap<>();
         this.kvStore = new ConcurrentHashMap<>();
@@ -334,7 +334,7 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
                     String s = new String(b, StandardCharsets.UTF_8);
                     stringPool.put(id, s);
                     stringPoolReverse.put(s, id);
-                    if (id >= nextStringId.get()) nextStringId.set(id + 1);
+                    nextStringId.updateAndGet(cur -> Math.max(cur, id + 1));
                 }
             } else {
                 // v1/v2: 无 ID，按顺序加载。第一个条目是 id=0="" (已在构造时设置)，跳过。
@@ -601,6 +601,16 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
         return ((long) (dimPoolId & 0xFFFF) << 48)
                 | ((long) (cx & 0xFFFFFF) << 24)
                 | (cz & 0xFFFFFFL);
+    }
+
+    // ==================== 文件名工具 ====================
+
+    /**
+     * 根据 scanId 生成安全的文件名，避免特殊字符和 hashCode 碰撞。
+     * 使用 base-36 编码的未签名 hashCode，长度可控且无负号问题。
+     */
+    static String safeFileName(String scanId) {
+        return "chunkscanner_" + Integer.toUnsignedString(scanId.hashCode(), 36) + ".dat";
     }
 
     /** byte[] 包装器，提供正确的 hashCode/equals 用于 HashMap。 */

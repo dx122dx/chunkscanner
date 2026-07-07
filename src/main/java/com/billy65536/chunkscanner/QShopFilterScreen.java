@@ -70,10 +70,8 @@ public class QShopFilterScreen extends Screen {
         this.dimFilter = provider.getDimFilter() != null ? provider.getDimFilter() : "";
         this.ownerFilter = provider.getOwnerFilter() != null ? provider.getOwnerFilter() : "";
         this.itemFilter = provider.getItemFilter() != null ? provider.getItemFilter() : "";
-        this.priceMinStr = provider.getPriceMinFilter() != null
-                ? String.valueOf(provider.getPriceMinFilter()) : "";
-        this.priceMaxStr = provider.getPriceMaxFilter() != null
-                ? String.valueOf(provider.getPriceMaxFilter()) : "";
+        this.priceMinStr = priceToDisplayString(provider.getPriceMinFilter());
+        this.priceMaxStr = priceToDisplayString(provider.getPriceMaxFilter());
         this.qtyMinStr = provider.getQtyMinFilter() != null
                 ? String.valueOf(provider.getQtyMinFilter()) : "";
         this.qtyMaxStr = provider.getQtyMaxFilter() != null
@@ -329,6 +327,16 @@ public class QShopFilterScreen extends Screen {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    /** 将内部价格表示（乘以 100 的整数）转换为用户可读的显示字符串。 */
+    private static String priceToDisplayString(Integer priceInt) {
+        if (priceInt == null) return "";
+        double d = priceInt / 100.0;
+        String s = String.valueOf(d);
+        // 去掉尾随的 ".0"（整数情况）
+        if (s.endsWith(".0")) return s.substring(0, s.length() - 2);
+        return s;
     }
 
     /** 解析价格字符串为内部表示（乘以 100），或返回 null。 */

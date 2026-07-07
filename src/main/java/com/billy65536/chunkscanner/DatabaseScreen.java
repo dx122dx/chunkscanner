@@ -14,6 +14,7 @@ import net.minecraft.util.Formatting;
 
 import java.awt.Desktop;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -382,7 +383,7 @@ public class DatabaseScreen extends Screen {
         if (pageRenderer != null) {
             pageRenderer.export(sb);
         }
-        Files.writeString(path, sb.toString());
+        Files.writeString(path, sb.toString(), StandardCharsets.UTF_8);
     }
 
     // ==================== 主渲染 ====================

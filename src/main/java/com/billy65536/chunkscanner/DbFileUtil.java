@@ -21,8 +21,8 @@ import java.util.stream.Stream;
  */
 public final class DbFileUtil {
 
-    /** 默认 Magic。 */
-    static final long MAGIC = 0x4E4143534B4E4843L; // "CHNKSCAN" (little-endian)
+    /** 默认 Magic（引用 BinaryChunkDb 的单一定义）。 */
+    static final long MAGIC = BinaryChunkDb.MAGIC;
 
     /** 最小头大小（magic(8) + version(4) + scanIdLen(2) = 14）。 */
     private static final int MIN_HEADER_SIZE = 14;
@@ -33,14 +33,22 @@ public final class DbFileUtil {
 
     /**
      * 从二进制文件中读取 scanId 和 analyzerName。
-     * 一次读取完成，避免重复 IO。
+     * 使用 FileChannel 只读取头部数据，避免大文件全量加载到内存。
      */
     public static FileMeta readFileMeta(Path file) {
         try {
-            byte[] bytes = Files.readAllBytes(file);
-            if (bytes.length < MIN_HEADER_SIZE) return FileMeta.EMPTY;
+            long fileLen = Files.size(file);
+            if (fileLen < MIN_HEADER_SIZE) return FileMeta.EMPTY;
+            long lastModified = Files.getLastModifiedTime(file).toMillis();
 
-            ByteBuffer buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
+            // 只读取头部静态部分（最多 4096 字节，应覆盖所有合理的 scanId 和 analyzerName）
+            int readLen = (int) Math.min(fileLen, 4096);
+            byte[] headBytes = new byte[readLen];
+            try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(file.toFile(), "r")) {
+                raf.readFully(headBytes);
+            }
+
+            ByteBuffer buf = ByteBuffer.wrap(headBytes).order(ByteOrder.LITTLE_ENDIAN);
             if (buf.getLong() != MAGIC) return FileMeta.EMPTY;
 
             int version = buf.getInt();
@@ -56,7 +64,7 @@ public final class DbFileUtil {
 
             String analyzerName = "";
             if (version >= 2) {
-                if (buf.remaining() < 2) return new FileMeta(scanId, "", 0, 0);
+                if (buf.remaining() < 2) return new FileMeta(scanId, "", fileLen, lastModified);
                 int analyzerLen = buf.getShort() & 0xFFFF;
                 if (analyzerLen > 0 && analyzerLen <= 1024 && buf.remaining() >= analyzerLen) {
                     byte[] analyzerBytes = new byte[analyzerLen];
@@ -65,10 +73,7 @@ public final class DbFileUtil {
                 }
             }
 
-            long fileSize = bytes.length;
-            long lastModified = Files.getLastModifiedTime(file).toMillis();
-
-            return new FileMeta(scanId, analyzerName, fileSize, lastModified);
+            return new FileMeta(scanId, analyzerName, fileLen, lastModified);
         } catch (IOException e) {
             return FileMeta.EMPTY;
         }
@@ -114,7 +119,7 @@ public final class DbFileUtil {
      * 根据 scanId 获取对应的文件路径。
      */
     public static Path resolveFilePath(String scanId) {
-        return BinaryChunkDb.getDbDir().resolve("chunkscanner_" + Math.abs(scanId.hashCode()) + ".dat");
+        return BinaryChunkDb.getDbDir().resolve(BinaryChunkDb.safeFileName(scanId));
     }
 
     // ==================== 文件操作 ====================

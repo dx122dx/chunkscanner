@@ -18,7 +18,7 @@ import java.nio.file.Path;
  * 1. Cloth Config 优先 — 若已安装，配置由 Cloth Config 管理，JSON 文件仅作为备份。
  * 2. JSON 文件后备 — 若 Cloth Config 未安装，直接从 chunkscanner.json 读写配置。
  *
- * 注意：tryClothLoad 始终返回 false（回退 JSON），因为 Cloth Config 通过
+ * 注意：detectClothConfig 始终返回 false（回退 JSON），因为 Cloth Config 通过
  * ClothConfigIntegration.createConfigScreen 的 setSavingRunnable 独立管理保存逻辑。
  */
 public class ConfigLoader {
@@ -30,7 +30,7 @@ public class ConfigLoader {
     private static boolean clothChecked = false;
 
     public static void load(ChunkScannerConfig config) {
-        if (tryClothLoad(config)) return;
+        if (detectClothConfig(config)) return;
         loadFromJson(config);
     }
 
@@ -41,7 +41,7 @@ public class ConfigLoader {
     }
 
     /** 检测 Cloth Config 是否可用，但始终回退到 JSON 加载。 */
-    private static boolean tryClothLoad(ChunkScannerConfig config) {
+    private static boolean detectClothConfig(ChunkScannerConfig config) {
         if (!clothChecked) {
             clothAvailable = FabricLoader.getInstance().isModLoaded("cloth-config");
             clothChecked = true;
