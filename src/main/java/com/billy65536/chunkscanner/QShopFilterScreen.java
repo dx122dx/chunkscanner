@@ -1,10 +1,10 @@
 package com.billy65536.chunkscanner;
 
+import com.billy65536.chunkscanner.gui.PlaceholderTextField;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
@@ -39,13 +39,13 @@ public class QShopFilterScreen extends Screen {
 
     private ButtonWidget modeButton;
     private ButtonWidget sortButton;
-    private TextFieldWidget dimField;
-    private TextFieldWidget ownerField;
-    private TextFieldWidget itemField;
-    private TextFieldWidget priceMinField;
-    private TextFieldWidget priceMaxField;
-    private TextFieldWidget qtyMinField;
-    private TextFieldWidget qtyMaxField;
+    private PlaceholderTextField dimField;
+    private PlaceholderTextField ownerField;
+    private PlaceholderTextField itemField;
+    private PlaceholderTextField priceMinField;
+    private PlaceholderTextField priceMaxField;
+    private PlaceholderTextField qtyMinField;
+    private PlaceholderTextField qtyMaxField;
 
     // ==================== 状态 ====================
 
@@ -148,25 +148,19 @@ public class QShopFilterScreen extends Screen {
                 .dimensions(dialogLeft + 134, btnY, 56, FIELD_H).build());
     }
 
-    /**
-     * 创建通用文本输入框。
-     * 修复：只用 setText 设置初始值，当文本为空时才使用 setSuggestion 作为占位提示。
-     * 避免了 setSuggestion 在已有文本时仍然渲染导致"输入后被附加"的问题。
-     */
-    private TextFieldWidget createTextField(int x, int y, String initial, String hint) {
-        TextFieldWidget f = new TextFieldWidget(textRenderer, x, y, FIELD_W, FIELD_H, Text.literal(""));
+    /** 创建带 placeholder 的通用文本输入框。 */
+    private PlaceholderTextField createTextField(int x, int y, String initial, String hint) {
+        PlaceholderTextField f = new PlaceholderTextField(textRenderer, x, y, FIELD_W, FIELD_H, hint);
         f.setMaxLength(64);
         if (initial != null && !initial.isEmpty()) {
             f.setText(initial);
-        } else {
-            f.setSuggestion(hint);
         }
         return f;
     }
 
     /** 创建数字输入框（支持小数，用于价格）。 */
-    private TextFieldWidget createNumberField(int x, int y, int w, String initial) {
-        TextFieldWidget f = new TextFieldWidget(textRenderer, x, y, w, FIELD_H, Text.literal(""));
+    private PlaceholderTextField createNumberField(int x, int y, int w, String initial) {
+        PlaceholderTextField f = new PlaceholderTextField(textRenderer, x, y, w, FIELD_H, null);
         f.setMaxLength(12);
         f.setTextPredicate(t -> t.matches("[0-9.]*"));
         if (initial != null && !initial.isEmpty()) {
@@ -176,8 +170,8 @@ public class QShopFilterScreen extends Screen {
     }
 
     /** 创建纯数字输入框（仅整数，用于数量）。 */
-    private TextFieldWidget createDigitField(int x, int y, int w, String initial) {
-        TextFieldWidget f = new TextFieldWidget(textRenderer, x, y, w, FIELD_H, Text.literal(""));
+    private PlaceholderTextField createDigitField(int x, int y, int w, String initial) {
+        PlaceholderTextField f = new PlaceholderTextField(textRenderer, x, y, w, FIELD_H, null);
         f.setMaxLength(12);
         f.setTextPredicate(t -> t.matches("[0-9]*"));
         if (initial != null && !initial.isEmpty()) {

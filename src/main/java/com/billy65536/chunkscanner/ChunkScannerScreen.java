@@ -1,13 +1,13 @@
 package com.billy65536.chunkscanner;
 
 import com.billy65536.chunkscanner.gui.GuiUtil;
+import com.billy65536.chunkscanner.gui.PlaceholderTextField;
 import com.billy65536.chunkscanner.gui.ScrollableListPanel;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ConfirmScreen;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
@@ -36,7 +36,7 @@ public class ChunkScannerScreen extends Screen {
     private final ChunkScanner scanner;
 
     // 顶部控件
-    private TextFieldWidget idField;
+    private PlaceholderTextField idField;
     private ButtonWidget analyzerButton;
     private ButtonWidget createButton;
 
@@ -80,12 +80,11 @@ public class ChunkScannerScreen extends Screen {
         addDrawableChild(databaseButton);
 
         // --- 顶部栏 ---
-        // id 输入框：使用 suggestion 模式（灰色提示），用户修改后自动变为白色
+        // id 输入框：使用 placeholder 模式（灰色提示），用户输入后自动隐藏
         defaultScanId = String.valueOf(System.currentTimeMillis() / 1000);
-        idField = new TextFieldWidget(textRenderer, leftX + 4, topY, 140, 20,
-                Text.translatable("chunkscanner.gui.id_hint"));
+        idField = new PlaceholderTextField(textRenderer, leftX + 4, topY, 140, 20,
+                defaultScanId);
         idField.setMaxLength(48);
-        idField.setSuggestion(defaultScanId);
         addDrawableChild(idField);
         setInitialFocus(idField);
 

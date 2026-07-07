@@ -1,11 +1,11 @@
 package com.billy65536.chunkscanner;
 
+import com.billy65536.chunkscanner.gui.PlaceholderTextField;
 import com.billy65536.chunkscanner.gui.ScrollManager;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
@@ -37,7 +37,7 @@ public class TaskConfigScreen extends Screen {
     private final ChunkScanner scanner;
 
     /** 顶部控件 */
-    private TextFieldWidget idField;
+    private PlaceholderTextField idField;
     private ButtonWidget analyzerButton;
     private ButtonWidget createButton;
 
@@ -51,9 +51,9 @@ public class TaskConfigScreen extends Screen {
     /** 配置字段信息 */
     private static class FieldInfo {
         final String labelKey;
-        final TextFieldWidget widget;
+        final PlaceholderTextField widget;
 
-        FieldInfo(String labelKey, TextFieldWidget widget) {
+        FieldInfo(String labelKey, PlaceholderTextField widget) {
             this.labelKey = labelKey;
             this.widget = widget;
         }
@@ -157,11 +157,10 @@ public class TaskConfigScreen extends Screen {
                 btn -> doBack())
                 .dimensions(leftX + 2, TOP_BAR_Y, 18, 20).build());
 
-        // ID 输入框（使用 suggestion 模式显示默认值）
-        idField = new TextFieldWidget(textRenderer, leftX + 22, TOP_BAR_Y, 144, 20,
-                Text.translatable("chunkscanner.gui.id_hint"));
+        // ID 输入框（使用 placeholder 显示默认值）
+        idField = new PlaceholderTextField(textRenderer, leftX + 22, TOP_BAR_Y, 144, 20,
+                defaultScanId);
         idField.setMaxLength(64);
-        idField.setSuggestion(defaultScanId);
         addDrawableChild(idField);
 
         // 分析器选择按钮
@@ -197,7 +196,7 @@ public class TaskConfigScreen extends Screen {
         int fieldX = leftX + FIELD_X_OFFSET;
 
         for (int i = 0; i < labelKeys.length; i++) {
-            TextFieldWidget fw = createField(fieldX, 0, FIELD_WIDTH, initialValues[i], defaults[i]);
+            PlaceholderTextField fw = createField(fieldX, 0, FIELD_WIDTH, initialValues[i], defaults[i]);
             fields.add(new FieldInfo(labelKeys[i], fw));
             addDrawableChild(fw);
         }
@@ -217,22 +216,13 @@ public class TaskConfigScreen extends Screen {
     }
 
     /** 创建带灰色默认值提示的文本字段。 */
-    private TextFieldWidget createField(int x, int y, int width, String initialText, String defaultSuggestion) {
-        TextFieldWidget field = new TextFieldWidget(textRenderer, x, y, width, FIELD_HEIGHT,
-                Text.literal(""));
+    private PlaceholderTextField createField(int x, int y, int width, String initialText, String defaultSuggestion) {
+        PlaceholderTextField field = new PlaceholderTextField(textRenderer, x, y, width, FIELD_HEIGHT,
+                defaultSuggestion);
         field.setMaxLength(32);
         if (initialText != null && !initialText.isEmpty()) {
             field.setText(initialText);
-            field.setEditableColor(0xFFFFFF);
-        } else {
-            field.setText("");
-            field.setSuggestion(defaultSuggestion);
-            field.setEditableColor(0xAAAAAA);
         }
-        field.setChangedListener(text -> {
-            field.setSuggestion(null);
-            field.setEditableColor(0xFFFFFF);
-        });
         return field;
     }
 
