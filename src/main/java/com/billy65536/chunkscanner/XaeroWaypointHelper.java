@@ -19,10 +19,12 @@ import java.lang.reflect.Method;
  *
  * <p>路径点命名：名称 "选中的坐标点"，缩写/符号 "目标"。</p>
  *
- * <p>API 参考 XaeroPlus：
- * BuiltInHudModules.MINIMAP.getCurrentSession().getWorldManager()
- *   .getCurrentWorld().getCurrentWaypointSet()
- *   再通过 WaypointSet.addWaypoint(Waypoint) 添加（会触发自动 save）。</p>
+ * <p>API 调用链（Xaero's Minimap 24.x）：
+ * BuiltInHudModules.MINIMAP.getCurrentSession() → MinimapSession
+ *   .getWorldManager() → MinimapWorldManager
+ *   .getCurrentWorld() → MinimapWorld
+ *   .getCurrentWaypointSet() → WaypointSet
+ *   再通过 WaypointSet.add(Waypoint) 添加。</p>
  */
 public final class XaeroWaypointHelper {
 
@@ -101,7 +103,7 @@ public final class XaeroWaypointHelper {
 
     // ==================== Minimap 集成（主路径） ====================
 
-    /** 通过 Xaero Minimap 创建路径点（参考 XaeroPlus WaypointAPI）。 */
+    /** 通过 Xaero Minimap 创建路径点。 */
     private static boolean tryCreateViaMinimap(LocatedPosition pos) {
         try {
             if (!initMinimapReflection()) return false;
@@ -133,7 +135,7 @@ public final class XaeroWaypointHelper {
 
     /**
      * 从 MinimapSession 出发，获取当前 WaypointSet。
-     * 参考 XaeroPlus：session.getWorldManager().getCurrentWorld().getCurrentWaypointSet()
+     * session.getWorldManager().getCurrentWorld().getCurrentWaypointSet()
      */
     private static Object resolveCurrentWaypointSet(Object session) {
         try {
@@ -204,21 +206,29 @@ public final class XaeroWaypointHelper {
     }
 
     /**
-     * 调用 WaypointSet.addWaypoint(Waypoint) 添加路径点。
-     * 如果找不到 addWaypoint 方法，则回退到直接操作内部 List。
+     * 调用 WaypointSet.add(Waypoint) 添加路径点。
+     * 新版 Xaero (24.x) 方法名为 add，旧版可能为 addWaypoint。
      */
     @SuppressWarnings("unchecked")
     private static void addWaypointToSet(Object waypointSet, Object waypoint) {
         try {
-            // 优先使用 addWaypoint() 方法（会触发自动 save）
+            Class<?> waypointClass = Class.forName("xaero.common.minimap.waypoints.Waypoint");
+
+            // 优先使用 add(Waypoint)（新版 Xaero 24.x）
             try {
-                Method addWaypoint = waypointSet.getClass().getMethod("addWaypoint",
-                        Class.forName("xaero.common.minimap.waypoints.Waypoint"));
+                Method add = waypointSet.getClass().getMethod("add", waypointClass);
+                add.invoke(waypointSet, waypoint);
+                return;
+            } catch (NoSuchMethodException ignored) {}
+
+            // 回退：addWaypoint(Waypoint)（旧版 Xaero）
+            try {
+                Method addWaypoint = waypointSet.getClass().getMethod("addWaypoint", waypointClass);
                 addWaypoint.invoke(waypointSet, waypoint);
                 return;
             } catch (NoSuchMethodException ignored) {}
 
-            // 回退：直接操作内部 list 字段
+            // 最后回退：直接操作内部 list 字段
             Field listField = null;
             Class<?> wsClass = waypointSet.getClass();
             for (String fieldName : new String[]{"list", "waypoints", "waypointList"}) {
@@ -264,13 +274,13 @@ public final class XaeroWaypointHelper {
             // 1. Waypoint 类及构造函数、相关枚举
             Class<?> waypointClass = Class.forName("xaero.common.minimap.waypoints.Waypoint");
 
-            // WaypointColor/WaypointPurpose 为可选：新版 Xaero 可能不存在这些枚举类
+            // WaypointColor/WaypointPurpose: 新版 Xaero (24.x) 位于 xaero.hud.minimap.waypoint
             Class<?> waypointColorClass = tryLoadClass(
-                    "xaero.common.minimap.waypoints.WaypointColor",
-                    "xaero.common.minimap.waypoint.WaypointColor");
+                    "xaero.hud.minimap.waypoint.WaypointColor",
+                    "xaero.common.minimap.waypoints.WaypointColor");
             Class<?> waypointPurposeClass = tryLoadClass(
-                    "xaero.common.minimap.waypoints.WaypointPurpose",
-                    "xaero.common.minimap.waypoint.WaypointPurpose");
+                    "xaero.hud.minimap.waypoint.WaypointPurpose",
+                    "xaero.common.minimap.waypoints.WaypointPurpose");
 
             if (waypointColorClass == null && waypointPurposeClass == null) {
                 LOGGER.info("WaypointColor/WaypointPurpose not found, using basic constructors");
@@ -301,9 +311,10 @@ public final class XaeroWaypointHelper {
             Object minimap = minimapField.get(null);
             getCurrentSession = minimap.getClass().getMethod("getCurrentSession");
 
-            // 3. MinimapSession → getWorldManager()
-            Class<?> sessionClass = getCurrentSession.getReturnType();
-            getWorldManager = sessionClass.getMethod("getWorldManager");
+            // 3. getWorldManager() 存在于 MinimapSession 上（而非其父类 ModuleSession）
+            //    必须显式从 MinimapSession 类获取，不能通过 getCurrentSession() 的返回类型
+            Class<?> minimapSessionClass = Class.forName("xaero.hud.minimap.module.MinimapSession");
+            getWorldManager = minimapSessionClass.getMethod("getWorldManager");
 
             // 4. WorldManager → getCurrentWorld()
             Class<?> worldManagerClass = getWorldManager.getReturnType();
