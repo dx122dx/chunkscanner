@@ -12,6 +12,10 @@ base {
 
 repositories {
     maven {
+        name = 'BMCLAPI Minecraft Libraries'
+        url = 'https://bmclapi2.bangbang93.com/libraries/'
+    }
+    maven {
         name = 'Fabric'
         url = 'https://maven.fabricmc.net/'
     }
