@@ -167,10 +167,17 @@ public abstract class KvPageRenderer {
     /** 特化视图渲染器（如 Sign/QShop）。 */
     public static class Specialized extends KvPageRenderer {
 
+        private static final int POSITION_COL_COLOR = 0xFF55FFFF;   // 位置列（青色，可点击）
+        private static final int POSITION_HOVER_COLOR = 0xFFFFFF55; // 位置列悬停（亮黄）
+        private static final int OTHER_COL_COLOR = 0xFFFFFFFF;
+
         private final List<String[]> rows;
         private final String[] headers;
         private final int metaCount;
         private final int[] colWidths;
+
+        /** 上次渲染时检测到的悬停列索引，-1 表示无悬停列。 */
+        private int hoveredCol = -1;
 
         public Specialized(TextRenderer tr, List<String[]> rows, String[] headers, int metaCount) {
             super(tr);
@@ -191,6 +198,15 @@ public abstract class KvPageRenderer {
         }
 
         public String[] getHeaders() { return headers; }
+
+        /** 获取上次渲染时检测到的悬停列索引。 */
+        public int getHoveredCol() { return hoveredCol; }
+
+        /** 判断指定列是否为位置列（可点击创建路径点）。 */
+        public boolean isPositionColumn(int colIdx) {
+            if (colIdx < 0 || colIdx >= headers.length) return false;
+            return "位置".equals(headers[colIdx]);
+        }
 
         private int[] calcColWidths() {
             if (rows == null || headers == null) return new int[0];
@@ -229,13 +245,29 @@ public abstract class KvPageRenderer {
                               int margin, int hScrollOffset, int mouseX, int mouseY) {
             String[] row = rows.get(actualIdx);
             int rx = margin - hScrollOffset;
+            boolean rowHovered = false;
             for (int c = 0; c < row.length && c < headers.length; c++) {
                 String cell = row[c] != null ? row[c] : "";
-                int color = (c == 0) ? 0xFFAAAAAA : 0xFFFFFF;
+                boolean isPositionCol = isPositionColumn(c);
+
+                // 检测该列的鼠标悬停（只在完整行范围内检测）
+                boolean colHovered = mouseY >= rowY && mouseY < rowY + 20
+                        && mouseX >= rx && mouseX < rx + colWidths[c];
+                if (colHovered) {
+                    hoveredCol = c;
+                    rowHovered = true;
+                }
+
+                int color;
+                if (isPositionCol) {
+                    color = colHovered ? POSITION_HOVER_COLOR : POSITION_COL_COLOR;
+                } else {
+                    color = OTHER_COL_COLOR;
+                }
                 ctx.drawTextWithShadow(textRenderer, Text.literal(cell), rx, rowY, color);
                 rx += colWidths[c] + 8;
             }
-            return -1; // 特化视图无悬停检测
+            return rowHovered ? actualIdx : -1;
         }
 
         @Override

@@ -77,6 +77,15 @@ public interface DbViewProvider {
      */
     default String[] getSpecializedHeaders() { return new String[0]; }
 
+    // ==================== 位置 ====================
+
+    /**
+     * 返回指定行对应的世界位置，用于点击创建路径点。
+     * 行索引对应 {@link #getSpecializedRows()} 返回列表中相同位置的行。
+     * 返回 null 表示该行没有位置信息。
+     */
+    default LocatedPosition getPositionAt(int rowIndex) { return null; }
+
     // ==================== 筛选 ====================
 
     /**

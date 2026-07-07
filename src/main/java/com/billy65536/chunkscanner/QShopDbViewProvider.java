@@ -161,26 +161,13 @@ public class QShopDbViewProvider implements DbViewProvider {
 
     @Override
     public String[] getSpecializedHeaders() {
-        return new String[]{"Dimension", "X", "Y", "Z", "Owner", "Type", "Qty", "Item", "Price"};
+        return new String[]{"位置", "Owner", "Type", "Qty", "Item", "Price"};
     }
 
     @Override
     public List<String[]> getSpecializedRows() {
-        List<QShopRecord> records = getQShopRecords();
-        // 收集匹配筛选的记录
-        List<QShopRecord> matched = new ArrayList<>();
-        for (QShopRecord r : records) {
-            if (matchesFilter(r)) {
-                matched.add(r);
-            }
-        }
+        List<QShopRecord> matched = getFilteredSortedRecords();
 
-        // 应用排序
-        if (sortMode != SORT_NONE && matched.size() > 1) {
-            matched.sort(getSortComparator());
-        }
-
-        // 转换为行数据
         List<String[]> rows = new ArrayList<>(matched.size());
         for (QShopRecord r : matched) {
             String modeStr;
@@ -200,11 +187,10 @@ public class QShopDbViewProvider implements DbViewProvider {
                         ? "无限" : String.valueOf(r.quantity());
             }
 
+            String posStr = new LocatedPosition(r.dimId(), r.x(), r.y(), r.z()).toString();
+
             rows.add(new String[] {
-                    r.dimId(),
-                    String.valueOf(r.x()),
-                    String.valueOf(r.y()),
-                    String.valueOf(r.z()),
+                    posStr,
                     r.owner(),
                     modeStr,
                     quantityStr,
@@ -213,6 +199,29 @@ public class QShopDbViewProvider implements DbViewProvider {
             });
         }
         return rows;
+    }
+
+    @Override
+    public LocatedPosition getPositionAt(int rowIndex) {
+        List<QShopRecord> matched = getFilteredSortedRecords();
+        if (rowIndex < 0 || rowIndex >= matched.size()) return null;
+        QShopRecord r = matched.get(rowIndex);
+        return new LocatedPosition(r.dimId(), r.x(), r.y(), r.z());
+    }
+
+    /** 获取筛选并排序后的记录列表。与 getSpecializedRows 返回顺序一致。 */
+    private List<QShopRecord> getFilteredSortedRecords() {
+        List<QShopRecord> records = getQShopRecords();
+        List<QShopRecord> matched = new ArrayList<>();
+        for (QShopRecord r : records) {
+            if (matchesFilter(r)) {
+                matched.add(r);
+            }
+        }
+        if (sortMode != SORT_NONE && matched.size() > 1) {
+            matched.sort(getSortComparator());
+        }
+        return matched;
     }
 
     /**

@@ -59,6 +59,9 @@ public class DatabaseScreen extends Screen {
     /** 悬停行索引（渲染时填充，用于 tooltip）。 */
     private int hoveredKvIdx = -1;
 
+    /** 悬停列索引（特化视图下渲染时填充，用于位置点击）。 */
+    private int hoveredKvCol = -1;
+
     // ==================== 视图类型选择 ====================
 
     private List<DbViewProvider.Type> viewTypes;
@@ -403,6 +406,7 @@ public class DatabaseScreen extends Screen {
         // 重置悬停状态
         hoveredFileIdx = -1;
         hoveredKvIdx = -1;
+        hoveredKvCol = -1;
 
         if (showingKvView) {
             renderKvView(context, mouseX, mouseY, centerX);
@@ -442,6 +446,14 @@ public class DatabaseScreen extends Screen {
         }
 
         // KV 视图悬停 — 委托渲染器生成 tooltip
+        if (showingKvView && hoveredKvIdx >= 0 && hoveredKvCol >= 0
+                && pageRenderer instanceof KvPageRenderer.Specialized spec) {
+            if (spec.isPositionColumn(hoveredKvCol)) {
+                context.drawTooltip(textRenderer,
+                        Text.literal("点击创建 Xaero 路径点").formatted(Formatting.AQUA),
+                        mouseX, mouseY);
+            }
+        }
         if (showingKvView && hoveredKvIdx >= 0 && pageRenderer != null) {
             List<Text> tooltip = pageRenderer.getTooltip(hoveredKvIdx);
             if (tooltip != null) {
@@ -595,6 +607,11 @@ public class DatabaseScreen extends Screen {
             if (hov >= 0) hoveredKvIdx = hov;
         }
 
+        // 捕获特化视图的列级悬停
+        if (pageRenderer instanceof KvPageRenderer.Specialized spec) {
+            hoveredKvCol = spec.getHoveredCol();
+        }
+
         // 垂直滚动条
         kvPanel.drawScrollbar(context, kvSize);
 
@@ -696,6 +713,18 @@ public class DatabaseScreen extends Screen {
         int totalW = Math.max(computeContentWidth(), visibleW + 1);
         if (kvHScroll.handleHorizontalClick(mouseX, mouseY, hY, hLeft, hRight, totalW)) {
             return true;
+        }
+
+        // 位置列点击：创建 Xaero 路径点
+        if (hoveredKvIdx >= 0 && hoveredKvCol >= 0
+                && pageRenderer instanceof KvPageRenderer.Specialized spec
+                && spec.isPositionColumn(hoveredKvCol)
+                && currentView != null) {
+            LocatedPosition pos = currentView.getPositionAt(hoveredKvIdx);
+            if (pos != null) {
+                XaeroWaypointHelper.tryCreateWaypoint(pos);
+                return true;
+            }
         }
 
         return super.mouseClicked(mouseX, mouseY, button);

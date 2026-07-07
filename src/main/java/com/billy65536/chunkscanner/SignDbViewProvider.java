@@ -112,8 +112,7 @@ public class SignDbViewProvider implements DbViewProvider {
 
     @Override
     public String[] getSpecializedHeaders() {
-        return new String[]{"Dimension", "X", "Y", "Z", "Side",
-                "Line 1", "Line 2", "Line 3", "Line 4"};
+        return new String[]{"位置", "Side", "Line 1", "Line 2", "Line 3", "Line 4"};
     }
 
     @Override
@@ -121,11 +120,9 @@ public class SignDbViewProvider implements DbViewProvider {
         List<SignRecord> records = getSignRecords();
         List<String[]> rows = new ArrayList<>(records.size());
         for (SignRecord sr : records) {
+            String posStr = new LocatedPosition(sr.dimId(), sr.x(), sr.y(), sr.z()).toString();
             rows.add(new String[] {
-                    sr.dimId(),
-                    String.valueOf(sr.x()),
-                    String.valueOf(sr.y()),
-                    String.valueOf(sr.z()),
+                    posStr,
                     sr.side(),
                     sr.line1(),
                     sr.line2(),
@@ -134,6 +131,14 @@ public class SignDbViewProvider implements DbViewProvider {
             });
         }
         return rows;
+    }
+
+    @Override
+    public LocatedPosition getPositionAt(int rowIndex) {
+        List<SignRecord> records = getSignRecords();
+        if (rowIndex < 0 || rowIndex >= records.size()) return null;
+        SignRecord sr = records.get(rowIndex);
+        return new LocatedPosition(sr.dimId(), sr.x(), sr.y(), sr.z());
     }
 
     // ==================== Sign 特化展示 ====================
