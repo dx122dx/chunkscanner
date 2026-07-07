@@ -1,6 +1,7 @@
 package com.billy65536.chunkscanner.screen;
 
 import java.awt.Desktop;
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -8,6 +9,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+
+import javax.swing.JFileChooser;
+import javax.swing.filechooser.FileNameExtensionFilter;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
@@ -384,13 +388,30 @@ public class DatabaseScreen extends Screen {
     private void saveAs() {
         if (openedDb == null) return;
         Path dir = BinaryChunkDb.getDbDir();
-        Path outPath = dir.resolve(openedDb.scanId() + "_export.txt");
-        try {
-            if (!Files.exists(dir)) Files.createDirectories(dir);
-            exportToFile(outPath);
-            Desktop.getDesktop().open(dir.toFile());
-        } catch (Exception e) {
-            ChunkScannerMod.LOGGER.warn("Failed to export database: {}", e.getMessage());
+
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle(Text.translatable("chunkscanner.gui.database.save_as").getString());
+        chooser.setSelectedFile(new File(openedDb.scanId() + "_export.txt"));
+        chooser.setFileFilter(new FileNameExtensionFilter("Text Files (*.txt)", "txt"));
+
+        // 设置默认目录
+        if (Files.exists(dir)) {
+            chooser.setCurrentDirectory(dir.toFile());
+        }
+
+        int returnVal = chooser.showSaveDialog(null);
+        if (returnVal == JFileChooser.APPROVE_OPTION) {
+            Path outPath = chooser.getSelectedFile().toPath();
+            // 确保扩展名为 .txt
+            if (!outPath.getFileName().toString().contains(".")) {
+                outPath = outPath.resolveSibling(outPath.getFileName() + ".txt");
+            }
+            try {
+                Files.createDirectories(outPath.getParent());
+                exportToFile(outPath);
+            } catch (Exception e) {
+                ChunkScannerMod.LOGGER.warn("Failed to export database: {}", e.getMessage());
+            }
         }
     }
 
