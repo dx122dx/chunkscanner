@@ -42,7 +42,7 @@ jobs:
       uses: Kira-NT/mc-publish@v3.3.0
       with:
         # Modrinth 配置
-        modrinth-id: dx122dx
+        modrinth-id: ${{ vars.MODRINTH_ID }}
         modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
 
         # GitHub Release 配置
