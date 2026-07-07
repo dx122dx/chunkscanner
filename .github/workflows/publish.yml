@@ -5,6 +5,7 @@ on:
     tags:
       - 'v*.*.*'
       - 'v*.*.*-*'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -38,7 +39,7 @@ jobs:
         retention-days: 30
 
     - name: Publish to Platforms
-      uses: Kir-Antipov/mc-publish@v3.1
+      uses: Kira-NT/mc-publish@v3.3.0
       with:
         # Modrinth 配置
         modrinth-id: dx122dx
