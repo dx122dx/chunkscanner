@@ -2,7 +2,7 @@
     "category.chunkscanner.main": "区块扫描器",
 
     "chunkscanner.command.start.usage": "/cs task begin <分析器> [id] [配置...]",
-    "chunkscanner.command.start.config.hint": "配置格式: key=value ... (revisit=60 tasks=16 threads=2 radius=1.0)",
+    "chunkscanner.command.start.config.hint": "配置格式: key=value ... (revisit=60 tasks=16 radius=1.0 wpName=商店 wpInit=¥ wpGroup=shops)",
     "chunkscanner.command.stop.usage": "/cs task stop <id>",
     "chunkscanner.command.pause.usage": "/cs task pause <id>",
     "chunkscanner.command.resume.usage": "/cs task resume <id>",
@@ -129,6 +129,9 @@
     "chunkscanner.task_config.field.flush": "刷盘间隔:",
     "chunkscanner.task_config.field.threads": "线程数:",
     "chunkscanner.task_config.field.radius": "半径:",
+    "chunkscanner.task_config.field.wpName": "路径点名:",
+    "chunkscanner.task_config.field.wpInit": "路径点缩写:",
+    "chunkscanner.task_config.field.wpGroup": "路径点组:",
 
     "chunkscanner.label.id": "id",
     "chunkscanner.label.analyzer": "analyzer",

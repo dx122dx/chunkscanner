@@ -66,20 +66,32 @@ public class ConfigLoader {
         try {
             String content = Files.readString(path, StandardCharsets.UTF_8);
             JsonObject json = JsonParser.parseString(content).getAsJsonObject();
-            if (json.has("minRevisitIntervalSec"))
-                config.minRevisitIntervalSec = json.get("minRevisitIntervalSec").getAsInt();
-            if (json.has("maxTasksPerTick"))
-                config.maxTasksPerTick = json.get("maxTasksPerTick").getAsInt();
-            if (json.has("initialTasksPerTick"))
-                config.initialTasksPerTick = json.get("initialTasksPerTick").getAsInt();
-            if (json.has("targetTickNs"))
-                config.targetTickNs = json.get("targetTickNs").getAsLong();
-            if (json.has("flushIntervalTicks"))
-                config.flushIntervalTicks = json.get("flushIntervalTicks").getAsInt();
-            if (json.has("workerThreads"))
-                config.workerThreads = json.get("workerThreads").getAsInt();
-            if (json.has("scanRadiusMultiplier"))
-                config.scanRadiusMultiplier = json.get("scanRadiusMultiplier").getAsDouble();
+
+            // 读取扫描默认值：优先从 "defaults" 节点，回退到根节点（旧版兼容）
+            JsonObject defaults = json.has("defaults") ? json.getAsJsonObject("defaults") : json;
+            if (defaults.has("minRevisitIntervalSec"))
+                config.minRevisitIntervalSec = defaults.get("minRevisitIntervalSec").getAsInt();
+            if (defaults.has("maxTasksPerTick"))
+                config.maxTasksPerTick = defaults.get("maxTasksPerTick").getAsInt();
+            if (defaults.has("initialTasksPerTick"))
+                config.initialTasksPerTick = defaults.get("initialTasksPerTick").getAsInt();
+            if (defaults.has("targetTickNs"))
+                config.targetTickNs = defaults.get("targetTickNs").getAsLong();
+            if (defaults.has("flushIntervalTicks"))
+                config.flushIntervalTicks = defaults.get("flushIntervalTicks").getAsInt();
+            if (defaults.has("workerThreads"))
+                config.workerThreads = defaults.get("workerThreads").getAsInt();
+            if (defaults.has("scanRadiusMultiplier"))
+                config.scanRadiusMultiplier = defaults.get("scanRadiusMultiplier").getAsDouble();
+
+            // 读取路径点默认值
+            if (json.has("waypoint")) {
+                JsonObject wp = json.getAsJsonObject("waypoint");
+                if (wp.has("name")) config.waypointName = wp.get("name").getAsString();
+                if (wp.has("initials")) config.waypointInitials = wp.get("initials").getAsString();
+                if (wp.has("group")) config.waypointGroup = wp.get("group").getAsString();
+            }
+
             ChunkScannerMod.LOGGER.info("Config loaded from: {}", path);
         } catch (IOException e) {
             ChunkScannerMod.LOGGER.error("Failed to load config: {}", e.getMessage());
@@ -91,13 +103,25 @@ public class ConfigLoader {
             Path path = configPath();
             Files.createDirectories(path.getParent());
             JsonObject json = new JsonObject();
-            json.addProperty("minRevisitIntervalSec", config.minRevisitIntervalSec);
-            json.addProperty("maxTasksPerTick", config.maxTasksPerTick);
-            json.addProperty("initialTasksPerTick", config.initialTasksPerTick);
-            json.addProperty("targetTickNs", config.targetTickNs);
-            json.addProperty("flushIntervalTicks", config.flushIntervalTicks);
-            json.addProperty("workerThreads", config.workerThreads);
-            json.addProperty("scanRadiusMultiplier", config.scanRadiusMultiplier);
+
+            // 扫描默认值
+            JsonObject defaults = new JsonObject();
+            defaults.addProperty("minRevisitIntervalSec", config.minRevisitIntervalSec);
+            defaults.addProperty("maxTasksPerTick", config.maxTasksPerTick);
+            defaults.addProperty("initialTasksPerTick", config.initialTasksPerTick);
+            defaults.addProperty("targetTickNs", config.targetTickNs);
+            defaults.addProperty("flushIntervalTicks", config.flushIntervalTicks);
+            defaults.addProperty("workerThreads", config.workerThreads);
+            defaults.addProperty("scanRadiusMultiplier", config.scanRadiusMultiplier);
+            json.add("defaults", defaults);
+
+            // 路径点默认值
+            JsonObject waypoint = new JsonObject();
+            waypoint.addProperty("name", config.waypointName);
+            waypoint.addProperty("initials", config.waypointInitials);
+            waypoint.addProperty("group", config.waypointGroup);
+            json.add("waypoint", waypoint);
+
             Files.writeString(path, GSON.toJson(json), StandardCharsets.UTF_8);
             ChunkScannerMod.LOGGER.info("Config saved to: {}", path);
         } catch (IOException e) {

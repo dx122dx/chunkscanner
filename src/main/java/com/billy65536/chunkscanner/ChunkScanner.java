@@ -442,6 +442,9 @@ public class ChunkScanner {
             s.sessionConfig.flushIntervalTicks = defaults.flushIntervalTicks;
             s.sessionConfig.workerThreads = defaults.workerThreads;
             s.sessionConfig.scanRadiusMultiplier = defaults.scanRadiusMultiplier;
+            s.sessionConfig.waypointName = defaults.waypointName;
+            s.sessionConfig.waypointInitials = defaults.waypointInitials;
+            s.sessionConfig.waypointGroup = defaults.waypointGroup;
 
             // clamp 自适应速率到新范围
             if (s.tasksPerTick > defaults.maxTasksPerTick) {
@@ -464,11 +467,11 @@ public class ChunkScanner {
      * @return 重启的会话数量
      */
     public int restartAllSessions(MinecraftClient client) {
-        // 收集当前会话信息
-        record SessionInfo(String scanId, String analyzerId) {}
+        // 收集当前会话信息（保存 TaskConfig 以便恢复）
+        record SessionInfo(String scanId, String analyzerId, TaskConfig taskConfig) {}
         List<SessionInfo> toRestart = new ArrayList<>();
         for (ScanSession s : sessions.values()) {
-            toRestart.add(new SessionInfo(s.scanId, s.analyzer.getId()));
+            toRestart.add(new SessionInfo(s.scanId, s.analyzer.getId(), s.getTaskConfig()));
         }
 
         if (toRestart.isEmpty()) return 0;
@@ -479,12 +482,12 @@ public class ChunkScanner {
         }
         sessions.clear();
 
-        // 用新配置重启（新建 ScanSession 会自动复制当前 config）
+        // 用新配置重启（保留原有 TaskConfig）
         int restarted = 0;
         for (SessionInfo si : toRestart) {
             ChunkAnalyzer analyzer = analyzerRegistry.get(si.analyzerId);
             if (analyzer == null) continue;
-            ScanSession session = new ScanSession(si.scanId, analyzer);
+            ScanSession session = new ScanSession(si.scanId, analyzer, si.taskConfig);
             sessions.put(si.scanId, session);
             session.start(client);
             restarted++;

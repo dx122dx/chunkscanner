@@ -33,13 +33,23 @@ public class TaskConfig {
     /** 扫描视距倍率。null = 使用默认值。 */
     public Double scanRadiusMultiplier;
 
+    /** 路径点名称。null = 使用默认值。 */
+    public String waypointName;
+
+    /** 路径点缩写。null = 使用默认值。 */
+    public String waypointInitials;
+
+    /** 路径点所属组（WaypointSet 名称）。null = 使用默认值。 */
+    public String waypointGroup;
+
     /** 创建一个空配置（所有值使用默认值）。 */
     public TaskConfig() {}
 
     /**
      * 从 key=value 字符串解析配置。
-     * 支持的键：revisit, tasks, initTasks, targetNs, flush, threads, radius
-     * 示例：revisit=60 tasks=16 radius=1.5
+     * 支持的键：revisit, tasks, initTasks, targetNs, flush, threads, radius,
+     *           wpName, wpInit, wpGroup
+     * 示例：revisit=60 tasks=16 radius=1.5 wpName=商店
      */
     public static TaskConfig parse(String configStr) {
         if (configStr == null || configStr.isBlank()) {
@@ -64,6 +74,9 @@ public class TaskConfig {
                     case "flush" -> config.flushIntervalTicks = Integer.parseInt(value);
                     case "threads" -> config.workerThreads = Integer.parseInt(value);
                     case "radius" -> config.scanRadiusMultiplier = Double.parseDouble(value);
+                    case "wpname" -> config.waypointName = value;
+                    case "wpinit" -> config.waypointInitials = value;
+                    case "wpgroup" -> config.waypointGroup = value;
                     default -> ChunkScannerMod.LOGGER.warn("Unknown task config key: {}", key);
                 }
             } catch (NumberFormatException e) {
@@ -86,7 +99,10 @@ public class TaskConfig {
                 && targetTickNs == null
                 && flushIntervalTicks == null
                 && workerThreads == null
-                && scanRadiusMultiplier == null;
+                && scanRadiusMultiplier == null
+                && waypointName == null
+                && waypointInitials == null
+                && waypointGroup == null;
     }
 
     /**
@@ -102,10 +118,13 @@ public class TaskConfig {
         if (flushIntervalTicks != null) result.flushIntervalTicks = flushIntervalTicks;
         if (workerThreads != null) result.workerThreads = workerThreads;
         if (scanRadiusMultiplier != null) result.scanRadiusMultiplier = scanRadiusMultiplier;
+        if (waypointName != null) result.waypointName = waypointName;
+        if (waypointInitials != null) result.waypointInitials = waypointInitials;
+        if (waypointGroup != null) result.waypointGroup = waypointGroup;
         return result;
     }
 
-    /** 生成配置说明字符串。 */
+    /** 生成配置说明字符串（紧凑单行，用于聊天消息）。 */
     public String toDisplayString() {
         StringBuilder sb = new StringBuilder();
         if (minRevisitIntervalSec != null) sb.append("revisit=").append(minRevisitIntervalSec).append(" ");
@@ -115,6 +134,9 @@ public class TaskConfig {
         if (flushIntervalTicks != null) sb.append("flush=").append(flushIntervalTicks).append(" ");
         if (workerThreads != null) sb.append("threads=").append(workerThreads).append(" ");
         if (scanRadiusMultiplier != null) sb.append("radius=").append(scanRadiusMultiplier).append(" ");
+        if (waypointName != null) sb.append("wpName=").append(waypointName).append(" ");
+        if (waypointInitials != null) sb.append("wpInit=").append(waypointInitials).append(" ");
+        if (waypointGroup != null) sb.append("wpGroup=").append(waypointGroup).append(" ");
         return sb.toString().trim();
     }
 
@@ -128,6 +150,9 @@ public class TaskConfig {
         if (flushIntervalTicks != null) obj.addProperty("flushIntervalTicks", flushIntervalTicks);
         if (workerThreads != null) obj.addProperty("workerThreads", workerThreads);
         if (scanRadiusMultiplier != null) obj.addProperty("scanRadiusMultiplier", scanRadiusMultiplier);
+        if (waypointName != null) obj.addProperty("waypointName", waypointName);
+        if (waypointInitials != null) obj.addProperty("waypointInitials", waypointInitials);
+        if (waypointGroup != null) obj.addProperty("waypointGroup", waypointGroup);
         return GSON.toJson(obj);
     }
 
@@ -156,6 +181,12 @@ public class TaskConfig {
                 cfg.workerThreads = obj.get("workerThreads").getAsInt();
             if (obj.has("scanRadiusMultiplier") && !obj.get("scanRadiusMultiplier").isJsonNull())
                 cfg.scanRadiusMultiplier = obj.get("scanRadiusMultiplier").getAsDouble();
+            if (obj.has("waypointName") && !obj.get("waypointName").isJsonNull())
+                cfg.waypointName = obj.get("waypointName").getAsString();
+            if (obj.has("waypointInitials") && !obj.get("waypointInitials").isJsonNull())
+                cfg.waypointInitials = obj.get("waypointInitials").getAsString();
+            if (obj.has("waypointGroup") && !obj.get("waypointGroup").isJsonNull())
+                cfg.waypointGroup = obj.get("waypointGroup").getAsString();
             return cfg.isAllNull() ? null : cfg;
         } catch (Exception e) {
             ChunkScannerMod.LOGGER.warn("Failed to parse TaskConfig from JSON: {}", json);
@@ -173,6 +204,9 @@ public class TaskConfig {
         cfg.flushIntervalTicks = this.flushIntervalTicks;
         cfg.workerThreads = this.workerThreads;
         cfg.scanRadiusMultiplier = this.scanRadiusMultiplier;
+        cfg.waypointName = this.waypointName;
+        cfg.waypointInitials = this.waypointInitials;
+        cfg.waypointGroup = this.waypointGroup;
         return cfg;
     }
 }

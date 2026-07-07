@@ -129,7 +129,10 @@ public class TaskConfigScreen extends Screen {
                 String.valueOf(globalConfig.targetTickNs),
                 String.valueOf(globalConfig.flushIntervalTicks),
                 String.valueOf(globalConfig.workerThreads),
-                String.valueOf(globalConfig.scanRadiusMultiplier)
+                String.valueOf(globalConfig.scanRadiusMultiplier),
+                globalConfig.waypointName,
+                globalConfig.waypointInitials,
+                globalConfig.waypointGroup
         };
     }
 
@@ -188,7 +191,10 @@ public class TaskConfigScreen extends Screen {
                 "chunkscanner.task_config.field.targetNs",
                 "chunkscanner.task_config.field.flush",
                 "chunkscanner.task_config.field.threads",
-                "chunkscanner.task_config.field.radius"
+                "chunkscanner.task_config.field.radius",
+                "chunkscanner.task_config.field.wpName",
+                "chunkscanner.task_config.field.wpInit",
+                "chunkscanner.task_config.field.wpGroup"
         };
 
         String[] initialValues = getInitialValues();
@@ -253,10 +259,13 @@ public class TaskConfigScreen extends Screen {
                     existingConfig.targetTickNs != null ? String.valueOf(existingConfig.targetTickNs) : "",
                     existingConfig.flushIntervalTicks != null ? String.valueOf(existingConfig.flushIntervalTicks) : "",
                     existingConfig.workerThreads != null ? String.valueOf(existingConfig.workerThreads) : "",
-                    existingConfig.scanRadiusMultiplier != null ? String.valueOf(existingConfig.scanRadiusMultiplier) : ""
+                    existingConfig.scanRadiusMultiplier != null ? String.valueOf(existingConfig.scanRadiusMultiplier) : "",
+                    existingConfig.waypointName != null ? existingConfig.waypointName : "",
+                    existingConfig.waypointInitials != null ? existingConfig.waypointInitials : "",
+                    existingConfig.waypointGroup != null ? existingConfig.waypointGroup : ""
             };
         }
-        return new String[]{"", "", "", "", "", "", ""};
+        return new String[]{"", "", "", "", "", "", "", "", "", ""};
     }
 
     // ==================== 渲染 ====================
@@ -319,7 +328,8 @@ public class TaskConfigScreen extends Screen {
         boolean hasValue = false;
 
         // 按字段索引映射到 TaskConfig
-        String[] fieldIds = {"revisit", "tasks", "initTasks", "targetNs", "flush", "threads", "radius"};
+        String[] fieldIds = {"revisit", "tasks", "initTasks", "targetNs", "flush", "threads", "radius",
+                "wpName", "wpInit", "wpGroup"};
         for (int i = 0; i < fields.size() && i < fieldIds.length; i++) {
             String text = fields.get(i).widget.getText().trim();
             if (text.isEmpty()) continue;
@@ -332,6 +342,9 @@ public class TaskConfigScreen extends Screen {
                     case "flush"   -> { config.flushIntervalTicks = Integer.parseInt(text); hasValue = true; }
                     case "threads"  -> { config.workerThreads = Integer.parseInt(text); hasValue = true; }
                     case "radius"  -> { config.scanRadiusMultiplier = Double.parseDouble(text); hasValue = true; }
+                    case "wpName"  -> { config.waypointName = text; hasValue = true; }
+                    case "wpInit"  -> { config.waypointInitials = text; hasValue = true; }
+                    case "wpGroup" -> { config.waypointGroup = text; hasValue = true; }
                 }
             } catch (NumberFormatException e) {
                 ChunkScannerMod.LOGGER.warn("TaskConfig: invalid value for field '{}': '{}'", fieldIds[i], text);

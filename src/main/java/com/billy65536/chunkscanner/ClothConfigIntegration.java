@@ -10,8 +10,9 @@ import net.minecraft.text.Text;
  * 提供图形化配置界面，当 Cloth Config 模组被加载时，
  * 通过 ModMenu 入口可打开此配置界面。
  *
- * 配置界面分为两个分类：
+ * 配置界面分为三个分类：
  * - 扫描：基本扫描参数（重访间隔、速率、视距倍率等）
+ * - 路径点：Xaero 路径点联动参数（名称、缩写、组）
  * - 高级：底层性能参数（线程数、目标 tick 耗时）
  */
 public class ClothConfigIntegration {
@@ -69,6 +70,34 @@ public class ClothConfigIntegration {
                 .setSaveConsumer(v -> ChunkScannerMod.CONFIG.scanRadiusMultiplier = v)
                 .build());
 
+        // === 路径点分类 ===
+        var waypoint = builder.getOrCreateCategory(Text.literal("路径点"));
+
+        waypoint.addEntry(builder.entryBuilder()
+                .startStrField(Text.literal("路径点名称"),
+                        ChunkScannerMod.CONFIG.waypointName)
+                .setDefaultValue("选中的坐标点")
+                .setTooltip(Text.literal("Xaero 路径点的显示名称"))
+                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.waypointName = v)
+                .build());
+
+        waypoint.addEntry(builder.entryBuilder()
+                .startStrField(Text.literal("路径点缩写"),
+                        ChunkScannerMod.CONFIG.waypointInitials)
+                .setDefaultValue("目标")
+                .setTooltip(Text.literal("Xaero 路径点的缩写/符号"))
+                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.waypointInitials = v)
+                .build());
+
+        waypoint.addEntry(builder.entryBuilder()
+                .startStrField(Text.literal("路径点组名"),
+                        ChunkScannerMod.CONFIG.waypointGroup)
+                .setDefaultValue("chunkscanner")
+                .setTooltip(Text.literal("Xaero 路径点所在组（WaypointSet 名称）。留空则添加到当前组"))
+                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.waypointGroup = v)
+                .build());
+
+        // === 高级分类 ===
         var advanced = builder.getOrCreateCategory(Text.literal("高级"));
 
         advanced.addEntry(builder.entryBuilder()

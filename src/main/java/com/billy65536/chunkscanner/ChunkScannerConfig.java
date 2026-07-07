@@ -3,8 +3,24 @@ package com.billy65536.chunkscanner;
 /**
  * 配置文件数据模型。
  * 全局配置仅作为默认值；每个扫描任务持有自己的副本，可独立修改。
+ *
+ * <p>配置结构（chunkscanner.json）：
+ * <pre>
+ * {
+ *   "defaults": {
+ *     "minRevisitIntervalSec": 60, ...
+ *   },
+ *   "waypoint": {
+ *     "name": "选中的坐标点",
+ *     "initials": "目标",
+ *     "group": "chunkscanner"
+ *   }
+ * }
+ * </pre>
  */
 public class ChunkScannerConfig {
+
+    // ==================== 扫描默认值 ====================
 
     /** 最小重访间隔（秒）。默认 60。 */
     public int minRevisitIntervalSec = 60;
@@ -27,6 +43,17 @@ public class ChunkScannerConfig {
     /** 扫描视距倍率。默认 1.0。 */
     public double scanRadiusMultiplier = 1.0;
 
+    // ==================== 路径点默认值 ====================
+
+    /** 路径点名称。默认 "选中的坐标点"。 */
+    public String waypointName = "选中的坐标点";
+
+    /** 路径点缩写/符号。默认 "目标"。 */
+    public String waypointInitials = "目标";
+
+    /** 路径点所在组（WaypointSet 名称）。默认 "chunkscanner"。 */
+    public String waypointGroup = "chunkscanner";
+
     /** 创建一份配置副本，供每个扫描任务独立持有。 */
     public ChunkScannerConfig copy() {
         ChunkScannerConfig c = new ChunkScannerConfig();
@@ -37,6 +64,9 @@ public class ChunkScannerConfig {
         c.flushIntervalTicks = this.flushIntervalTicks;
         c.workerThreads = this.workerThreads;
         c.scanRadiusMultiplier = this.scanRadiusMultiplier;
+        c.waypointName = this.waypointName;
+        c.waypointInitials = this.waypointInitials;
+        c.waypointGroup = this.waypointGroup;
         return c;
     }
 }

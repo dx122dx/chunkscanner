@@ -17,21 +17,23 @@ import java.lang.reflect.Method;
  * <p>因为 Xaero 的 mod 是可选依赖，所有调用均通过反射完成。
  * 如果 Xaero 未安装，则回退到聊天消息显示坐标。</p>
  *
- * <p>路径点命名：名称 "选中的坐标点"，缩写/符号 "目标"。</p>
+ * <p>路径点参数（名称、缩写、组）由配置决定，可通过全局配置或任务级配置覆盖。</p>
  *
  * <p>API 调用链（Xaero's Minimap 24.x）：
  * BuiltInHudModules.MINIMAP.getCurrentSession() → MinimapSession
  *   .getWorldManager() → MinimapWorldManager
  *   .getCurrentWorld() → MinimapWorld
- *   .getCurrentWaypointSet() → WaypointSet
+ *   .getWaypointSet(group) / .getCurrentWaypointSet() → WaypointSet
  *   再通过 WaypointSet.add(Waypoint) 添加。</p>
  */
 public final class XaeroWaypointHelper {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("ChunkScanner|Xaero");
 
-    private static final String WAYPOINT_NAME = "选中的坐标点";
-    private static final String WAYPOINT_SYMBOL = "目标";
+    /** 默认路径点名称。 */
+    private static final String DEFAULT_WAYPOINT_NAME = "选中的坐标点";
+    /** 默认路径点缩写。 */
+    private static final String DEFAULT_WAYPOINT_INITIALS = "目标";
 
     // ==================== 缓存反射句柄 ====================
 
@@ -43,6 +45,7 @@ public final class XaeroWaypointHelper {
     private static volatile Method getWorldManager;
     private static volatile Method getCurrentWorld;
     private static volatile Method getCurrentWaypointSet;
+    private static volatile Method getNamedWaypointSet;   // getWaypointSet(String)
 
     private XaeroWaypointHelper() {}
 
@@ -80,14 +83,30 @@ public final class XaeroWaypointHelper {
     }
 
     /**
-     * 尝试创建 Xaero 路径点。
+     * 尝试创建 Xaero 路径点（使用默认名称、缩写和组）。
      *
      * @return true 表示成功创建，false 表示 Xaero 不可用（回退聊天消息）
      */
     public static boolean tryCreateWaypoint(LocatedPosition pos) {
+        return tryCreateWaypoint(pos, DEFAULT_WAYPOINT_NAME, DEFAULT_WAYPOINT_INITIALS, null);
+    }
+
+    /**
+     * 尝试创建 Xaero 路径点（使用指定的名称、缩写和组）。
+     *
+     * @param pos      目标坐标
+     * @param name     路径点名称（null 使用默认值）
+     * @param initials 路径点缩写（null 使用默认值）
+     * @param group    路径点组名（null 使用当前组）
+     * @return true 表示成功创建，false 表示回退聊天消息
+     */
+    public static boolean tryCreateWaypoint(LocatedPosition pos, String name, String initials, String group) {
         if (pos == null) return false;
 
-        if (tryCreateViaMinimap(pos)) return true;
+        String wpName = (name != null && !name.isEmpty()) ? name : DEFAULT_WAYPOINT_NAME;
+        String wpInit = (initials != null && !initials.isEmpty()) ? initials : DEFAULT_WAYPOINT_INITIALS;
+
+        if (tryCreateViaMinimap(pos, wpName, wpInit, group)) return true;
 
         // Xaero 不可用，发送聊天消息
         MinecraftClient client = MinecraftClient.getInstance();
@@ -104,7 +123,7 @@ public final class XaeroWaypointHelper {
     // ==================== Minimap 集成（主路径） ====================
 
     /** 通过 Xaero Minimap 创建路径点。 */
-    private static boolean tryCreateViaMinimap(LocatedPosition pos) {
+    private static boolean tryCreateViaMinimap(LocatedPosition pos, String name, String initials, String group) {
         try {
             if (!initMinimapReflection()) return false;
 
@@ -115,17 +134,17 @@ public final class XaeroWaypointHelper {
                 return false;
             }
 
-            // session.getWorldManager().getCurrentWorld().getCurrentWaypointSet()
-            Object waypointSet = resolveCurrentWaypointSet(session);
+            // session.getWorldManager().getCurrentWorld().getWaypointSet(group) / getCurrentWaypointSet()
+            Object waypointSet = resolveCurrentWaypointSet(session, group);
             if (waypointSet == null) return false;
 
-            Object wp = createWaypoint(pos);
+            Object wp = createWaypoint(pos, name, initials);
             if (wp == null) return false;
 
-            // 通过 WaypointSet.addWaypoint() 添加（会触发自动 save）
+            // 通过 WaypointSet.add(Waypoint) 添加
             addWaypointToSet(waypointSet, wp);
 
-            sendSuccessMessage(pos);
+            sendSuccessMessage(pos, name);
             return true;
         } catch (Exception e) {
             LOGGER.info("Minimap waypoint creation failed: {}", e.toString());
@@ -134,10 +153,10 @@ public final class XaeroWaypointHelper {
     }
 
     /**
-     * 从 MinimapSession 出发，获取当前 WaypointSet。
-     * session.getWorldManager().getCurrentWorld().getCurrentWaypointSet()
+     * 从 MinimapSession 出发，获取 WaypointSet。
+     * 优先按 group 名称获取指定组，回退到当前 WaypointSet。
      */
-    private static Object resolveCurrentWaypointSet(Object session) {
+    private static Object resolveCurrentWaypointSet(Object session, String group) {
         try {
             // session.getWorldManager() → WorldManager
             Object worldManager = getWorldManager.invoke(session);
@@ -153,14 +172,30 @@ public final class XaeroWaypointHelper {
                 return null;
             }
 
-            // world.getCurrentWaypointSet() → WaypointSet
-            Object waypointSet = getCurrentWaypointSet.invoke(world);
-            if (waypointSet == null) {
-                LOGGER.debug("getCurrentWaypointSet() returned null");
-                return resolveFallbackWaypointSet(world);
+            // 优先：按配置的 group 获取指定 WaypointSet
+            if (group != null && !group.isEmpty() && getNamedWaypointSet != null) {
+                try {
+                    Object namedSet = getNamedWaypointSet.invoke(world, group);
+                    if (namedSet != null) {
+                        return namedSet;
+                    }
+                    LOGGER.debug("getWaypointSet(\"{}\") returned null, falling back to current set", group);
+                } catch (Exception e) {
+                    LOGGER.debug("getWaypointSet(\"{}\") failed: {}", group, e.getMessage());
+                }
             }
 
-            return waypointSet;
+            // 回退：world.getCurrentWaypointSet()
+            if (getCurrentWaypointSet != null) {
+                Object waypointSet = getCurrentWaypointSet.invoke(world);
+                if (waypointSet == null) {
+                    LOGGER.debug("getCurrentWaypointSet() returned null");
+                    return resolveFallbackWaypointSet(world);
+                }
+                return waypointSet;
+            }
+
+            return resolveFallbackWaypointSet(world);
         } catch (Exception e) {
             LOGGER.debug("resolveCurrentWaypointSet failed: {}", e.getMessage());
             return null;
@@ -320,14 +355,18 @@ public final class XaeroWaypointHelper {
             Class<?> worldManagerClass = getWorldManager.getReturnType();
             getCurrentWorld = worldManagerClass.getMethod("getCurrentWorld");
 
-            // 5. MinimapWorld → getCurrentWaypointSet()
-            //    如果不存在则设为 null，由 resolveCurrentWaypointSet 中的 fallback 处理
+            // 5. MinimapWorld → getCurrentWaypointSet() / getWaypointSet(String)
             Class<?> worldClass = getCurrentWorld.getReturnType();
             try {
                 getCurrentWaypointSet = worldClass.getMethod("getCurrentWaypointSet");
             } catch (NoSuchMethodException e) {
-                // 旧版 API 无此方法，在 resolveCurrentWaypointSet 中会走 fallback
                 getCurrentWaypointSet = null;
+            }
+            // getWaypointSet(String) 用于按组名获取路径点集
+            try {
+                getNamedWaypointSet = worldClass.getMethod("getWaypointSet", String.class);
+            } catch (NoSuchMethodException e) {
+                getNamedWaypointSet = null;
             }
 
             minimapAvailable = true;
@@ -443,7 +482,7 @@ public final class XaeroWaypointHelper {
     }
 
     /** 通过反射创建 Waypoint 实例。根据构造函数参数数量动态适配。 */
-    private static Object createWaypoint(LocatedPosition pos) {
+    private static Object createWaypoint(LocatedPosition pos, String name, String initials) {
         try {
             if (waypointConstructor == null && !initMinimapReflection()) return null;
             if (waypointConstructor == null) return null;
@@ -455,7 +494,7 @@ public final class XaeroWaypointHelper {
                 // 完整版：(x, y, z, name, initials, color, purpose, temp, yIncluded)
                 return waypointConstructor.newInstance(
                         pos.x(), pos.y(), pos.z(),
-                        WAYPOINT_NAME, WAYPOINT_SYMBOL,
+                        name, initials,
                         defaultWaypointColor, defaultWaypointPurpose,
                         false, true);
             } else if (count == 6) {
@@ -463,17 +502,17 @@ public final class XaeroWaypointHelper {
                     // int 颜色版：(x, y, z, name, initials, colorInt)
                     return waypointConstructor.newInstance(
                             pos.x(), pos.y(), pos.z(),
-                            WAYPOINT_NAME, WAYPOINT_SYMBOL, 0xFF55FFFF);
+                            name, initials, 0xFF55FFFF);
                 } else {
                     // 枚举颜色版：(x, y, z, name, initials, WaypointColor)
                     return waypointConstructor.newInstance(
                             pos.x(), pos.y(), pos.z(),
-                            WAYPOINT_NAME, WAYPOINT_SYMBOL, defaultWaypointColor);
+                            name, initials, defaultWaypointColor);
                 }
             } else {
                 // 最简版：(x, y, z, name, initials)
                 return waypointConstructor.newInstance(
-                        pos.x(), pos.y(), pos.z(), WAYPOINT_NAME, WAYPOINT_SYMBOL);
+                        pos.x(), pos.y(), pos.z(), name, initials);
             }
         } catch (Exception e) {
             LOGGER.debug("Failed to create Waypoint: {}", e.getMessage());
@@ -482,13 +521,13 @@ public final class XaeroWaypointHelper {
     }
 
     /** 成功创建后发送提示消息。 */
-    private static void sendSuccessMessage(LocatedPosition pos) {
+    private static void sendSuccessMessage(LocatedPosition pos, String name) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player != null) {
             client.player.sendMessage(
                     Text.literal("[ChunkScanner] ").formatted(Formatting.GOLD)
                             .append(Text.translatable("chunkscanner.waypoint.created",
-                                    WAYPOINT_NAME, pos.toString()).formatted(Formatting.GREEN)),
+                                    name, pos.toString()).formatted(Formatting.GREEN)),
                     false);
         }
     }

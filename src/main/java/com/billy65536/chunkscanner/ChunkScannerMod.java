@@ -299,6 +299,7 @@ public class ChunkScannerMod implements ClientModInitializer {
     /**
      * 从已有的数据库文件恢复/重启扫描任务。
      * 读取文件的 scanId 和 analyzerName 元数据，创建 BinaryChunkDb 实例，
+     * 读取存储在 DB 中的 TaskConfig 并恢复应用，
      * 通过 scanner.startWithDb() 恢复扫描（保留已有数据）。
      */
     private void rebootScanFromDb(String scanId, MinecraftClient client) {
@@ -316,7 +317,7 @@ public class ChunkScannerMod implements ClientModInitializer {
             return;
         }
 
-        ChunkDb existingDb;
+        BinaryChunkDb existingDb;
         try {
             existingDb = new BinaryChunkDb(meta.scanId(), meta.analyzerName());
         } catch (Exception e) {
@@ -324,7 +325,14 @@ public class ChunkScannerMod implements ClientModInitializer {
                     .formatted(Formatting.RED));
             return;
         }
-        scanner.startWithDb(client, meta.scanId(), meta.analyzerName(), existingDb);
+
+        // 读取存储在数据库中的任务配置
+        TaskConfig storedConfig = existingDb.getTaskConfig();
+        if (storedConfig != null) {
+            ChunkScannerMod.LOGGER.info("Restored TaskConfig from DB for '{}': {}", scanId, storedConfig.toDisplayString());
+        }
+
+        scanner.startWithDb(client, meta.scanId(), meta.analyzerName(), storedConfig, existingDb);
     }
 
     private static void sendMsg(MinecraftClient client, Text msg) {

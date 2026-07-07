@@ -2,7 +2,7 @@
     "category.chunkscanner.main": "Chunk Scanner",
 
     "chunkscanner.command.start.usage": "/cs task begin <name> [id] [config...]",
-    "chunkscanner.command.start.config.hint": "Config format: key=value ... (revisit=60 tasks=16 threads=2 radius=1.0)",
+    "chunkscanner.command.start.config.hint": "Config format: key=value ... (revisit=60 tasks=16 radius=1.0 wpName=Shop wpInit=$ wpGroup=shops)",
     "chunkscanner.command.stop.usage": "/cs task stop <id>",
     "chunkscanner.command.pause.usage": "/cs task pause <id>",
     "chunkscanner.command.resume.usage": "/cs task resume <id>",
@@ -129,6 +129,9 @@
     "chunkscanner.task_config.field.flush": "Flush:",
     "chunkscanner.task_config.field.threads": "Threads:",
     "chunkscanner.task_config.field.radius": "Radius:",
+    "chunkscanner.task_config.field.wpName": "WP Name:",
+    "chunkscanner.task_config.field.wpInit": "WP Initials:",
+    "chunkscanner.task_config.field.wpGroup": "WP Group:",
 
     "chunkscanner.label.id": "id",
     "chunkscanner.label.analyzer": "analyzer",

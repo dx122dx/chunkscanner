@@ -287,6 +287,12 @@ public class ChunkScannerScreen extends Screen {
                         .formatted(Formatting.GRAY);
             }
             tooltip.add(dbRateText);
+            // 显示任务配置（如有）
+            TaskConfig tc = s.getTaskConfig();
+            if (tc != null && !tc.toDisplayString().isEmpty()) {
+                tooltip.add(Text.literal(""));
+                tooltip.add(Text.literal("[" + tc.toDisplayString() + "]").formatted(Formatting.DARK_GRAY));
+            }
             context.drawTooltip(textRenderer, tooltip, mouseX, mouseY);
         }
     }

@@ -727,7 +727,9 @@ public class DatabaseScreen extends Screen {
                 && currentView != null) {
             LocatedPosition pos = currentView.getPositionAt(hoveredKvIdx);
             if (pos != null) {
-                XaeroWaypointHelper.tryCreateWaypoint(pos);
+                ChunkScannerConfig cfg = ChunkScannerMod.CONFIG;
+                XaeroWaypointHelper.tryCreateWaypoint(pos,
+                        cfg.waypointName, cfg.waypointInitials, cfg.waypointGroup);
                 return true;
             }
         }
