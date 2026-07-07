@@ -18,6 +18,10 @@ import java.util.List;
  * 如果 Xaero 未安装，则回退到聊天消息显示坐标。</p>
  *
  * <p>路径点命名：名称 "选中的坐标点"，缩写/符号 "目标"。</p>
+ *
+ * <p>API 校验来源：XaeroPlus WaypointAPI，正确的调用链为：
+ * BuiltInHudModules.MINIMAP.getCurrentSession().getWorldManager()
+ *   .getCurrentWorld().getCurrentWaypointSet()</p>
  */
 public final class XaeroWaypointHelper {
 
@@ -27,25 +31,45 @@ public final class XaeroWaypointHelper {
     private static final String WAYPOINT_SYMBOL = "目标";
     private static final int WAYPOINT_COLOR = 0xFF55FFFF; // 青色
 
+    // ==================== 缓存反射句柄 ====================
+
     private static volatile Boolean minimapAvailable;
     private static volatile Constructor<?> waypointConstructor;
     private static volatile Method getCurrentSession;
-    private static volatile Method getWaypointsManager;
-    private static volatile Method getCurrentContainer;
-    private static volatile Method containerGetList;
+    private static volatile Method getWorldManager;
+    private static volatile Method getCurrentWorld;
+    private static volatile Method getCurrentWaypointSet;
+    private static volatile Field waypointSetListField;
 
     private XaeroWaypointHelper() {}
 
     /**
+     * 检查 Xaero Minimap 是否已加载（用于决定 UI 提示文本）。
+     * 只做轻量的类存在性检查，不初始化完整反射链。
+     */
+    public static boolean isAvailable() {
+        Boolean cached = minimapAvailable;
+        if (cached != null) return cached;
+        try {
+            Class.forName("xaero.common.minimap.waypoints.Waypoint");
+            Class.forName("xaero.hud.minimap.BuiltInHudModules");
+            minimapAvailable = true;
+            return true;
+        } catch (ClassNotFoundException e) {
+            minimapAvailable = false;
+            return false;
+        }
+    }
+
+    /**
      * 尝试创建 Xaero 路径点。
      *
-     * @return true 表示成功创建（或至少 Xaero 可用且尝试创建），false 表示 Xaero 不可用
+     * @return true 表示成功创建，false 表示 Xaero 不可用（回退聊天消息）
      */
     public static boolean tryCreateWaypoint(LocatedPosition pos) {
         if (pos == null) return false;
 
-        if (tryViaMinimap(pos)) return true;
-        if (tryViaWorldmap(pos)) return true;
+        if (tryCreateViaMinimap(pos)) return true;
 
         // Xaero 不可用，发送聊天消息
         MinecraftClient client = MinecraftClient.getInstance();
@@ -59,176 +83,188 @@ public final class XaeroWaypointHelper {
         return false;
     }
 
-    // ==================== Minimap 集成 ====================
+    // ==================== Minimap 集成（主路径） ====================
 
-    private static boolean tryViaMinimap(LocatedPosition pos) {
+    /** 通过 Xaero Minimap 创建路径点（参考 XaeroPlus WaypointAPI）。 */
+    private static boolean tryCreateViaMinimap(LocatedPosition pos) {
         try {
             if (!initMinimapReflection()) return false;
 
-            // BuiltInHudModules.MINIMAP.getCurrentSession()
+            // BuiltInHudModules.MINIMAP.getCurrentSession() → MinimapSession
             Object session = getCurrentSession.invoke(getMinimapModule());
-            if (session == null) return false;
-
-            // session.getWaypointsManager()
-            Object wpManager = getWaypointsManager.invoke(session);
-            if (wpManager == null) return false;
-
-            // manager.getCurrentContainer()
-            Object container = getCurrentContainer.invoke(wpManager);
-            if (container == null) {
-                // 尝试备用路径：直接访问 session 的 worlds
-                return tryMinimapViaWorlds(session, pos);
-            }
-
-            // container.getList()
-            @SuppressWarnings("unchecked")
-            List<Object> list = (List<Object>) containerGetList.invoke(container);
-            if (list == null) return false;
-
-            Object wp = createWaypoint(pos);
-            if (wp == null) return false;
-
-            list.add(wp);
-            sendSuccessMessage(pos);
-            return true;
-        } catch (Exception e) {
-            LOGGER.debug("Minimap waypoint creation failed: {}", e.getMessage());
-            return false;
-        }
-    }
-
-    /** 备用路径：通过 session.getWorlds() 或 getCurrentWorld() 获取 waypoint 集。 */
-    private static boolean tryMinimapViaWorlds(Object session, LocatedPosition pos) {
-        try {
-            // session.getWorld(name)
-            Method getWorld = session.getClass().getMethod("getWorld", String.class);
-            Object world = getWorld.invoke(session, pos.dimensionId());
-            if (world == null) {
-                // 尝试 getCurrentWorld()
-                Method getCurrentWorld = session.getClass().getMethod("getCurrentWorld");
-                world = getCurrentWorld.invoke(session);
-            }
-            if (world == null) return false;
-
-            // world.getWaypoints()
-            Method getWaypoints = world.getClass().getMethod("getWaypoints");
-            Object waypointSet = getWaypoints.invoke(world);
-            if (waypointSet == null) return false;
-
-            // waypointSet.getList()
-            @SuppressWarnings("unchecked")
-            List<Object> list = (List<Object>) waypointSet.getClass()
-                    .getMethod("getList").invoke(waypointSet);
-            if (list == null) return false;
-
-            Object wp = createWaypoint(pos);
-            if (wp == null) return false;
-
-            list.add(wp);
-            sendSuccessMessage(pos);
-            return true;
-        } catch (Exception e) {
-            LOGGER.debug("Minimap fallback waypoint creation failed: {}", e.getMessage());
-            return false;
-        }
-    }
-
-    // ==================== WorldMap 集成 ====================
-
-    private static boolean tryViaWorldmap(LocatedPosition pos) {
-        try {
-            // xaero.map.WorldMap 或 xaero.map.gui.GuiMap
-            Class<?> worldMapClass = Class.forName("xaero.map.WorldMap");
-            if (worldMapClass == null) return false;
-
-            // WorldMap.getCurrentSession() 类似
-            Method getSession = worldMapClass.getMethod("getCurrentSession");
-            Object session = getSession.invoke(null);
             if (session == null) {
-                // 尝试 getSettings() → waypoints
-                Method getSettings = worldMapClass.getMethod("getSettings");
-                Object settings = getSettings.invoke(null);
-                if (settings != null) {
-                    return tryWorldmapViaSettings(settings, pos);
-                }
+                LOGGER.debug("getCurrentSession() returned null");
                 return false;
             }
 
-            // 类似 minimap 的路径
-            return tryMinimapViaWorlds(session, pos);
-        } catch (Exception e) {
-            LOGGER.debug("WorldMap waypoint creation failed: {}", e.getMessage());
-            return false;
-        }
-    }
-
-    private static boolean tryWorldmapViaSettings(Object settings, LocatedPosition pos) {
-        try {
-            // 尝试通过 WorldMap 的 waypoints 数据添加
-            // 不同的 WorldMap 版本 API 差异较大，做保守尝试
-            Method getMapProcessor = settings.getClass().getMethod("getMapProcessor");
-            Object processor = getMapProcessor.invoke(settings);
-            if (processor == null) return false;
-
-            Method getCurrentWorld = processor.getClass().getMethod("getCurrentWorld");
-            Object world = getCurrentWorld.invoke(processor);
-            if (world == null) return false;
-
-            Method getWaypoints = world.getClass().getMethod("getWaypoints");
-            Object waypointSet = getWaypoints.invoke(world);
-            if (waypointSet == null) return false;
-
-            @SuppressWarnings("unchecked")
-            List<Object> list = (List<Object>) waypointSet.getClass()
-                    .getMethod("getList").invoke(waypointSet);
-            if (list == null) return false;
+            MinimapRefs refs = resolveWaypointList(session, pos);
+            if (refs == null) return false;
 
             Object wp = createWaypoint(pos);
             if (wp == null) return false;
 
-            list.add(wp);
+            refs.waypointList().add(wp);
             sendSuccessMessage(pos);
             return true;
         } catch (Exception e) {
-            LOGGER.debug("WorldMap settings waypoint creation failed: {}", e.getMessage());
+            LOGGER.info("Minimap waypoint creation failed: {}", e.toString());
             return false;
+        }
+    }
+
+    /**
+     * 从 MinimapSession 出发，解析到 Waypoint 列表。
+     * 参考 XaeroPlus：session.getWorldManager().getCurrentWorld().getCurrentWaypointSet()
+     */
+    private static MinimapRefs resolveWaypointList(Object session, LocatedPosition pos) {
+        try {
+            // session.getWorldManager() → WorldManager
+            Object worldManager = getWorldManager.invoke(session);
+            if (worldManager == null) {
+                LOGGER.debug("getWorldManager() returned null");
+                // 备用策略：尝试 getWaypointsManager（旧版 API 名称）
+                return resolveViaLegacyApi(session, pos);
+            }
+
+            // worldManager.getCurrentWorld() → MinimapWorld
+            Object world = getCurrentWorld.invoke(worldManager);
+            if (world == null) {
+                LOGGER.debug("getCurrentWorld() returned null");
+                return null;
+            }
+
+            // world.getCurrentWaypointSet() → WaypointSet
+            Object waypointSet = getCurrentWaypointSet.invoke(world);
+            if (waypointSet == null) {
+                LOGGER.debug("getCurrentWaypointSet() returned null");
+                // 备用：尝试 getWaypointSet(String name) 用 "gui.waypoints" 作为默认 set 名
+                return resolveFallbackWaypointSet(world, pos);
+            }
+
+            List<?> list = accessWaypointSetList(waypointSet);
+            if (list == null) return null;
+
+            return new MinimapRefs(list);
+        } catch (Exception e) {
+            LOGGER.debug("resolveWaypointList failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /** 旧版 API 备用路径：getWaypointsManager().getCurrentContainer().getList() */
+    private static MinimapRefs resolveViaLegacyApi(Object session, LocatedPosition pos) {
+        try {
+            Method gwm = session.getClass().getMethod("getWaypointsManager");
+            Object wpManager = gwm.invoke(session);
+            if (wpManager == null) return null;
+
+            Method gcc = wpManager.getClass().getMethod("getCurrentContainer");
+            Object container = gcc.invoke(wpManager);
+            if (container == null) return null;
+
+            @SuppressWarnings("rawtypes")
+            List list = (List) container.getClass().getMethod("getList").invoke(container);
+            return new MinimapRefs(list);
+        } catch (Exception e) {
+            LOGGER.debug("Legacy API fallback also failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /** 备用：通过 world.getWaypointSet("gui.waypoints") 获取路径点集。 */
+    private static MinimapRefs resolveFallbackWaypointSet(Object world, LocatedPosition pos) {
+        try {
+            Method getWaypointSet = world.getClass().getMethod("getWaypointSet", String.class);
+            Object waypointSet = getWaypointSet.invoke(world, "gui.waypoints");
+            if (waypointSet == null) {
+                // 尝试不带参数的另一途径
+                Method getWaypoints = world.getClass().getMethod("getWaypoints");
+                waypointSet = getWaypoints.invoke(world);
+            }
+            if (waypointSet == null) return null;
+
+            List<?> list = accessWaypointSetList(waypointSet);
+            if (list == null) return null;
+
+            return new MinimapRefs(list);
+        } catch (Exception e) {
+            LOGGER.debug("Fallback WaypointSet resolution failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /** 通过反射访问 WaypointSet 的私有 list 字段（XaeroPlus 通过 AccessorWaypointSet mixin 实现）。 */
+    @SuppressWarnings("rawtypes")
+    private static List accessWaypointSetList(Object waypointSet) {
+        try {
+            if (waypointSetListField == null) {
+                // 尝试常见的字段名
+                Class<?> wsClass = waypointSet.getClass();
+                for (String fieldName : new String[]{"list", "waypoints", "waypointList"}) {
+                    try {
+                        waypointSetListField = wsClass.getDeclaredField(fieldName);
+                        break;
+                    } catch (NoSuchFieldException ignored) {}
+                }
+                if (waypointSetListField == null) {
+                    // 所有已知字段名都失败，尝试任何 List 类型的字段
+                    for (Field f : wsClass.getDeclaredFields()) {
+                        if (List.class.isAssignableFrom(f.getType())) {
+                            waypointSetListField = f;
+                            break;
+                        }
+                    }
+                }
+                if (waypointSetListField == null) {
+                    LOGGER.debug("Could not find List field in WaypointSet");
+                    return null;
+                }
+                waypointSetListField.setAccessible(true);
+            }
+            return (List) waypointSetListField.get(waypointSet);
+        } catch (Exception e) {
+            LOGGER.debug("Failed to access WaypointSet list: {}", e.getMessage());
+            return null;
         }
     }
 
     // ==================== 反射初始化 ====================
 
     private static boolean initMinimapReflection() {
-        if (minimapAvailable != null) return minimapAvailable;
+        if (minimapAvailable != null && minimapAvailable) return true;
         try {
+            // 1. Waypoint 类及构造函数
             Class<?> waypointClass = Class.forName("xaero.common.minimap.waypoints.Waypoint");
-            // Waypoint(int x, int y, int z, String name, String symbol, int color)
             try {
                 waypointConstructor = waypointClass.getConstructor(
                         int.class, int.class, int.class, String.class, String.class, int.class);
             } catch (NoSuchMethodException e) {
-                // 尝试 4 参数的版本
                 waypointConstructor = waypointClass.getConstructor(
                         int.class, int.class, int.class, String.class, String.class);
             }
 
+            // 2. BuiltInHudModules.MINIMAP 及其 getCurrentSession()
             Class<?> hudModulesClass = Class.forName("xaero.hud.minimap.BuiltInHudModules");
             Field minimapField = hudModulesClass.getField("MINIMAP");
             Object minimap = minimapField.get(null);
             Class<?> hudModuleClass = minimap.getClass();
             getCurrentSession = hudModuleClass.getMethod("getCurrentSession");
 
+            // 3. MinimapSession → getWorldManager()（正确 API）
             Class<?> sessionClass = getCurrentSession.getReturnType();
-            // try getWaypointsManager first
+            getWorldManager = sessionClass.getMethod("getWorldManager");
+
+            // 4. WorldManager → getCurrentWorld()
+            Class<?> worldManagerClass = getWorldManager.getReturnType();
+            getCurrentWorld = worldManagerClass.getMethod("getCurrentWorld");
+
+            // 5. MinimapWorld → getCurrentWaypointSet()
+            Class<?> minimapWorldClass = getCurrentWorld.getReturnType();
             try {
-                getWaypointsManager = sessionClass.getMethod("getWaypointsManager");
-                Class<?> wpManagerClass = getWaypointsManager.getReturnType();
-                getCurrentContainer = wpManagerClass.getMethod("getCurrentContainer");
-                containerGetList = getCurrentContainer.getReturnType().getMethod("getList");
+                getCurrentWaypointSet = minimapWorldClass.getMethod("getCurrentWaypointSet");
             } catch (NoSuchMethodException e) {
-                // fallback: getWorld() + getWaypoints() path, handled in tryMinimapViaWorlds
-                getWaypointsManager = null;
-                getCurrentContainer = null;
-                containerGetList = null;
+                // 备用：getWaypointSet(String)
+                getCurrentWaypointSet = minimapWorldClass.getMethod("getWaypointSet", String.class);
             }
 
             minimapAvailable = true;
@@ -236,7 +272,7 @@ public final class XaeroWaypointHelper {
             return true;
         } catch (Exception e) {
             minimapAvailable = false;
-            LOGGER.debug("Xaero's Minimap not available: {}", e.getMessage());
+            LOGGER.info("Xaero's Minimap not available: {}", e.getMessage());
             return false;
         }
     }
@@ -250,16 +286,7 @@ public final class XaeroWaypointHelper {
     /** 通过反射创建 Waypoint 实例。 */
     private static Object createWaypoint(LocatedPosition pos) {
         try {
-            if (waypointConstructor == null && !initMinimapReflection()) {
-                // 尝试 WorldMap 的 Waypoint 类
-                try {
-                    Class<?> wmWaypoint = Class.forName("xaero.map.waypoint.Waypoint");
-                    waypointConstructor = wmWaypoint.getConstructor(
-                            int.class, int.class, int.class, String.class, String.class, int.class);
-                } catch (Exception e2) {
-                    return null;
-                }
-            }
+            if (waypointConstructor == null && !initMinimapReflection()) return null;
             if (waypointConstructor == null) return null;
 
             if (waypointConstructor.getParameterCount() == 6) {
@@ -270,7 +297,7 @@ public final class XaeroWaypointHelper {
                         pos.x(), pos.y(), pos.z(), WAYPOINT_NAME, WAYPOINT_SYMBOL);
             }
         } catch (Exception e) {
-            LOGGER.debug("Failed to create Waypoint object: {}", e.getMessage());
+            LOGGER.debug("Failed to create Waypoint: {}", e.getMessage());
             return null;
         }
     }
@@ -286,4 +313,8 @@ public final class XaeroWaypointHelper {
                     false);
         }
     }
+
+    /** 解析结果：Waypoint 列表引用。 */
+    @SuppressWarnings("rawtypes")
+    private record MinimapRefs(List waypointList) {}
 }

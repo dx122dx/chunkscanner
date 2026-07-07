@@ -445,12 +445,15 @@ public class DatabaseScreen extends Screen {
                     mouseX, mouseY);
         }
 
-        // KV 视图悬停 — 委托渲染器生成 tooltip
+        // KV 视图悬停 — 位置列 tooltip
         if (showingKvView && hoveredKvIdx >= 0 && hoveredKvCol >= 0
                 && pageRenderer instanceof KvPageRenderer.Specialized spec) {
             if (spec.isPositionColumn(hoveredKvCol)) {
+                String tip = XaeroWaypointHelper.isAvailable()
+                        ? "点击创建 Xaero 路径点"
+                        : "点击打印坐标到聊天框";
                 context.drawTooltip(textRenderer,
-                        Text.literal("点击创建 Xaero 路径点").formatted(Formatting.AQUA),
+                        Text.literal(tip).formatted(Formatting.AQUA),
                         mouseX, mouseY);
             }
         }
