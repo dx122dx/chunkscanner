@@ -39,9 +39,6 @@ import net.minecraft.world.chunk.WorldChunk;
  * - totalXXX/foundChunks/errorChunks：AtomicInteger 或 ConcurrentHashMap.keySet
  */
 public class ScanSession {
-    /**
-     *
-     */
     private final ChunkScanner chunkScanner;
     public final String scanId;
     public final ChunkAnalyzer analyzer;

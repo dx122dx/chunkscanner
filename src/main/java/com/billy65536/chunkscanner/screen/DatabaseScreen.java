@@ -25,6 +25,7 @@ import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 import com.billy65536.chunkscanner.components.db.DbFileUtil;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
+import com.billy65536.chunkscanner.config.TaskConfig;
 import com.billy65536.chunkscanner.core.ChunkAnalyzer;
 import com.billy65536.chunkscanner.core.ChunkDb;
 import com.billy65536.chunkscanner.core.ChunkScanner;
@@ -869,7 +870,11 @@ public class DatabaseScreen extends Screen {
         if (analyzer == null) return;
 
         BinaryChunkDb existingDb = new BinaryChunkDb(meta.scanId(), meta.analyzerName());
-        scanner.startWithDb(client, meta.scanId(), meta.analyzerName(), existingDb);
+        TaskConfig storedConfig = existingDb.getTaskConfig();
+        if (storedConfig != null) {
+            ChunkScannerMod.LOGGER.info("Restored TaskConfig from DB for '{}': {}", meta.scanId(), storedConfig.toDisplayString());
+        }
+        scanner.startWithDb(client, meta.scanId(), meta.analyzerName(), storedConfig, existingDb);
     }
 
     private void deleteDbFile(DbFileUtil.FileMeta meta) {

@@ -3,7 +3,7 @@
     "id": "chunkscanner",
     "version": "${version}",
     "name": "Chunk Scanner",
-    "description": "Client-side mod that progressively scans chunks while you move. Extensible via ChunkAnalyzer API. Use /chunkscanner start [id] | stop | status | reload.",
+    "description": "Client-side progressive chunk scanner. Asynchronously scans loaded chunks with extensible analyzers (Sign, QShop). Features: multi-task parallel scanning, dual-axis GUI database browser with specialized views, adaptive rate control, context-aware storage, Xaero waypoint integration, Cloth Config support. Use /cs task begin <analyzer> [id] | /cs help.",
     "authors": ["billy65536"],
     "contact": {},
     "license": "MIT",
@@ -14,7 +14,7 @@
             "com.billy65536.chunkscanner.ChunkScannerMod"
         ],
         "modmenu": [
-            "com.billy65536.chunkscanner.ModMenuIntegration"
+            "com.billy65536.chunkscanner.integration.ModMenuIntegration"
         ]
     },
     "depends": {
