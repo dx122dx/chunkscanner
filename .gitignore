@@ -25,6 +25,7 @@ logs/
 *.log
 
 # Local
-mods/
-*_export.txt
-move.ps1
+local/
+
+# Binaries
+bin/

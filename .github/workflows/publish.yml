@@ -1,16 +1,15 @@
-name: Build Mod
+name: Publish Mod
 
 on:
   push:
-    branches: [ "dev" ]
-  pull_request:
-    branches: [ "dev" ]
+    tags:
+      - 'v*.*.*'
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
 
     steps:
     - uses: actions/checkout@v4
@@ -27,9 +26,6 @@ jobs:
     - name: Make gradlew executable
       run: chmod +x ./gradlew
 
-    - name: Remove Windows-specific SSL settings
-      run: sed -i '/Windows-ROOT/d' gradle.properties
-
     - name: Build with Gradle
       run: ./gradlew build --no-daemon
 
@@ -39,3 +35,15 @@ jobs:
         name: chunkscanner-artifacts
         path: build/libs/
         retention-days: 30
+
+    - name: Publish to Platforms
+      uses: Kir-Antipov/mc-publish@v3.1
+      with:
+        # Modrinth 配置
+        modrinth-id: dx122dx
+        modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+
+        # GitHub Release 配置
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+
+        files: build/libs/!(*-sources).jar
