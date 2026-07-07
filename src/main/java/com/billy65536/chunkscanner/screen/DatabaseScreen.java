@@ -1,16 +1,4 @@
-package com.billy65536.chunkscanner;
-
-import com.billy65536.chunkscanner.gui.GuiUtil;
-import com.billy65536.chunkscanner.gui.KvPageRenderer;
-import com.billy65536.chunkscanner.gui.ScrollManager;
-import com.billy65536.chunkscanner.gui.ScrollableListPanel;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.ConfirmScreen;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+package com.billy65536.chunkscanner.screen;
 
 import java.awt.Desktop;
 import java.io.IOException;
@@ -20,6 +8,29 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.screen.ConfirmScreen;
+import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
+
+import com.billy65536.chunkscanner.ChunkScannerMod;
+import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
+import com.billy65536.chunkscanner.components.db.DbFileUtil;
+import com.billy65536.chunkscanner.config.ChunkScannerConfig;
+import com.billy65536.chunkscanner.core.ChunkAnalyzer;
+import com.billy65536.chunkscanner.core.ChunkDb;
+import com.billy65536.chunkscanner.core.ChunkScanner;
+import com.billy65536.chunkscanner.core.DbViewProvider;
+import com.billy65536.chunkscanner.core.LocatedPosition;
+import com.billy65536.chunkscanner.gui.GuiUtil;
+import com.billy65536.chunkscanner.gui.KvPageRenderer;
+import com.billy65536.chunkscanner.gui.ScrollManager;
+import com.billy65536.chunkscanner.gui.ScrollableListPanel;
+import com.billy65536.chunkscanner.integration.XaeroWaypointHelper;
 
 /**
  * 数据库浏览器 GUI。

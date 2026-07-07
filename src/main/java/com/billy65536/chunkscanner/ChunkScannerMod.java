@@ -1,5 +1,19 @@
 package com.billy65536.chunkscanner;
 
+import com.billy65536.chunkscanner.components.analyzer.QShopAnalyzer;
+import com.billy65536.chunkscanner.components.analyzer.SignAnalyzer;
+import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
+import com.billy65536.chunkscanner.components.db.DbFileUtil;
+import com.billy65536.chunkscanner.components.view_provider.QShopDbViewProvider;
+import com.billy65536.chunkscanner.components.view_provider.SignDbViewProvider;
+import com.billy65536.chunkscanner.config.ChunkScannerConfig;
+import com.billy65536.chunkscanner.config.ConfigLoader;
+import com.billy65536.chunkscanner.config.TaskConfig;
+import com.billy65536.chunkscanner.core.ChunkAnalyzer;
+import com.billy65536.chunkscanner.core.ChunkScanner;
+import com.billy65536.chunkscanner.core.DbViewProvider;
+import com.billy65536.chunkscanner.screen.ChunkScannerScreen;
+import com.billy65536.chunkscanner.screen.DatabaseScreen;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.fabricmc.api.ClientModInitializer;
@@ -73,6 +87,8 @@ public class ChunkScannerMod implements ClientModInitializer {
         // 加载全局配置（优先 Cloth Config，fallback 到 JSON 文件）
         ConfigLoader.load(CONFIG);
         scanner = new ChunkScanner(CONFIG);
+        scanner.registerAnalyzer(new SignAnalyzer());
+        scanner.registerAnalyzer(new QShopAnalyzer());
 
         // 注册 DbViewProvider 类型（提供数据库浏览的不同视图）
         DbViewProvider.Registry.register(new BinaryChunkDb.DbViewProviderType());

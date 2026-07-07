@@ -1,10 +1,13 @@
-package com.billy65536.chunkscanner;
+package com.billy65536.chunkscanner.core;
 
 import net.minecraft.client.gui.screen.Screen;
 
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
+
+import com.billy65536.chunkscanner.ChunkScannerMod;
+import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 
 /**
  * 数据库展示提供者接口。

@@ -1,4 +1,4 @@
-package com.billy65536.chunkscanner;
+package com.billy65536.chunkscanner.integration;
 
 import com.terraformersmc.modmenu.api.ConfigScreenFactory;
 import com.terraformersmc.modmenu.api.ModMenuApi;

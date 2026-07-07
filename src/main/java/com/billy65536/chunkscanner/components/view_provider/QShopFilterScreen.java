@@ -1,4 +1,4 @@
-package com.billy65536.chunkscanner;
+package com.billy65536.chunkscanner.components.view_provider;
 
 import com.billy65536.chunkscanner.gui.PlaceholderTextField;
 import net.minecraft.client.MinecraftClient;

@@ -1,6 +1,5 @@
 package com.billy65536.chunkscanner.gui;
 
-import com.billy65536.chunkscanner.ChunkDb;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.text.Text;
@@ -8,6 +7,8 @@ import net.minecraft.util.Formatting;
 
 import java.util.ArrayList;
 import java.util.List;
+
+import com.billy65536.chunkscanner.core.ChunkDb;
 
 /**
  * 数据库内页渲染器抽象 —— 将原始 KV 视图与特化视图解耦。

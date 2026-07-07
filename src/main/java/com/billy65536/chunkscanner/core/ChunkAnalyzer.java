@@ -1,4 +1,4 @@
-package com.billy65536.chunkscanner;
+package com.billy65536.chunkscanner.core;
 
 import net.minecraft.text.Text;
 import net.minecraft.world.World;

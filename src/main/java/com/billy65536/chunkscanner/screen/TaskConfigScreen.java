@@ -1,5 +1,10 @@
-package com.billy65536.chunkscanner;
+package com.billy65536.chunkscanner.screen;
 
+import com.billy65536.chunkscanner.ChunkScannerMod;
+import com.billy65536.chunkscanner.config.ChunkScannerConfig;
+import com.billy65536.chunkscanner.config.TaskConfig;
+import com.billy65536.chunkscanner.core.ChunkAnalyzer;
+import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.gui.PlaceholderTextField;
 import com.billy65536.chunkscanner.gui.ScrollManager;
 import net.minecraft.client.MinecraftClient;

@@ -1,4 +1,4 @@
-package com.billy65536.chunkscanner;
+package com.billy65536.chunkscanner.components.view_provider;
 
 import com.billy65536.chunkscanner.gui.GuiUtil;
 import net.minecraft.text.Text;
@@ -10,6 +10,12 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+
+import com.billy65536.chunkscanner.ChunkScannerMod;
+import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
+import com.billy65536.chunkscanner.core.ChunkDb;
+import com.billy65536.chunkscanner.core.DbViewProvider;
+import com.billy65536.chunkscanner.core.LocatedPosition;
 
 /**
  * Sign 分析器特化的 DbViewProvider。

@@ -1,4 +1,4 @@
-package com.billy65536.chunkscanner;
+package com.billy65536.chunkscanner.components.db;
 
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
@@ -17,7 +17,11 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.billy65536.chunkscanner.ChunkScannerMod;
+import com.billy65536.chunkscanner.core.ChunkDb;
+import com.billy65536.chunkscanner.core.DbViewProvider;
 import com.billy65536.chunkscanner.gui.GuiUtil;
+import com.billy65536.chunkscanner.config.TaskConfig;
 
 /**
  * 紧凑二进制 ChunkDb 实现，同时实现 DbViewProvider 用于 GUI 展示。

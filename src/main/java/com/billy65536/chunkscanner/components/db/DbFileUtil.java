@@ -1,4 +1,4 @@
-package com.billy65536.chunkscanner;
+package com.billy65536.chunkscanner.components.db;
 
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
@@ -13,6 +13,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
+
+import com.billy65536.chunkscanner.ChunkScannerMod;
 
 /**
  * DB 文件工具类 —— 统一所有二进制文件元数据读取和文件操作。

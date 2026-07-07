@@ -1,4 +1,4 @@
-package com.billy65536.chunkscanner;
+package com.billy65536.chunkscanner.config;
 
 /**
  * 配置文件数据模型。

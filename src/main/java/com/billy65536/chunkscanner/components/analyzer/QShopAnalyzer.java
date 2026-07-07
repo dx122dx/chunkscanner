@@ -1,4 +1,4 @@
-package com.billy65536.chunkscanner;
+package com.billy65536.chunkscanner.components.analyzer;
 
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.block.entity.SignBlockEntity;
@@ -17,6 +17,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import com.billy65536.chunkscanner.core.AnalyzeResult;
+import com.billy65536.chunkscanner.core.ChunkAnalyzer;
+import com.billy65536.chunkscanner.core.ChunkDb;
 
 /**
  * QShop 商店分析器：扫描贴在容器上的特化告示牌，识别 QShop 格式商店。
@@ -58,7 +62,7 @@ public class QShopAnalyzer implements ChunkAnalyzer {
     private static final Pattern PRICE_PATTERN = Pattern.compile("单价[：:]\\s*(.+)");
 
     /** quantity 的最大值 (24-bit)，用作"无限"的哨兵值 */
-    static final int INFINITE_QUANTITY = 0xFFFFFF;
+    public static final int INFINITE_QUANTITY = 0xFFFFFF;
 
     public static final byte MODE_SELL = 0;
     public static final byte MODE_BUY  = 1;

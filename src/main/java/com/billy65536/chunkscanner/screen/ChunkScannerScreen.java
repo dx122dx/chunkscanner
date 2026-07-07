@@ -1,5 +1,10 @@
-package com.billy65536.chunkscanner;
+package com.billy65536.chunkscanner.screen;
 
+import com.billy65536.chunkscanner.ChunkScannerMod;
+import com.billy65536.chunkscanner.config.TaskConfig;
+import com.billy65536.chunkscanner.core.ChunkAnalyzer;
+import com.billy65536.chunkscanner.core.ChunkScanner;
+import com.billy65536.chunkscanner.core.ScanSession;
 import com.billy65536.chunkscanner.gui.GuiUtil;
 import com.billy65536.chunkscanner.gui.PlaceholderTextField;
 import com.billy65536.chunkscanner.gui.ScrollableListPanel;
@@ -215,8 +220,8 @@ public class ChunkScannerScreen extends Screen {
         context.drawHorizontalLine(leftX, leftX + WIDTH, sepY, 0xFF555555);
 
         // 渲染活跃任务列表
-        Collection<ChunkScanner.ScanSession> sessions = scanner.getActiveSessions();
-        List<ChunkScanner.ScanSession> list = new ArrayList<>(sessions);
+        Collection<ScanSession> sessions = scanner.getActiveSessions();
+        List<ScanSession> list = new ArrayList<>(sessions);
 
         // 列表区域
         int listTop = sepY + 4;
@@ -232,7 +237,7 @@ public class ChunkScannerScreen extends Screen {
             for (int i = 0; i < maxVisible; i++) {
                 int idx = sessionPanel.getOffset() + i;
                 if (idx >= list.size()) break;
-                ChunkScanner.ScanSession s = list.get(idx);
+                ScanSession s = list.get(idx);
                 int y = listTop + i * LIST_ITEM_HEIGHT;
                 renderSessionRow(context, s, idx, y, centerX, leftX, mouseX, mouseY);
             }
@@ -253,7 +258,7 @@ public class ChunkScannerScreen extends Screen {
 
         // 会话行悬停 tooltip — 显示完整统计
         if (hoveredSessionIdx >= 0 && hoveredSessionIdx < list.size()) {
-            ChunkScanner.ScanSession s = list.get(hoveredSessionIdx);
+            ScanSession s = list.get(hoveredSessionIdx);
             MinecraftClient client = MinecraftClient.getInstance();
             ChunkScanner.ChunkStatusBreakdown bd = s.getStatusBreakdown(client);
             List<Text> tooltip = new ArrayList<>();
@@ -280,10 +285,10 @@ public class ChunkScannerScreen extends Screen {
             int dbSize = s.db != null ? s.db.size() : 0;
             Text dbRateText;
             if (s.paused) {
-                dbRateText = Text.translatable("chunkscanner.tooltip.session.db_rate_paused", dbSize, s.tasksPerTick)
+                dbRateText = Text.translatable("chunkscanner.tooltip.session.db_rate_paused", dbSize, s.getTasksPerTick())
                         .formatted(Formatting.GRAY);
             } else {
-                dbRateText = Text.translatable("chunkscanner.tooltip.session.db_rate", dbSize, s.tasksPerTick)
+                dbRateText = Text.translatable("chunkscanner.tooltip.session.db_rate", dbSize, s.getTasksPerTick())
                         .formatted(Formatting.GRAY);
             }
             tooltip.add(dbRateText);
@@ -313,7 +318,7 @@ public class ChunkScannerScreen extends Screen {
      *   黄色  = 有发现+错误（foundError）
      *   灰色  = 未分配段 / 无数据
      */
-    private void renderSessionRow(DrawContext context, ChunkScanner.ScanSession s, int listIdx,
+    private void renderSessionRow(DrawContext context, ScanSession s, int listIdx,
                                    int y, int centerX, int leftX, int mouseX, int mouseY) {
         int x = leftX + 4;
 
@@ -424,7 +429,7 @@ public class ChunkScannerScreen extends Screen {
             int centerX = this.width / 2;
             int leftX = centerX - WIDTH / 2;
 
-            List<ChunkScanner.ScanSession> list = new ArrayList<>(scanner.getActiveSessions());
+            List<ScanSession> list = new ArrayList<>(scanner.getActiveSessions());
 
             // 滚动条交互
             if (sessionPanel.handleClick(mouseX, mouseY, list.size())) {
@@ -437,7 +442,7 @@ public class ChunkScannerScreen extends Screen {
             for (int i = 0; i < maxVisible; i++) {
                 int idx = sessionPanel.getOffset() + i;
                 if (idx >= list.size()) break;
-                ChunkScanner.ScanSession s = list.get(idx);
+                ScanSession s = list.get(idx);
                 int y = listTop + i * LIST_ITEM_HEIGHT;
                 int btnRight = leftX + SCROLLBAR_X_OFFSET - 4;
                 int leftBtnLeft = btnRight - 56;
@@ -469,7 +474,7 @@ public class ChunkScannerScreen extends Screen {
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
-        List<ChunkScanner.ScanSession> list = new ArrayList<>(scanner.getActiveSessions());
+        List<ScanSession> list = new ArrayList<>(scanner.getActiveSessions());
         if (sessionPanel.handleDrag(mouseY, list.size())) {
             return true;
         }
@@ -486,7 +491,7 @@ public class ChunkScannerScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
-        List<ChunkScanner.ScanSession> list = new ArrayList<>(scanner.getActiveSessions());
+        List<ScanSession> list = new ArrayList<>(scanner.getActiveSessions());
         sessionPanel.handleScroll(amount, list.size());
         return true;
     }

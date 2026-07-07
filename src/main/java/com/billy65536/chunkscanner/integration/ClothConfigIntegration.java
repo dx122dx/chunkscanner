@@ -1,4 +1,7 @@
-package com.billy65536.chunkscanner;
+package com.billy65536.chunkscanner.integration;
+
+import com.billy65536.chunkscanner.ChunkScannerMod;
+import com.billy65536.chunkscanner.config.ConfigLoader;
 
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.gui.screen.Screen;

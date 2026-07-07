@@ -1,8 +1,8 @@
 package com.billy65536.chunkscanner.gui;
 
-import com.billy65536.chunkscanner.ChunkAnalyzer;
-import com.billy65536.chunkscanner.ChunkScanner;
 import com.billy65536.chunkscanner.ChunkScannerMod;
+import com.billy65536.chunkscanner.core.ChunkAnalyzer;
+import com.billy65536.chunkscanner.core.ChunkScanner;
 
 /**
  * 跨 GUI 共用的工具方法。

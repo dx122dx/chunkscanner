@@ -1,5 +1,6 @@
-package com.billy65536.chunkscanner;
+package com.billy65536.chunkscanner.config;
 
+import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;

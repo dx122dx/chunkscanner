@@ -1,4 +1,4 @@
-package com.billy65536.chunkscanner;
+package com.billy65536.chunkscanner.core;
 
 /**
  * 表示游戏世界中的一个具体位置（维度 + 方块坐标）。
