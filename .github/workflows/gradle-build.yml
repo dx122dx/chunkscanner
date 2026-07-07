@@ -27,6 +27,9 @@ jobs:
     - name: Make gradlew executable
       run: chmod +x ./gradlew
 
+    - name: Remove Windows-specific SSL settings
+      run: sed -i '/Windows-ROOT/d' gradle.properties
+
     - name: Build with Gradle
       run: ./gradlew build --no-daemon
 
