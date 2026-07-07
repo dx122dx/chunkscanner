@@ -1,0 +1,30 @@
+{
+    "schemaVersion": 1,
+    "id": "chunkscanner",
+    "version": "${version}",
+    "name": "Chunk Scanner",
+    "description": "Client-side mod that progressively scans chunks while you move. Extensible via ChunkAnalyzer API. Use /chunkscanner start [id] | stop | status | reload.",
+    "authors": ["billy65536"],
+    "contact": {},
+    "license": "MIT",
+    "icon": "assets/chunkscanner/icon.png",
+    "environment": "client",
+    "entrypoints": {
+        "client": [
+            "com.billy65536.chunkscanner.ChunkScannerMod"
+        ],
+        "modmenu": [
+            "com.billy65536.chunkscanner.ModMenuIntegration"
+        ]
+    },
+    "depends": {
+        "fabricloader": ">=${loader_version}",
+        "minecraft": "~${minecraft_version}",
+        "java": ">=17",
+        "fabric-api": "*"
+    },
+    "suggests": {
+        "cloth-config": "*",
+        "modmenu": "*"
+    }
+}

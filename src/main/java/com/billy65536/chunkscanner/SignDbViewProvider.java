@@ -1,0 +1,247 @@
+package com.billy65536.chunkscanner;
+
+import com.billy65536.chunkscanner.gui.GuiUtil;
+import net.minecraft.text.Text;
+
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+
+/**
+ * Sign 分析器特化的 DbViewProvider。
+ *
+ * 解析 sign 分析器生成的二进制 KV 数据，将原始字节转换为可读的告示牌信息。
+ *
+ * 新格式键（34 字节，version 2）：
+ *   "sign:" (5B) | dimPoolId:u32 (4B) | cx:i32 (4B) | cz:i32 (4B) | side:u8 (1B) | keyHi:u64 (8B) | keyLo:u64 (8B)
+ *   side: 0=正面(Front), 1=背面(Back)
+ *
+ * 旧格式键（21 字节，version 1，兼容）：
+ *   "sign:" (5B) | keyHi:u64 (8B) | keyLo:u64 (8B)
+ *
+ * 值格式（48 字节）：
+ *   keyHi:u64 (8B) | keyLo:u64 (8B) | l1..l4:u32 each (16B) | timestamp:u64 (8B)
+ */
+public class SignDbViewProvider implements DbViewProvider {
+
+    private static final byte[] KEY_PREFIX = "sign:".getBytes(StandardCharsets.UTF_8);
+    /** 新格式键长度：prefix(5) + dimPoolId(4) + cx(4) + cz(4) + side(1) + keyHi(8) + keyLo(8) = 34 */
+    private static final int NEW_KEY_SIZE = KEY_PREFIX.length + 4 + 4 + 4 + 1 + 8 + 8;
+
+    private final BinaryChunkDb delegate;
+
+    /** 缓存解析后的告示牌记录，避免每帧重复解析。 */
+    private List<SignRecord> cachedRecords;
+    private boolean cacheValid = false;
+
+    public SignDbViewProvider(BinaryChunkDb delegate) {
+        this.delegate = delegate;
+    }
+
+    // ==================== 委托方法 ====================
+
+    @Override
+    public Path filePath() {
+        return delegate.filePath();
+    }
+
+    @Override
+    public String analyzerName() {
+        return delegate.analyzerName();
+    }
+
+    @Override
+    public String scanId() {
+        return delegate.scanId();
+    }
+
+    @Override
+    public long fileSize() {
+        return delegate.fileSize();
+    }
+
+    @Override
+    public long lastModified() {
+        return delegate.lastModified();
+    }
+
+    @Override
+    public void open() {
+        delegate.open();
+    }
+
+    @Override
+    public void close() {
+        delegate.close();
+    }
+
+    @Override
+    public boolean isOpen() {
+        return delegate.isOpen();
+    }
+
+    @Override
+    public int kvCount() {
+        return getSignRecords().size();
+    }
+
+    @Override
+    public int chunkMetaCount() {
+        return delegate.chunkMetaCount();
+    }
+
+    @Override
+    public List<ChunkDb.Entry> getAllEntries() {
+        // 特化视图不通过 Entry 展示，返回空列表
+        return List.of();
+    }
+
+    @Override
+    public List<ChunkDb.ChunkMeta> getAllChunkMetas() {
+        return delegate.getAllChunkMetas();
+    }
+
+    @Override
+    public boolean isSpecialized() {
+        return true;
+    }
+
+    @Override
+    public String[] getSpecializedHeaders() {
+        return new String[]{"Dimension", "X", "Y", "Z", "Side",
+                "Line 1", "Line 2", "Line 3", "Line 4"};
+    }
+
+    @Override
+    public List<String[]> getSpecializedRows() {
+        List<SignRecord> records = getSignRecords();
+        List<String[]> rows = new ArrayList<>(records.size());
+        for (SignRecord sr : records) {
+            rows.add(new String[] {
+                    sr.dimId(),
+                    String.valueOf(sr.x()),
+                    String.valueOf(sr.y()),
+                    String.valueOf(sr.z()),
+                    sr.side(),
+                    sr.line1(),
+                    sr.line2(),
+                    sr.line3(),
+                    sr.line4()
+            });
+        }
+        return rows;
+    }
+
+    // ==================== Sign 特化展示 ====================
+
+    /**
+     * 解析 sign KV 条目为可读格式。
+     * 结果会被缓存，数据不变时不会重复解析。
+     */
+    public List<SignRecord> getSignRecords() {
+        if (cacheValid && cachedRecords != null) {
+            return cachedRecords;
+        }
+
+        List<SignRecord> records = new ArrayList<>();
+        List<ChunkDb.Entry> entries;
+        try {
+            entries = delegate.getAllEntries();
+        } catch (Exception e) {
+            ChunkScannerMod.LOGGER.warn("SignDbViewProvider: failed to get entries: {}", e.getMessage());
+            cachedRecords = records;
+            cacheValid = true;
+            return records;
+        }
+
+        for (ChunkDb.Entry entry : entries) {
+            try {
+                byte[] key = entry.key();
+                // 检查前缀
+                if (key.length < KEY_PREFIX.length) continue;
+                if (!GuiUtil.startsWith(key, KEY_PREFIX)) continue;
+
+                byte[] val = entry.value();
+                if (val.length < 48) continue;
+
+                ByteBuffer vb = ByteBuffer.wrap(val).order(ByteOrder.LITTLE_ENDIAN);
+                long keyHi = vb.getLong();
+                long keyLo = vb.getLong();
+
+                int dimPoolId = (int) (keyHi >> 32);
+                String dimId = delegate.lookup(dimPoolId);
+                int x = (int) (keyHi & 0xFFFFFFFFL);
+                int z = (int) (keyLo >> 32);
+                int y = (int) (keyLo & 0xFFFFFFFFL);
+
+                int l1 = vb.getInt();
+                int l2 = vb.getInt();
+                int l3 = vb.getInt();
+                int l4 = vb.getInt();
+                long ts = vb.getLong();
+
+                // 根据键长度判断格式版本
+                String side;
+                if (key.length >= NEW_KEY_SIZE) {
+                    // 新格式：side 在 offset 17 处
+                    byte sideByte = key[KEY_PREFIX.length + 4 + 4 + 4]; // offset 17
+                    side = (sideByte == 1) ? "Back" : "Front";
+                } else {
+                    // 旧格式兼容：默认为正面
+                    side = "Front";
+                }
+
+                String line1 = delegate.lookup(l1);
+                String line2 = delegate.lookup(l2);
+                String line3 = delegate.lookup(l3);
+                String line4 = delegate.lookup(l4);
+
+                records.add(new SignRecord(dimId, x, y, z, side, line1, line2, line3, line4, ts));
+            } catch (Exception e) {
+                ChunkScannerMod.LOGGER.warn("SignDbViewProvider: failed to parse entry: {}", e.getMessage());
+            }
+        }
+
+        cachedRecords = records;
+        cacheValid = true;
+        return records;
+    }
+
+    public record SignRecord(String dimId, int x, int y, int z, String side,
+                              String line1, String line2, String line3, String line4,
+                              long timestamp) {}
+
+    // ==================== DbViewProvider.Type ====================
+
+    /** Sign 视图类型描述符：解析告示牌数据为可读文本。仅适用于 sign 分析器。 */
+    public static class DbViewProviderType implements DbViewProvider.Type {
+        @Override
+        public String getId() { return "sign_view"; }
+
+        @Override
+        public String getName() {
+            return Text.translatable("chunkscanner.dbview.sign.name").getString();
+        }
+
+        @Override
+        public String getDescription() {
+            return Text.translatable("chunkscanner.dbview.sign.desc").getString();
+        }
+
+        @Override
+        public Set<String> applicableAnalyzers() {
+            return Set.of("sign");
+        }
+
+        @Override
+        public DbViewProvider create(BinaryChunkDb db) {
+            // 只适用于 sign 分析器生成的数据库
+            if (!"sign".equals(db.analyzerName())) return null;
+            return new SignDbViewProvider(db);
+        }
+    }
+}
