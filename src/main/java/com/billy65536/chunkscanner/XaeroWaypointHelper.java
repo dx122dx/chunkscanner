@@ -253,6 +253,9 @@ public final class XaeroWaypointHelper {
      * 完整初始化反射句柄。
      * 注意：不使用 minimapAvailable 作为初始化完成标志，
      * 因为 isAvailable() 也会设置它（仅代表类存在）。
+     *
+     * <p>WaypointColor 和 WaypointPurpose 为可选依赖：
+     * 新版 Xaero 可能不存在这些类，此时自动降级使用无需枚举的构造函数。</p>
      */
     private static boolean initMinimapReflection() {
         // 用 waypointConstructor 作为"已完成完整初始化"的标志
@@ -260,14 +263,27 @@ public final class XaeroWaypointHelper {
         try {
             // 1. Waypoint 类及构造函数、相关枚举
             Class<?> waypointClass = Class.forName("xaero.common.minimap.waypoints.Waypoint");
-            Class<?> waypointColorClass = Class.forName("xaero.common.minimap.waypoints.WaypointColor");
-            Class<?> waypointPurposeClass = Class.forName("xaero.common.minimap.waypoints.WaypointPurpose");
 
-            // 解析颜色枚举（优先 AQUA/青色）
-            defaultWaypointColor = resolveEnumValue(waypointColorClass,
-                    "AQUA", "CYAN", "LIGHT_BLUE", "BLUE", "GREEN");
-            // 解析用途枚举 NORMAL
-            defaultWaypointPurpose = resolveEnumValue(waypointPurposeClass, "NORMAL");
+            // WaypointColor/WaypointPurpose 为可选：新版 Xaero 可能不存在这些枚举类
+            Class<?> waypointColorClass = tryLoadClass(
+                    "xaero.common.minimap.waypoints.WaypointColor",
+                    "xaero.common.minimap.waypoint.WaypointColor");
+            Class<?> waypointPurposeClass = tryLoadClass(
+                    "xaero.common.minimap.waypoints.WaypointPurpose",
+                    "xaero.common.minimap.waypoint.WaypointPurpose");
+
+            if (waypointColorClass == null && waypointPurposeClass == null) {
+                LOGGER.info("WaypointColor/WaypointPurpose not found, using basic constructors");
+            }
+
+            // 解析枚举（仅在类存在时）
+            if (waypointColorClass != null) {
+                defaultWaypointColor = resolveEnumValue(waypointColorClass,
+                        "AQUA", "CYAN", "LIGHT_BLUE", "BLUE", "GREEN");
+            }
+            if (waypointPurposeClass != null) {
+                defaultWaypointPurpose = resolveEnumValue(waypointPurposeClass, "NORMAL");
+            }
 
             // 按优先级尝试构造函数
             waypointConstructor = findBestConstructor(
@@ -277,7 +293,7 @@ public final class XaeroWaypointHelper {
                 minimapAvailable = false;
                 return false;
             }
-            LOGGER.debug("Waypoint constructor: {} params", waypointConstructor.getParameterCount());
+            LOGGER.info("Waypoint constructor: {} params", waypointConstructor.getParameterCount());
 
             // 2. BuiltInHudModules.MINIMAP 及其 getCurrentSession()
             Class<?> hudModulesClass = Class.forName("xaero.hud.minimap.BuiltInHudModules");
@@ -314,11 +330,24 @@ public final class XaeroWaypointHelper {
     }
 
     /**
+     * 尝试按顺序加载类，返回第一个成功的，全失败返回 null。
+     */
+    private static Class<?> tryLoadClass(String... names) {
+        for (String name : names) {
+            try {
+                return Class.forName(name);
+            } catch (ClassNotFoundException ignored) {}
+        }
+        return null;
+    }
+
+    /**
      * 查找枚举值，尝试多个名称，返回找到的第一个。
      * 如果全不匹配则返回该枚举的第一个常量。
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static Object resolveEnumValue(Class<?> enumClass, String... names) {
+        if (enumClass == null) return null;
         for (String name : names) {
             try {
                 return Enum.valueOf((Class) enumClass, name);
@@ -336,6 +365,7 @@ public final class XaeroWaypointHelper {
     /**
      * 按优先级查找最佳可用构造函数。
      * 优先级：9 参数完整版 > 6 参数枚举颜色版 > 6 参数 int 颜色版 > 5 参数最简版
+     * colorClass 和 purposeClass 可以为 null（当对应枚举类不存在时跳过）。
      */
     private static Constructor<?> findBestConstructor(
             Class<?> wpClass, Class<?> colorClass, Class<?> purposeClass) {
@@ -345,25 +375,29 @@ public final class XaeroWaypointHelper {
         // 优先级 1：9 参数完整版
         // (int x, int y, int z, String name, String initials,
         //  WaypointColor color, WaypointPurpose purpose, boolean temp, boolean yIncluded)
-        for (Constructor<?> c : ctors) {
-            Class<?>[] p = c.getParameterTypes();
-            if (p.length == 9
-                    && p[0] == int.class && p[1] == int.class && p[2] == int.class
-                    && p[3] == String.class && p[4] == String.class
-                    && p[5] == colorClass && p[6] == purposeClass
-                    && p[7] == boolean.class && p[8] == boolean.class) {
-                return c;
+        if (colorClass != null && purposeClass != null) {
+            for (Constructor<?> c : ctors) {
+                Class<?>[] p = c.getParameterTypes();
+                if (p.length == 9
+                        && p[0] == int.class && p[1] == int.class && p[2] == int.class
+                        && p[3] == String.class && p[4] == String.class
+                        && p[5] == colorClass && p[6] == purposeClass
+                        && p[7] == boolean.class && p[8] == boolean.class) {
+                    return c;
+                }
             }
         }
 
         // 优先级 2：6 参数 (int, int, int, String, String, WaypointColor)
-        for (Constructor<?> c : ctors) {
-            Class<?>[] p = c.getParameterTypes();
-            if (p.length == 6
-                    && p[0] == int.class && p[1] == int.class && p[2] == int.class
-                    && p[3] == String.class && p[4] == String.class
-                    && p[5] == colorClass) {
-                return c;
+        if (colorClass != null) {
+            for (Constructor<?> c : ctors) {
+                Class<?>[] p = c.getParameterTypes();
+                if (p.length == 6
+                        && p[0] == int.class && p[1] == int.class && p[2] == int.class
+                        && p[3] == String.class && p[4] == String.class
+                        && p[5] == colorClass) {
+                    return c;
+                }
             }
         }
 
