@@ -1,5 +1,6 @@
 package com.billy65536.chunkscanner;
 
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
@@ -44,18 +45,33 @@ public final class XaeroWaypointHelper {
     private XaeroWaypointHelper() {}
 
     /**
-     * 检查 Xaero Minimap 是否已加载（用于决定 UI 提示文本）。
-     * 只做轻量的类存在性检查，不初始化完整反射链。
+     * 检查 Xaero 地图 mod 是否已加载（用于决定 UI 提示文本）。
+     * 优先使用 FabricLoader.isModLoaded()（Fabric 标准方式），
+     * 回退到 Class.forName() 检查关键类。
+     *
+     * <p>支持 Xaero's Minimap (xaerominimap) 和 Xaero's World Map (xaeroworldmap)。</p>
      */
     public static boolean isAvailable() {
-        Boolean cached = minimapAvailable;
-        if (cached != null) return cached;
+        if (minimapAvailable != null) return minimapAvailable;
+
+        // 方式 1：FabricLoader.isModLoaded（最可靠）
+        boolean loaded = FabricLoader.getInstance().isModLoaded("xaerominimap")
+                || FabricLoader.getInstance().isModLoaded("xaeroworldmap");
+        if (loaded) {
+            LOGGER.info("Xaero mod detected via FabricLoader");
+            minimapAvailable = true;
+            return true;
+        }
+
+        // 方式 2：Class.forName 回退
         try {
             Class.forName("xaero.common.minimap.waypoints.Waypoint");
             Class.forName("xaero.hud.minimap.BuiltInHudModules");
+            LOGGER.info("Xaero mod detected via Class.forName (fallback)");
             minimapAvailable = true;
             return true;
         } catch (ClassNotFoundException e) {
+            LOGGER.info("Xaero mod not found");
             minimapAvailable = false;
             return false;
         }
