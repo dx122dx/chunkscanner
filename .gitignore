@@ -4,16 +4,65 @@ build/
 !gradle/wrapper/gradle-wrapper.jar
 !gradle/wrapper/gradle-wrapper.properties
 
-# IDE
+# IDE - IntelliJ IDEA
 .idea/
-.codebuddy/
 *.iml
 *.ipr
 *.iws
+out/
+
+# IDE - Eclipse
+.classpath
+.project
+.settings/
+.factorypath
+.metadata/
+
+# IDE - NetBeans
+nbproject/
+nbbuild/
+nbdist/
+nbactions.xml
+
+# IDE - Visual Studio Code
 .vscode/
+*.code-workspace
+
+# IDE - Visual Studio
+.vs/
+*.suo
+*.user
+*.sln.docstates
+*.userosscache
+*.userprefs
+
+# IDE - CodeBuddy
+.codebuddy/
+
+# Editors - Vim
 *.swp
 *.swo
 *~
+
+# Editors - Emacs
+\#*\#
+.\#*
+*#
+*.elc
+
+# Editors - Sublime Text / TextMate
+*.sublime-project
+*.sublime-workspace
+*.tm_properties
+
+# Editors - Atom / Pulsar
+.atom/
+
+# Editors - Kate
+*.kate-swp
+
+# Editors - Brackets
+.brackets.json
 
 # OS
 .DS_Store
