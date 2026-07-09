@@ -66,7 +66,7 @@ public final class DbFileUtil {
 
             String analyzerName = "";
             if (version >= 2) {
-                if (buf.remaining() < 2) return new FileMeta(scanId, "", fileLen, lastModified);
+                if (buf.remaining() < 2) return new FileMeta(scanId, "", fileLen, lastModified, file);
                 int analyzerLen = buf.getShort() & 0xFFFF;
                 if (analyzerLen > 0 && analyzerLen <= 1024 && buf.remaining() >= analyzerLen) {
                     byte[] analyzerBytes = new byte[analyzerLen];
@@ -75,7 +75,7 @@ public final class DbFileUtil {
                 }
             }
 
-            return new FileMeta(scanId, analyzerName, fileLen, lastModified);
+            return new FileMeta(scanId, analyzerName, fileLen, lastModified, file);
         } catch (IOException e) {
             return FileMeta.EMPTY;
         }
@@ -84,14 +84,15 @@ public final class DbFileUtil {
     // ==================== 文件列表 ====================
 
     /**
-     * 列出所有数据库文件的文件元数据。
+     * 列出所有数据库文件的文件元数据（跨所有上下文递归搜索）。
+     * 不再局限于当前服务器/世界，确保断开重连后仍能看到之前的 DB 文件。
      */
     public static List<FileMeta> listAllDbFiles() {
         List<FileMeta> result = new ArrayList<>();
-        Path dir = BinaryChunkDb.getDbDir();
-        if (!Files.exists(dir)) return result;
+        Path root = BinaryChunkDb.getDbRoot();
+        if (!Files.exists(root)) return result;
 
-        try (Stream<Path> files = Files.list(dir)) {
+        try (Stream<Path> files = Files.walk(root, 4)) {
             files.filter(p -> {
                 String name = p.getFileName().toString();
                 return name.startsWith("chunkscanner_") && name.endsWith(".dat");
@@ -118,9 +119,17 @@ public final class DbFileUtil {
     }
 
     /**
-     * 根据 scanId 获取对应的文件路径。
+     * 根据 scanId 查找对应的文件路径（跨所有上下文搜索）。
+     * 用于删除、显示路径等操作。
      */
     public static Path resolveFilePath(String scanId) {
+        // 先在已缓存的列表中查找
+        for (FileMeta m : listAllDbFiles()) {
+            if (m.scanId().equals(scanId) && m.filePath() != null) {
+                return m.filePath();
+            }
+        }
+        // fallback：使用当前上下文构造路径
         return BinaryChunkDb.getDbDir().resolve(BinaryChunkDb.safeFileName(scanId));
     }
 
@@ -172,11 +181,11 @@ public final class DbFileUtil {
     // ==================== 辅助类型 ====================
 
     /**
-     * 数据库文件的轻量元数据（scanId、analyzerName、大小、修改时间）。
+     * 数据库文件的轻量元数据（scanId、analyzerName、大小、修改时间、文件路径）。
      * 不加载 KV 数据，仅用于文件列表展示。
      */
-    public record FileMeta(String scanId, String analyzerName, long fileSize, long lastModified) {
-        public static final FileMeta EMPTY = new FileMeta("", "", 0, 0);
+    public record FileMeta(String scanId, String analyzerName, long fileSize, long lastModified, Path filePath) {
+        public static final FileMeta EMPTY = new FileMeta("", "", 0, 0, null);
 
         public boolean isEmpty() {
             return scanId.isEmpty();

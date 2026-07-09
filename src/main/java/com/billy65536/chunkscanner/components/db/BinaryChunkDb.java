@@ -108,9 +108,20 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
      * @param metadataOnly 若为 true，只存储元数据不加载文件内容，用于文件列表浏览。
      */
     public BinaryChunkDb(String scanId, String analyzerName, boolean metadataOnly) {
+        this(scanId, analyzerName, metadataOnly, getDbDir());
+    }
+
+    /**
+     * 完整构造函数，支持自定义数据库目录。
+     * 当打开来自其他上下文的 DB 文件时（如 DB 浏览器），需要传入文件所在的实际目录。
+     *
+     * @param metadataOnly 若为 true，只存储元数据不加载文件内容，用于文件列表浏览。
+     * @param dbDir 数据库目录，若为 null 则使用当前上下文默认路径。
+     */
+    public BinaryChunkDb(String scanId, String analyzerName, boolean metadataOnly, Path dbDir) {
         this.scanId = scanId;
         this.analyzerName = analyzerName;
-        this.dbDir = getDbDir();
+        this.dbDir = dbDir != null ? dbDir : getDbDir();
         this.safeFileName = safeFileName(scanId);
         this.stringPool = new ConcurrentHashMap<>();
         this.stringPoolReverse = new ConcurrentHashMap<>();
@@ -567,6 +578,14 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
     // ==================== 上下文感知路径 ====================
 
     /**
+     * 返回所有 DB 文件的根目录（不区分服务器/世界上下文）。
+     * DB 浏览器应使用此方法获取根目录。
+     */
+    public static Path getDbRoot() {
+        return FabricLoader.getInstance().getGameDir().resolve(DB_DIR);
+    }
+
+    /**
      * 根据当前游戏上下文返回数据库存储目录。
      *
      * 路径结构：
@@ -592,7 +611,7 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
             type = "other";
             context = "unknown";
         }
-        return FabricLoader.getInstance().getGameDir().resolve(DB_DIR).resolve(type).resolve(sanitizePath(context));
+        return getDbRoot().resolve(type).resolve(sanitizePath(context));
     }
 
     private static String sanitizePath(String name) {

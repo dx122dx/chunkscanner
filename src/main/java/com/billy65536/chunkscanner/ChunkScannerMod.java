@@ -21,6 +21,7 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
@@ -103,6 +104,12 @@ public class ChunkScannerMod implements ClientModInitializer {
 
         // 注册客户端 tick 回调：每帧执行扫描调度
         ClientTickEvents.END_CLIENT_TICK.register(scanner::onClientTick);
+
+        // 注册断连事件：退出服务器/世界时清理所有扫描会话
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            LOGGER.info("Disconnected from server, shutting down all scan sessions...");
+            scanner.shutdown();
+        });
 
         // JVM 关闭钩子：确保数据库正确关闭
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -344,7 +351,8 @@ public class ChunkScannerMod implements ClientModInitializer {
 
         BinaryChunkDb existingDb;
         try {
-            existingDb = new BinaryChunkDb(meta.scanId(), meta.analyzerName());
+            Path fileDir = file.getParent();
+            existingDb = new BinaryChunkDb(meta.scanId(), meta.analyzerName(), false, fileDir);
         } catch (Exception e) {
             sendMsg(client, Text.translatable("chunkscanner.msg.db_file_corrupt")
                     .formatted(Formatting.RED));

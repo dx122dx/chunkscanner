@@ -145,7 +145,8 @@ public class DatabaseScreen extends Screen {
             openedDb.close();
         }
         ChunkScannerMod.LOGGER.debug("Opening database: scanId={} analyzer={}", meta.scanId(), meta.analyzerName());
-        BinaryChunkDb db = new BinaryChunkDb(meta.scanId(), meta.analyzerName(), true);
+        Path fileDir = meta.filePath() != null ? meta.filePath().getParent() : null;
+        BinaryChunkDb db = new BinaryChunkDb(meta.scanId(), meta.analyzerName(), true, fileDir);
         openedDb = db;
         try {
             openedDb.open();
@@ -376,11 +377,12 @@ public class DatabaseScreen extends Screen {
     }
 
     private void openFolder() {
-        Path dir = BinaryChunkDb.getDbDir();
+        Path dir = BinaryChunkDb.getDbRoot();
         try {
-            if (Files.exists(dir)) {
-                Desktop.getDesktop().open(dir.toFile());
+            if (!Files.exists(dir)) {
+                Files.createDirectories(dir);
             }
+            Desktop.getDesktop().open(dir.toFile());
         } catch (Exception e) {
             ChunkScannerMod.LOGGER.warn("Failed to open folder: {}", e.getMessage());
         }
@@ -388,7 +390,7 @@ public class DatabaseScreen extends Screen {
 
     private void saveAs() {
         if (openedDb == null) return;
-        Path dir = BinaryChunkDb.getDbDir();
+        Path dir = BinaryChunkDb.getDbRoot();
 
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle(Text.translatable("chunkscanner.gui.database.save_as").getString());
@@ -474,9 +476,9 @@ public class DatabaseScreen extends Screen {
         // 文件列表悬停 — 显示数据库路径
         if (!showingKvView && hoveredFileIdx >= 0 && hoveredFileIdx < dbFiles.size()) {
             DbFileUtil.FileMeta meta = dbFiles.get(hoveredFileIdx);
-            Path filePath = DbFileUtil.resolveFilePath(meta.scanId());
+            Path filePath = meta.filePath();
             context.drawTooltip(textRenderer,
-                    Text.literal(filePath.toAbsolutePath().toString()).formatted(Formatting.GRAY),
+                    Text.literal(filePath != null ? filePath.toAbsolutePath().toString() : meta.scanId()).formatted(Formatting.GRAY),
                     mouseX, mouseY);
         }
 
@@ -869,7 +871,8 @@ public class DatabaseScreen extends Screen {
         ChunkAnalyzer analyzer = scanner.getAnalyzer(meta.analyzerName());
         if (analyzer == null) return;
 
-        BinaryChunkDb existingDb = new BinaryChunkDb(meta.scanId(), meta.analyzerName());
+        Path fileDir = meta.filePath() != null ? meta.filePath().getParent() : null;
+        BinaryChunkDb existingDb = new BinaryChunkDb(meta.scanId(), meta.analyzerName(), false, fileDir);
         TaskConfig storedConfig = existingDb.getTaskConfig();
         if (storedConfig != null) {
             ChunkScannerMod.LOGGER.info("Restored TaskConfig from DB for '{}': {}", meta.scanId(), storedConfig.toDisplayString());
