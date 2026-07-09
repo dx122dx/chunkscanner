@@ -12,6 +12,8 @@ import com.billy65536.chunkscanner.core.LocatedPosition;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 与 Xaero's World Map / Minimap 联动的反射工具类。
@@ -36,6 +38,36 @@ public final class XaeroWaypointHelper {
     private static final String DEFAULT_WAYPOINT_NAME = "选中的坐标点";
     /** 默认路径点缩写。 */
     private static final String DEFAULT_WAYPOINT_INITIALS = "目标";
+
+    // ==================== 跨纬度延迟创建路径点 ====================
+    // Xaero 的代码到现在也没有搞清楚…… 反正不知道为什么就是不能跨纬度创建…… 裱糊匠做法
+
+    /**
+     * 路径点创建请求，封装创建路径点所需的全部信息。
+     *
+     * @param pos      目标坐标（包含维度坐标）
+     * @param name     路径点名称
+     * @param initials 路径点缩写（在地图上显示的简称）
+     * @param group    路径点所属分组
+     */
+    public record CreateWaypointRequest(LocatedPosition pos, String name, String initials, String group) { }
+
+    /**
+     * 跨纬度待创建路径点请求队列。
+     * <p>Key 为维度 ID（如 {@code minecraft:the_nether}），Value 为该维度下暂存的请求列表。</p>
+     * <p>当用户点击的路径点不在当前维度时，请求会暂存于此；待玩家进入目标维度后，由
+     * {@link #onClientTick(MinecraftClient)} 消费并创建。</p>
+     * <p>使用 {@link ConcurrentHashMap} 保障 DISCONNECT 回调（网络线程）与 tick/UI（渲染线程）的并发安全。</p>
+     */
+    private static final ConcurrentHashMap<String, ArrayList<CreateWaypointRequest>> creationRequests = new ConcurrentHashMap<>();
+
+    /**
+     * 清理所有待创建的路径点请求。
+     * <p>在退出世界/服务器时调用，防止残留请求在下次进入世界时被意外创建。</p>
+     */
+    public static void clearPendingRequests() {
+        creationRequests.clear();
+    }
 
     // ==================== 缓存反射句柄 ====================
 
@@ -87,28 +119,51 @@ public final class XaeroWaypointHelper {
     /**
      * 尝试创建 Xaero 路径点（使用默认名称、缩写和组）。
      *
-     * @return true 表示成功创建，false 表示 Xaero 不可用（回退聊天消息）
+     * @param client Minecraft 客户端实例
+     * @param pos    目标坐标
      */
-    public static boolean tryCreateWaypoint(LocatedPosition pos) {
-        return tryCreateWaypoint(pos, DEFAULT_WAYPOINT_NAME, DEFAULT_WAYPOINT_INITIALS, null);
+    public static void tryCreateWaypoint(MinecraftClient client, LocatedPosition pos) {
+        tryCreateWaypoint(client, pos, DEFAULT_WAYPOINT_NAME, DEFAULT_WAYPOINT_INITIALS, null);
     }
 
     /**
      * 尝试创建 Xaero 路径点（使用指定的名称、缩写和组）。
+     * <p>跨纬度策略：</p>
+     * <ul>
+     *   <li>Xaero 不可用 → 立即发送聊天消息（不受纬度限制）</li>
+     *   <li>Xaero 可用且当前维度与目标一致 → 立即创建</li>
+     *   <li>Xaero 可用但当前维度与目标不同 → 暂存到 {@link #creationRequests}，
+     *       待 {@link #onClientTick(MinecraftClient)} 在玩家进入目标维度后消费</li>
+     * </ul>
      *
-     * @param pos      目标坐标
+     * @param client   Minecraft 客户端实例
+     * @param pos      目标坐标（包含维度信息）
      * @param name     路径点名称（null 使用默认值）
      * @param initials 路径点缩写（null 使用默认值）
      * @param group    路径点组名（null 使用当前组）
-     * @return true 表示成功创建，false 表示回退聊天消息
      */
-    public static boolean tryCreateWaypoint(LocatedPosition pos, String name, String initials, String group) {
-        if (pos == null) return false;
+    public static void tryCreateWaypoint(MinecraftClient client, LocatedPosition pos, String name, String initials, String group) {
+        if (pos == null || client.world == null) return;
+        
+        String dimId = client.world.getRegistryKey().getValue().toString();
+        if (pos.dimensionId().equals(dimId) || !isAvailable()) { // 立即创建
+            doCreateWaypoint(pos, name, initials, group);
+        } else {
+            String targetDim = pos.dimensionId();
+            creationRequests.computeIfAbsent(targetDim, k -> new ArrayList<>())
+                    .add(new CreateWaypointRequest(pos, name, initials, group));
+        }
+    }
+
+    /**
+     * 执行路径点创建（反射调用 Xaero Minimap API），若 Xaero 不可用则回退到聊天消息。
+     */
+    private static void doCreateWaypoint(LocatedPosition pos, String name, String initials, String group) {
 
         String wpName = (name != null && !name.isEmpty()) ? name : DEFAULT_WAYPOINT_NAME;
         String wpInit = (initials != null && !initials.isEmpty()) ? initials : DEFAULT_WAYPOINT_INITIALS;
 
-        if (tryCreateViaMinimap(pos, wpName, wpInit, group)) return true;
+        if (tryCreateViaMinimap(pos, wpName, wpInit, group)) return;
 
         // Xaero 不可用，发送聊天消息
         MinecraftClient client = MinecraftClient.getInstance();
@@ -119,7 +174,33 @@ public final class XaeroWaypointHelper {
                                     pos.toString()).formatted(Formatting.AQUA)),
                     false);
         }
-        return false;
+    }
+
+    /** 每 tick 最多创建的路径点数量，防止大量积压请求造成帧卡顿。 */
+    private static final int MAX_WAYPOINTS_PER_TICK = 10;
+
+    /**
+     * 客户端每帧回调，负责消费跨纬度暂存的路径点创建请求。
+     * <p>当玩家所在维度的 {@link #creationRequests} 中存在待处理请求时，每 tick 最多处理
+     * {@link #MAX_WAYPOINTS_PER_TICK} 个，避免一次性大量创建导致卡顿。</p>
+     *
+     * @param client Minecraft 客户端实例
+     */
+    public static void onClientTick(MinecraftClient client) {
+        if (client.world == null) return;
+        String dimId = client.world.getRegistryKey().getValue().toString();
+        ArrayList<CreateWaypointRequest> requests = creationRequests.get(dimId);
+        if (requests != null && !requests.isEmpty()) {
+            int processed = 0;
+            while (!requests.isEmpty() && processed < MAX_WAYPOINTS_PER_TICK) {
+                CreateWaypointRequest request = requests.remove(requests.size() - 1);
+                doCreateWaypoint(request.pos(), request.name(), request.initials(), request.group());
+                processed++;
+            }
+            if (requests.isEmpty()) {
+                creationRequests.remove(dimId);
+            }
+        }
     }
 
     // ==================== Minimap 集成（主路径） ====================

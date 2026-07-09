@@ -25,6 +25,7 @@
     },
     "suggests": {
         "cloth-config": "*",
-        "modmenu": "*"
+        "modmenu": "*",
+        "xaerominimap": "*"
     }
 }

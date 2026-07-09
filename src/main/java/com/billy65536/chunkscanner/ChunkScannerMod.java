@@ -12,6 +12,7 @@ import com.billy65536.chunkscanner.config.TaskConfig;
 import com.billy65536.chunkscanner.core.ChunkAnalyzer;
 import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.DbViewProvider;
+import com.billy65536.chunkscanner.integration.XaeroWaypointHelper;
 import com.billy65536.chunkscanner.screen.ChunkScannerScreen;
 import com.billy65536.chunkscanner.screen.DatabaseScreen;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -104,11 +105,13 @@ public class ChunkScannerMod implements ClientModInitializer {
 
         // 注册客户端 tick 回调：每帧执行扫描调度
         ClientTickEvents.END_CLIENT_TICK.register(scanner::onClientTick);
+        ClientTickEvents.END_CLIENT_TICK.register(XaeroWaypointHelper::onClientTick);
 
         // 注册断连事件：退出服务器/世界时清理所有扫描会话
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             LOGGER.info("Disconnected from server, shutting down all scan sessions...");
             scanner.shutdown();
+            XaeroWaypointHelper.clearPendingRequests();
         });
 
         // JVM 关闭钩子：确保数据库正确关闭
