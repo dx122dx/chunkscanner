@@ -36,6 +36,7 @@
     "chunkscanner.msg.db_file_corrupt": "Database file corrupted, cannot recover.",
     "chunkscanner.msg.db_deleted": "Database \"%s\" deleted.",
     "chunkscanner.msg.db_delete_failed": "Failed to delete database \"%s\": %s",
+    "chunkscanner.msg.db_file_using": "Unable to delete database \"%s\": The database file is being used by an active scan session \"%s\". Please terminate the scan first.",
 
     "chunkscanner.status.title": "======== ChunkScanner Status ========",
     "chunkscanner.status.stop_hint": "Click to stop this scan",

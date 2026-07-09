@@ -295,9 +295,18 @@ public class ChunkScannerMod implements ClientModInitializer {
 
     /**
      * 删除指定 scanId 对应的数据库文件。
-     * TODO 删除前会检查 ChunkScanner 中没有正在使用该文件的活跃会话。
      */
     private static void deleteDbFile(String scanId, MinecraftClient client) {
+        if (instance == null || instance.scanner == null) {
+            LOGGER.warn("deleteDbFile called before initialization, ignoring for scanId: {}", scanId);
+            return;
+        }
+        
+        if (instance.scanner.getActiveScanIds().contains(scanId)) {
+            sendMsg(client, Text.translatable("chunkscanner.msg.db_file_using", scanId, scanId));
+            return;
+        }
+        
         try {
             if (DbFileUtil.deleteDbFile(scanId)) {
                 sendMsg(client, Text.translatable("chunkscanner.msg.db_deleted", scanId)
