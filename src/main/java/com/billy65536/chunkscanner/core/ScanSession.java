@@ -184,7 +184,7 @@ public class ScanSession {
         if (lastMs > 0 && sessionConfig.minRevisitIntervalSec > 0) {
             if (nowSec - (lastMs / 1000) < sessionConfig.minRevisitIntervalSec) return;
         }
-        pendingChunks.offer(new ChunkEntry(cx, cz, lastMs));
+        pendingChunks.offer(new ChunkEntry(dimId, cx, cz, lastMs));
         enqueuedChunks.add(packed);
     }
 
@@ -226,11 +226,14 @@ public class ScanSession {
             if (entry == null) break;
             enqueuedChunks.remove(entry.packedPos());
 
+            // 跳过不属于当前维度的区块（跨维度后队列中可能残留旧维度的区块）
+            if (!entry.dimId().equals(currentDimensionId)) continue;
+
             // 再次确认区块仍在内存中（可能已被卸载）
             WorldChunk chunk = client.world.getChunkManager().getWorldChunk(entry.cx, entry.cz, false);
             if (chunk == null) continue; // 区块已被卸载，不再统计
 
-            final String dimId = currentDimensionId;
+            final String dimId = entry.dimId();
             final long now = System.currentTimeMillis();
             final int ecx = entry.cx, ecz = entry.cz;
             final World world = client.world;
@@ -379,7 +382,7 @@ public class ScanSession {
     private record TaskResult(int foundCount, int errorCount, int cx, int cz, String dimId, long timestamp, String info) {}
 
     /** 待扫描区块条目。按 lastScanTime 排序实现优先队列（最旧优先）。 */
-    private record ChunkEntry(int cx, int cz, long lastScanTime) implements Comparable<ChunkEntry> {
+    private record ChunkEntry(String dimId, int cx, int cz, long lastScanTime) implements Comparable<ChunkEntry> {
         @Override public int compareTo(ChunkEntry o) { return Long.compare(lastScanTime, o.lastScanTime); }
         /** 将区块坐标打包为一个 long，兼容 packChunkPos。 */
         long packedPos() { return CoreUtil.packChunkPos(cx, cz); }
