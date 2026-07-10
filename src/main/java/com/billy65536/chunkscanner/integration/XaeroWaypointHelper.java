@@ -84,6 +84,11 @@ public final class XaeroWaypointHelper {
     private static volatile Method getDimensionHelperMethod;      // MinimapSession.getDimensionHelper()
     private static volatile Method getDimensionDirNameMethod;     // MinimapDimensionHelper.getDimensionDirectoryName(RegistryKey<World>)
 
+    // 回退路径反射句柄（在 initMinimapReflection 中缓存，避免 resolveFallbackWaypointSet 每次扫描类元数据）
+    private static volatile Method fallbackGetWaypointSet;
+    private static volatile Method fallbackGetCurrentWaypointSet;
+    private static volatile Method fallbackGetIterableWaypointSets;
+
     private XaeroWaypointHelper() {}
 
     /**
@@ -115,6 +120,7 @@ public final class XaeroWaypointHelper {
         } catch (ClassNotFoundException e) {
             LOGGER.info("Xaero mod not found");
             minimapAvailable = false;
+            initialized = true; // ClassNotFoundException 是永久性失败，标记已初始化避免重试
             return false;
         }
     }
@@ -431,34 +437,37 @@ public final class XaeroWaypointHelper {
         }
     }
 
-    /** 备用：通过 world.getIterableWaypointSets() 获取路径点集并返回第一个非空集合。 */
+    /** 备用：通过缓存的反射句柄获取路径点集并返回第一个非空集合。 */
     private static Object resolveFallbackWaypointSet(Object world) {
         try {
             // 尝试 getWaypointSet(String) 用默认 set 名
-            try {
-                Method getWaypointSet = world.getClass().getMethod("getWaypointSet", String.class);
-                Object waypointSet = getWaypointSet.invoke(world, DEFAULT_WAYPOINT_SET_NAME);
-                if (waypointSet != null) return waypointSet;
-            } catch (NoSuchMethodException ignored) {}
+            if (fallbackGetWaypointSet != null) {
+                try {
+                    Object waypointSet = fallbackGetWaypointSet.invoke(world, DEFAULT_WAYPOINT_SET_NAME);
+                    if (waypointSet != null) return waypointSet;
+                } catch (Exception ignored) {}
+            }
 
             // 尝试 getCurrentWaypointSet()
-            try {
-                Method getCurrent = world.getClass().getMethod("getCurrentWaypointSet");
-                Object waypointSet = getCurrent.invoke(world);
-                if (waypointSet != null) return waypointSet;
-            } catch (NoSuchMethodException ignored) {}
+            if (fallbackGetCurrentWaypointSet != null) {
+                try {
+                    Object waypointSet = fallbackGetCurrentWaypointSet.invoke(world);
+                    if (waypointSet != null) return waypointSet;
+                } catch (Exception ignored) {}
+            }
 
             // 尝试 getIterableWaypointSets() 返回第一个非空集合
-            try {
-                Method getIterable = world.getClass().getMethod("getIterableWaypointSets");
-                @SuppressWarnings("unchecked")
-                Iterable<Object> sets = (Iterable<Object>) getIterable.invoke(world);
-                if (sets != null) {
-                    for (Object set : sets) {
-                        if (set != null) return set;
+            if (fallbackGetIterableWaypointSets != null) {
+                try {
+                    @SuppressWarnings("unchecked")
+                    Iterable<Object> sets = (Iterable<Object>) fallbackGetIterableWaypointSets.invoke(world);
+                    if (sets != null) {
+                        for (Object set : sets) {
+                            if (set != null) return set;
+                        }
                     }
-                }
-            } catch (NoSuchMethodException ignored) {}
+                } catch (Exception ignored) {}
+            }
 
             return null;
         } catch (Exception e) {
@@ -478,7 +487,8 @@ public final class XaeroWaypointHelper {
         try {
             Class<?> wpClass = waypointClass;
             if (wpClass == null) {
-                wpClass = Class.forName("xaero.common.minimap.waypoints.Waypoint");
+                LOGGER.warn("Waypoint class not initialized, cannot add waypoint to set");
+                return false;
             }
 
             // 优先使用 add(Waypoint)（新版 Xaero 24.x）
@@ -558,7 +568,7 @@ public final class XaeroWaypointHelper {
      * 新版 Xaero 可能不存在这些类，此时自动降级使用无需枚举的构造函数。</p>
      */
     private static synchronized boolean initMinimapReflection() {
-        if (initialized) return true;
+        if (initialized) return minimapAvailable != null && minimapAvailable;
         try {
             // 1. Waypoint 类及构造函数、相关枚举
             waypointClass = Class.forName("xaero.common.minimap.waypoints.Waypoint");
@@ -626,6 +636,22 @@ public final class XaeroWaypointHelper {
                 addWaypointSetByName = worldClass.getMethod("addWaypointSet", String.class);
             } catch (NoSuchMethodException e) {
                 addWaypointSetByName = null;
+            }
+            // 缓存回退路径反射句柄（避免 resolveFallbackWaypointSet 每次扫描类元数据）
+            try {
+                fallbackGetWaypointSet = worldClass.getMethod("getWaypointSet", String.class);
+            } catch (NoSuchMethodException e) {
+                fallbackGetWaypointSet = null;
+            }
+            try {
+                fallbackGetCurrentWaypointSet = worldClass.getMethod("getCurrentWaypointSet");
+            } catch (NoSuchMethodException e) {
+                fallbackGetCurrentWaypointSet = null;
+            }
+            try {
+                fallbackGetIterableWaypointSets = worldClass.getMethod("getIterableWaypointSets");
+            } catch (NoSuchMethodException e) {
+                fallbackGetIterableWaypointSets = null;
             }
 
             // 6. XaeroPath：用于构建目标维度路径
@@ -711,10 +737,12 @@ public final class XaeroWaypointHelper {
 
             LOGGER.info("Xaero's Minimap integration enabled");
             initialized = true;
+            minimapAvailable = true;
             return true;
         } catch (Exception e) {
             LOGGER.info("Xaero's Minimap not available: {}", e.getMessage());
             resetReflectionHandles();
+            initialized = true; // 标记已初始化，永久性失败不重复重试
             return false;
         }
     }
@@ -747,6 +775,9 @@ public final class XaeroWaypointHelper {
         getWorldDimIdMethod = null;
         getDimensionHelperMethod = null;
         getDimensionDirNameMethod = null;
+        fallbackGetWaypointSet = null;
+        fallbackGetCurrentWaypointSet = null;
+        fallbackGetIterableWaypointSets = null;
     }
 
     /**
