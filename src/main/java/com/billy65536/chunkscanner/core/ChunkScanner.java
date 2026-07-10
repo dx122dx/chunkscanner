@@ -144,13 +144,12 @@ public class ChunkScanner {
             return;
         }
 
-        if (sessions.containsKey(scanId)) {
+        ScanSession session = new ScanSession(this, scanId, analyzer, taskConfig);
+        ScanSession existing = sessions.putIfAbsent(scanId, session);
+        if (existing != null) {
             CoreUtil.sendMsg(client, Text.translatable(KEY_SCAN_EXISTS, scanId, scanId).formatted(Formatting.YELLOW));
             return;
         }
-
-        ScanSession session = new ScanSession(this, scanId, analyzer, taskConfig);
-        sessions.put(scanId, session);
         session.start(client);
 
         int effectiveRevisit = session.sessionConfig.minRevisitIntervalSec;
@@ -271,12 +270,12 @@ public class ChunkScanner {
             CoreUtil.sendMsg(client, Text.translatable(KEY_UNKNOWN_ANALYZER, analyzerId).formatted(Formatting.RED));
             return;
         }
-        if (sessions.containsKey(scanId)) {
+        ScanSession session = new ScanSession(this, scanId, analyzer, taskConfig, existingDb);
+        ScanSession existing = sessions.putIfAbsent(scanId, session);
+        if (existing != null) {
             CoreUtil.sendMsg(client, Text.translatable(KEY_SCAN_EXISTS, scanId, scanId).formatted(Formatting.YELLOW));
             return;
         }
-        ScanSession session = new ScanSession(this, scanId, analyzer, taskConfig, existingDb);
-        sessions.put(scanId, session);
         session.start(client);
         CoreUtil.sendMsg(client, Text.translatable(KEY_SCAN_STARTED).formatted(Formatting.GREEN)
                 .append(Text.literal(" | "))

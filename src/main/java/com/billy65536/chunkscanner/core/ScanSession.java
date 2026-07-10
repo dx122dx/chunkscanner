@@ -241,19 +241,30 @@ public class ScanSession {
             final World world = client.world;
 
             // 提交分析任务到工作线程池
-            scanExecutor.execute(() -> {
-                try {
-                    AnalyzeResult r = analyzer.analyze(chunk, ecx, ecz, dimId, db, now, world);
-                    resultQueue.offer(new TaskResult(
-                            r.isFound() ? 1 : 0,
-                            r.isError() ? 1 : 0,
-                            ecx, ecz, dimId, now, r.getInfo()));
-                } catch (Exception e) {
-                    ChunkScannerMod.LOGGER.warn("[scan:{}] Analyzer '{}' failed on ({},{}): {}",
-                            scanId, analyzer.getId(), ecx, ecz, e.getMessage());
-                    resultQueue.offer(new TaskResult(0, 1, ecx, ecz, dimId, now, "exception=" + e.getMessage()));
-                }
-            });
+            try {
+                scanExecutor.execute(() -> {
+                    try {
+                        AnalyzeResult r = analyzer.analyze(chunk, ecx, ecz, dimId, db, now, world);
+                        if (!resultQueue.offer(new TaskResult(
+                                r.isFound() ? 1 : 0,
+                                r.isError() ? 1 : 0,
+                                ecx, ecz, dimId, now, r.getInfo()))) {
+                            ChunkScannerMod.LOGGER.warn("[scan:{}] Result queue full, dropping result for ({},{})",
+                                    scanId, ecx, ecz);
+                        }
+                    } catch (Exception e) {
+                        ChunkScannerMod.LOGGER.warn("[scan:{}] Analyzer '{}' failed on ({},{}): {}",
+                                scanId, analyzer.getId(), ecx, ecz, e.getMessage());
+                        if (!resultQueue.offer(new TaskResult(0, 1, ecx, ecz, dimId, now, "exception=" + e.getMessage()))) {
+                            ChunkScannerMod.LOGGER.warn("[scan:{}] Result queue full, dropping error result for ({},{})",
+                                    scanId, ecx, ecz);
+                        }
+                    }
+                });
+            } catch (java.util.concurrent.RejectedExecutionException e) {
+                // Executor 已关闭（shutdown hook 竞态），静默丢弃本任务
+                ChunkScannerMod.LOGGER.debug("[scan:{}] Task rejected — executor shutting down", scanId);
+            }
             submitted++;
         }
 
@@ -307,6 +318,10 @@ public class ScanSession {
 
     /**
      * 计算可见范围内各区块状态的分解统计，用于 GUI 状态条渲染。
+     *
+     * <p><b>线程安全：仅限客户端渲染线程调用。</b>方法内访问的
+     * {@code foundChunks}、{@code errorChunks}、{@code enqueuedChunks}
+     * 均在同一线程中修改，无竞争。</p>
      *
      * 状态分类：
      * - pending：已入队，等待扫描
