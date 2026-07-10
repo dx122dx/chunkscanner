@@ -41,6 +41,8 @@ public final class XaeroWaypointHelper {
 
     private static volatile Boolean minimapAvailable;
     private static volatile Constructor<?> waypointConstructor;
+    private static volatile Class<?> waypointClass;       // xaero.common.minimap.waypoints.Waypoint
+    private static volatile Object minimapModule;         // BuiltInHudModules.MINIMAP 实例
     private static volatile Object defaultWaypointColor;  // WaypointColor 枚举实例
     private static volatile Object defaultWaypointPurpose; // WaypointPurpose.NORMAL
     private static volatile Method getCurrentSession;
@@ -48,6 +50,9 @@ public final class XaeroWaypointHelper {
     private static volatile Method getCurrentWorld;
     private static volatile Method getCurrentWaypointSet;
     private static volatile Method getNamedWaypointSet;   // getWaypointSet(String)
+    private static volatile Method addWaypointSetByName;  // addWaypointSet(String) — 创建新组
+    private static volatile Method getWorldManagerIO;     // MinimapSession.getWorldManagerIO()
+    private static volatile Method saveWorldMethod;       // MinimapWorldManagerIO.saveWorld(MinimapWorld)
 
     private XaeroWaypointHelper() {}
 
@@ -132,7 +137,7 @@ public final class XaeroWaypointHelper {
             // BuiltInHudModules.MINIMAP.getCurrentSession() → MinimapSession
             Object session = getCurrentSession.invoke(getMinimapModule());
             if (session == null) {
-                LOGGER.debug("getCurrentSession() returned null");
+                LOGGER.warn("getCurrentSession() returned null — minimap session not active?");
                 return false;
             }
 
@@ -144,7 +149,13 @@ public final class XaeroWaypointHelper {
             if (wp == null) return false;
 
             // 通过 WaypointSet.add(Waypoint) 添加
-            addWaypointToSet(waypointSet, wp);
+            if (!addWaypointToSet(waypointSet, wp)) {
+                LOGGER.warn("Failed to add waypoint to set");
+                return false;
+            }
+
+            // 触发持久化保存（避免维度切换后丢失）
+            saveCurrentWorld(session);
 
             sendSuccessMessage(pos, name);
             return true;
@@ -163,23 +174,33 @@ public final class XaeroWaypointHelper {
             // session.getWorldManager() → WorldManager
             Object worldManager = getWorldManager.invoke(session);
             if (worldManager == null) {
-                LOGGER.debug("getWorldManager() returned null");
+                LOGGER.warn("getWorldManager() returned null");
                 return resolveViaLegacyApi(session);
             }
 
             // worldManager.getCurrentWorld() → MinimapWorld
             Object world = getCurrentWorld.invoke(worldManager);
             if (world == null) {
-                LOGGER.debug("getCurrentWorld() returned null");
+                LOGGER.warn("getCurrentWorld() returned null");
                 return null;
             }
 
             // 优先：按配置的 group 获取指定 WaypointSet
+            // 如果组不存在，自动创建（否则切换维度后自定义组不存在导致创建失败）
             if (group != null && !group.isEmpty() && getNamedWaypointSet != null) {
                 try {
                     Object namedSet = getNamedWaypointSet.invoke(world, group);
                     if (namedSet != null) {
                         return namedSet;
+                    }
+                    // 组不存在，尝试创建（MinimapWorld.addWaypointSet(String)）
+                    if (addWaypointSetByName != null) {
+                        addWaypointSetByName.invoke(world, group);
+                        namedSet = getNamedWaypointSet.invoke(world, group);
+                        if (namedSet != null) {
+                            LOGGER.info("Created new waypoint set \"{}\" in current world", group);
+                            return namedSet;
+                        }
                     }
                     LOGGER.debug("getWaypointSet(\"{}\") returned null, falling back to current set", group);
                 } catch (Exception e) {
@@ -191,15 +212,29 @@ public final class XaeroWaypointHelper {
             if (getCurrentWaypointSet != null) {
                 Object waypointSet = getCurrentWaypointSet.invoke(world);
                 if (waypointSet == null) {
-                    LOGGER.debug("getCurrentWaypointSet() returned null");
-                    return resolveFallbackWaypointSet(world);
+                    // currentWaypointSetId 可能未初始化，尝试创建默认组
+                    LOGGER.warn("getCurrentWaypointSet() returned null, trying to create default set");
+                    if (addWaypointSetByName != null) {
+                        try {
+                            addWaypointSetByName.invoke(world, "gui.waypoints");
+                            waypointSet = getCurrentWaypointSet.invoke(world);
+                            if (waypointSet == null) {
+                                // 设置了默认组但仍为 null，尝试 getWaypointSet
+                                waypointSet = getNamedWaypointSet != null
+                                        ? getNamedWaypointSet.invoke(world, "gui.waypoints") : null;
+                            }
+                        } catch (Exception ignored) {}
+                    }
+                    if (waypointSet == null) {
+                        return resolveFallbackWaypointSet(world);
+                    }
                 }
                 return waypointSet;
             }
 
             return resolveFallbackWaypointSet(world);
         } catch (Exception e) {
-            LOGGER.debug("resolveCurrentWaypointSet failed: {}", e.getMessage());
+            LOGGER.warn("resolveCurrentWaypointSet failed: {}", e.getMessage());
             return null;
         }
     }
@@ -219,7 +254,7 @@ public final class XaeroWaypointHelper {
         }
     }
 
-    /** 备用：通过 world.getWaypointSet("gui.waypoints") 获取路径点集。 */
+    /** 备用：通过 world.getIterableWaypointSets() 获取路径点集并返回第一个非空集合。 */
     private static Object resolveFallbackWaypointSet(Object world) {
         try {
             // 尝试 getWaypointSet(String) 用默认 set 名
@@ -229,15 +264,28 @@ public final class XaeroWaypointHelper {
                 if (waypointSet != null) return waypointSet;
             } catch (NoSuchMethodException ignored) {}
 
-            // 尝试 getWaypoints() 无参
+            // 尝试 getCurrentWaypointSet()（如果 main path 没走到这里就说明已经试过了，但作为 fallback 再试）
             try {
-                Method getWaypoints = world.getClass().getMethod("getWaypoints");
-                return getWaypoints.invoke(world);
+                Method getCurrent = world.getClass().getMethod("getCurrentWaypointSet");
+                Object waypointSet = getCurrent.invoke(world);
+                if (waypointSet != null) return waypointSet;
+            } catch (NoSuchMethodException ignored) {}
+
+            // 尝试 getIterableWaypointSets() 返回第一个非空集合
+            try {
+                Method getIterable = world.getClass().getMethod("getIterableWaypointSets");
+                @SuppressWarnings("unchecked")
+                Iterable<Object> sets = (Iterable<Object>) getIterable.invoke(world);
+                if (sets != null) {
+                    for (Object set : sets) {
+                        if (set != null) return set;
+                    }
+                }
             } catch (NoSuchMethodException ignored) {}
 
             return null;
         } catch (Exception e) {
-            LOGGER.debug("Fallback WaypointSet resolution failed: {}", e.getMessage());
+            LOGGER.warn("Fallback WaypointSet resolution failed: {}", e.getMessage());
             return null;
         }
     }
@@ -245,24 +293,29 @@ public final class XaeroWaypointHelper {
     /**
      * 调用 WaypointSet.add(Waypoint) 添加路径点。
      * 新版 Xaero (24.x) 方法名为 add，旧版可能为 addWaypoint。
+     *
+     * @return true 如果成功添加到路径点集
      */
     @SuppressWarnings("unchecked")
-    private static void addWaypointToSet(Object waypointSet, Object waypoint) {
+    private static boolean addWaypointToSet(Object waypointSet, Object waypoint) {
         try {
-            Class<?> waypointClass = Class.forName("xaero.common.minimap.waypoints.Waypoint");
+            Class<?> wpClass = waypointClass;
+            if (wpClass == null) {
+                wpClass = Class.forName("xaero.common.minimap.waypoints.Waypoint");
+            }
 
             // 优先使用 add(Waypoint)（新版 Xaero 24.x）
             try {
-                Method add = waypointSet.getClass().getMethod("add", waypointClass);
+                Method add = waypointSet.getClass().getMethod("add", wpClass);
                 add.invoke(waypointSet, waypoint);
-                return;
+                return true;
             } catch (NoSuchMethodException ignored) {}
 
             // 回退：addWaypoint(Waypoint)（旧版 Xaero）
             try {
-                Method addWaypoint = waypointSet.getClass().getMethod("addWaypoint", waypointClass);
+                Method addWaypoint = waypointSet.getClass().getMethod("addWaypoint", wpClass);
                 addWaypoint.invoke(waypointSet, waypoint);
-                return;
+                return true;
             } catch (NoSuchMethodException ignored) {}
 
             // 最后回退：直接操作内部 list 字段
@@ -286,11 +339,34 @@ public final class XaeroWaypointHelper {
                 listField.setAccessible(true);
                 java.util.List<Object> list = (java.util.List<Object>) listField.get(waypointSet);
                 list.add(waypoint);
-            } else {
-                LOGGER.debug("Could not find a way to add Waypoint to set");
+                return true;
             }
+
+            LOGGER.warn("Could not find a way to add Waypoint to set — no add method, no list field");
+            return false;
         } catch (Exception e) {
-            LOGGER.debug("addWaypointToSet failed: {}", e.getMessage());
+            LOGGER.warn("addWaypointToSet failed: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 通过 MinimapSession.getWorldManagerIO().saveWorld(world) 触发路径点持久化。
+     * <p>Xaero's Minimap 在维度卸载时才保存路径点。如果玩家在保存前切换维度或退出，
+     * 新增的路径点会丢失。显式调用 saveWorld 可立即持久化。</p>
+     */
+    private static void saveCurrentWorld(Object session) {
+        try {
+            if (getWorldManagerIO == null || saveWorldMethod == null) return;
+            Object worldManager = getWorldManager.invoke(session);
+            if (worldManager == null) return;
+            Object world = getCurrentWorld.invoke(worldManager);
+            if (world == null) return;
+            Object io = getWorldManagerIO.invoke(session);
+            if (io == null) return;
+            saveWorldMethod.invoke(io, world);
+        } catch (Exception e) {
+            LOGGER.debug("Failed to save world waypoints: {}", e.getMessage());
         }
     }
 
@@ -309,7 +385,7 @@ public final class XaeroWaypointHelper {
         if (waypointConstructor != null) return true;
         try {
             // 1. Waypoint 类及构造函数、相关枚举
-            Class<?> waypointClass = Class.forName("xaero.common.minimap.waypoints.Waypoint");
+            waypointClass = Class.forName("xaero.common.minimap.waypoints.Waypoint");
 
             // WaypointColor/WaypointPurpose: 新版 Xaero (24.x) 位于 xaero.hud.minimap.waypoint
             Class<?> waypointColorClass = tryLoadClass(
@@ -345,8 +421,8 @@ public final class XaeroWaypointHelper {
             // 2. BuiltInHudModules.MINIMAP 及其 getCurrentSession()
             Class<?> hudModulesClass = Class.forName("xaero.hud.minimap.BuiltInHudModules");
             Field minimapField = hudModulesClass.getField("MINIMAP");
-            Object minimap = minimapField.get(null);
-            getCurrentSession = minimap.getClass().getMethod("getCurrentSession");
+            minimapModule = minimapField.get(null);
+            getCurrentSession = minimapModule.getClass().getMethod("getCurrentSession");
 
             // 3. getWorldManager() 存在于 MinimapSession 上（而非其父类 ModuleSession）
             //    必须显式从 MinimapSession 类获取，不能通过 getCurrentSession() 的返回类型
@@ -369,6 +445,23 @@ public final class XaeroWaypointHelper {
                 getNamedWaypointSet = worldClass.getMethod("getWaypointSet", String.class);
             } catch (NoSuchMethodException e) {
                 getNamedWaypointSet = null;
+            }
+            // addWaypointSet(String) 用于创建不存在的路径点组
+            try {
+                addWaypointSetByName = worldClass.getMethod("addWaypointSet", String.class);
+            } catch (NoSuchMethodException e) {
+                addWaypointSetByName = null;
+            }
+
+            // 6. 持久化保存：MinimapSession.getWorldManagerIO() → MinimapWorldManagerIO
+            try {
+                getWorldManagerIO = minimapSessionClass.getMethod("getWorldManagerIO");
+                Class<?> ioClass = getWorldManagerIO.getReturnType();
+                saveWorldMethod = ioClass.getMethod("saveWorld", worldClass);
+            } catch (NoSuchMethodException e) {
+                getWorldManagerIO = null;
+                saveWorldMethod = null;
+                LOGGER.debug("WorldManagerIO.saveWorld not available, waypoints will be saved on world unload");
             }
 
             minimapAvailable = true;
@@ -416,15 +509,28 @@ public final class XaeroWaypointHelper {
 
     /**
      * 按优先级查找最佳可用构造函数。
-     * 优先级：9 参数完整版 > 6 参数枚举颜色版 > 6 参数 int 颜色版 > 5 参数最简版
+     * 优先级：9 参数完整版 > 8 参数枚举版 > 7 参数枚举版 > 6 参数枚举颜色版
+     *      > 8 参数 int 颜色版 > 7 参数 int 颜色版 > 6 参数 int 颜色版
      * colorClass 和 purposeClass 可以为 null（当对应枚举类不存在时跳过）。
+     *
+     * <p>基于 Xaero's Minimap 24.7.1 反编译分析，Waypoint 提供以下构造器：</p>
+     * <ul>
+     *   <li>6 参数 int:  (x, y, z, name, initials, colorInt)</li>
+     *   <li>7 参数 int:  (x, y, z, name, initials, colorInt, purposeOrdinal)</li>
+     *   <li>8 参数 int:  (x, y, z, name, initials, colorInt, purposeOrdinal, temporary)</li>
+     *   <li>9 参数 int:  (x, y, z, name, initials, colorInt, purposeOrdinal, temporary, yIncluded)</li>
+     *   <li>6 参数 enum: (x, y, z, name, initials, WaypointColor)</li>
+     *   <li>7 参数 enum: (x, y, z, name, initials, WaypointColor, WaypointPurpose)</li>
+     *   <li>8 参数 enum: (x, y, z, name, initials, WaypointColor, WaypointPurpose, temporary)</li>
+     *   <li>9 参数 enum: (x, y, z, name, initials, WaypointColor, WaypointPurpose, temporary, yIncluded) ← 主构造器</li>
+     * </ul>
      */
     private static Constructor<?> findBestConstructor(
             Class<?> wpClass, Class<?> colorClass, Class<?> purposeClass) {
 
         Constructor<?>[] ctors = wpClass.getConstructors();
 
-        // 优先级 1：9 参数完整版
+        // 优先级 1：9 参数完整版（枚举版本，主构造器）
         // (int x, int y, int z, String name, String initials,
         //  WaypointColor color, WaypointPurpose purpose, boolean temp, boolean yIncluded)
         if (colorClass != null && purposeClass != null) {
@@ -440,7 +546,34 @@ public final class XaeroWaypointHelper {
             }
         }
 
-        // 优先级 2：6 参数 (int, int, int, String, String, WaypointColor)
+        // 优先级 2：8 参数 (x, y, z, name, initials, WaypointColor, WaypointPurpose, boolean)
+        if (colorClass != null && purposeClass != null) {
+            for (Constructor<?> c : ctors) {
+                Class<?>[] p = c.getParameterTypes();
+                if (p.length == 8
+                        && p[0] == int.class && p[1] == int.class && p[2] == int.class
+                        && p[3] == String.class && p[4] == String.class
+                        && p[5] == colorClass && p[6] == purposeClass
+                        && p[7] == boolean.class) {
+                    return c;
+                }
+            }
+        }
+
+        // 优先级 3：7 参数 (x, y, z, name, initials, WaypointColor, WaypointPurpose)
+        if (colorClass != null && purposeClass != null) {
+            for (Constructor<?> c : ctors) {
+                Class<?>[] p = c.getParameterTypes();
+                if (p.length == 7
+                        && p[0] == int.class && p[1] == int.class && p[2] == int.class
+                        && p[3] == String.class && p[4] == String.class
+                        && p[5] == colorClass && p[6] == purposeClass) {
+                    return c;
+                }
+            }
+        }
+
+        // 优先级 4：6 参数 (int, int, int, String, String, WaypointColor)
         if (colorClass != null) {
             for (Constructor<?> c : ctors) {
                 Class<?>[] p = c.getParameterTypes();
@@ -453,7 +586,30 @@ public final class XaeroWaypointHelper {
             }
         }
 
-        // 优先级 3：6 参数 (int, int, int, String, String, int) 颜色用 int
+        // 优先级 5：8 参数 int 版 (x, y, z, name, initials, int, int, boolean)
+        for (Constructor<?> c : ctors) {
+            Class<?>[] p = c.getParameterTypes();
+            if (p.length == 8
+                    && p[0] == int.class && p[1] == int.class && p[2] == int.class
+                    && p[3] == String.class && p[4] == String.class
+                    && p[5] == int.class && p[6] == int.class
+                    && p[7] == boolean.class) {
+                return c;
+            }
+        }
+
+        // 优先级 6：7 参数 int 版 (x, y, z, name, initials, int, int)
+        for (Constructor<?> c : ctors) {
+            Class<?>[] p = c.getParameterTypes();
+            if (p.length == 7
+                    && p[0] == int.class && p[1] == int.class && p[2] == int.class
+                    && p[3] == String.class && p[4] == String.class
+                    && p[5] == int.class && p[6] == int.class) {
+                return c;
+            }
+        }
+
+        // 优先级 7：6 参数 int 版 (x, y, z, name, initials, int) 颜色用 int
         for (Constructor<?> c : ctors) {
             Class<?>[] p = c.getParameterTypes();
             if (p.length == 6
@@ -464,23 +620,13 @@ public final class XaeroWaypointHelper {
             }
         }
 
-        // 优先级 4：5 参数 (int, int, int, String, String) 最简版
-        for (Constructor<?> c : ctors) {
-            Class<?>[] p = c.getParameterTypes();
-            if (p.length == 5
-                    && p[0] == int.class && p[1] == int.class && p[2] == int.class
-                    && p[3] == String.class && p[4] == String.class) {
-                return c;
-            }
-        }
-
+        LOGGER.error("No usable Waypoint constructor found among {} candidates", ctors.length);
         return null;
     }
 
-    private static Object getMinimapModule() throws Exception {
-        Class<?> hudModulesClass = Class.forName("xaero.hud.minimap.BuiltInHudModules");
-        Field minimapField = hudModulesClass.getField("MINIMAP");
-        return minimapField.get(null);
+    /** 获取缓存的 BuiltInHudModules.MINIMAP 实例（需先调用 initMinimapReflection）。 */
+    private static Object getMinimapModule() {
+        return minimapModule;
     }
 
     /** 通过反射创建 Waypoint 实例。根据构造函数参数数量动态适配。 */
@@ -491,33 +637,78 @@ public final class XaeroWaypointHelper {
 
             Class<?>[] paramTypes = waypointConstructor.getParameterTypes();
             int count = paramTypes.length;
+            boolean lastIsBoolean = count > 0 && paramTypes[count - 1] == boolean.class;
+            boolean secondLastIsBoolean = count > 1 && paramTypes[count - 2] == boolean.class;
 
-            if (count == 9) {
-                // 完整版：(x, y, z, name, initials, color, purpose, temp, yIncluded)
-                return waypointConstructor.newInstance(
-                        pos.x(), pos.y(), pos.z(),
-                        name, initials,
-                        defaultWaypointColor, defaultWaypointPurpose,
-                        false, true);
-            } else if (count == 6) {
-                if (paramTypes[5] == int.class) {
-                    // int 颜色版：(x, y, z, name, initials, colorInt)
-                    return waypointConstructor.newInstance(
-                            pos.x(), pos.y(), pos.z(),
-                            name, initials, 0xFF55FFFF);
-                } else {
-                    // 枚举颜色版：(x, y, z, name, initials, WaypointColor)
-                    return waypointConstructor.newInstance(
-                            pos.x(), pos.y(), pos.z(),
-                            name, initials, defaultWaypointColor);
-                }
-            } else {
-                // 最简版：(x, y, z, name, initials)
-                return waypointConstructor.newInstance(
-                        pos.x(), pos.y(), pos.z(), name, initials);
+            switch (count) {
+                case 9:
+                    // 完整版：(x, y, z, name, initials, color/purpose, temp, yIncluded)
+                    if (secondLastIsBoolean && lastIsBoolean) {
+                        return waypointConstructor.newInstance(
+                                pos.x(), pos.y(), pos.z(),
+                                name, initials,
+                                defaultWaypointColor != null ? defaultWaypointColor
+                                        : paramTypes[5] == int.class ? 0 : null,
+                                defaultWaypointPurpose != null ? defaultWaypointPurpose
+                                        : paramTypes[6] == int.class ? 0 : null,
+                                false, true);
+                    }
+                    break;
+
+                case 8:
+                    // (x, y, z, name, initials, color/purpose, temp)
+                    // 或 (x, y, z, name, initials, int, int, boolean)
+                    if (paramTypes[5] == int.class && paramTypes[6] == int.class && lastIsBoolean) {
+                        // int 颜色版：(x, y, z, name, initials, colorInt, purposeOrdinal, temp)
+                        return waypointConstructor.newInstance(
+                                pos.x(), pos.y(), pos.z(),
+                                name, initials, 0xFF55FFFF, 0, false);
+                    } else if (lastIsBoolean) {
+                        // 枚举版：(x, y, z, name, initials, WaypointColor, WaypointPurpose, temp)
+                        return waypointConstructor.newInstance(
+                                pos.x(), pos.y(), pos.z(),
+                                name, initials,
+                                defaultWaypointColor, defaultWaypointPurpose,
+                                false);
+                    }
+                    break;
+
+                case 7:
+                    if (paramTypes[5] == int.class && paramTypes[6] == int.class) {
+                        // int 颜色版：(x, y, z, name, initials, colorInt, purposeOrdinal)
+                        return waypointConstructor.newInstance(
+                                pos.x(), pos.y(), pos.z(),
+                                name, initials, 0xFF55FFFF, 0);
+                    } else {
+                        // 枚举版：(x, y, z, name, initials, WaypointColor, WaypointPurpose)
+                        return waypointConstructor.newInstance(
+                                pos.x(), pos.y(), pos.z(),
+                                name, initials,
+                                defaultWaypointColor, defaultWaypointPurpose);
+                    }
+
+                case 6:
+                    if (paramTypes[5] == int.class) {
+                        // int 颜色版：(x, y, z, name, initials, colorInt)
+                        return waypointConstructor.newInstance(
+                                pos.x(), pos.y(), pos.z(),
+                                name, initials, 0xFF55FFFF);
+                    } else {
+                        // 枚举颜色版：(x, y, z, name, initials, WaypointColor)
+                        return waypointConstructor.newInstance(
+                                pos.x(), pos.y(), pos.z(),
+                                name, initials, defaultWaypointColor);
+                    }
+
+                default:
+                    LOGGER.warn("Unsupported Waypoint constructor param count: {}", count);
+                    return null;
             }
+
+            LOGGER.warn("Unhandled Waypoint constructor pattern: {} params", count);
+            return null;
         } catch (Exception e) {
-            LOGGER.debug("Failed to create Waypoint: {}", e.getMessage());
+            LOGGER.warn("Failed to create Waypoint: {}", e.getMessage());
             return null;
         }
     }

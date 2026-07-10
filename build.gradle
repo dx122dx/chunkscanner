@@ -10,6 +10,13 @@ base {
     archivesName = project.archives_base_name
 }
 
+// Fabric Loom 镜像配置（为无法直连 Mojang 服务器的环境使用 BMCLAPI 镜像）
+ext {
+    loom_version_manifests = 'https://bmclapi2.bangbang93.com/mc/game/version_manifest_v2.json'
+    loom_libraries_base = 'https://bmclapi2.bangbang93.com/maven/'
+    loom_resources_base = 'https://bmclapi2.bangbang93.com/assets/'
+}
+
 repositories {
     maven {
         name = 'BMCLAPI Minecraft Libraries'
