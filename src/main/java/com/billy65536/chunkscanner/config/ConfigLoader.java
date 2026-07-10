@@ -31,7 +31,7 @@ public class ConfigLoader {
     private static boolean clothChecked = false;
 
     public static void load(ChunkScannerConfig config) {
-        if (detectClothConfig(config)) return;
+        ensureClothDetected();
         loadFromJson(config);
     }
 
@@ -41,8 +41,8 @@ public class ConfigLoader {
         saveToJson(config);
     }
 
-    /** 检测 Cloth Config 是否可用，但始终回退到 JSON 加载。 */
-    private static boolean detectClothConfig(ChunkScannerConfig config) {
+    /** 检测 Cloth Config 是否可用（用于 save() 决策）。JSON 加载始终执行。 */
+    private static void ensureClothDetected() {
         if (!clothChecked) {
             clothAvailable = FabricLoader.getInstance().isModLoaded("cloth-config");
             clothChecked = true;
@@ -50,7 +50,6 @@ public class ConfigLoader {
                 ChunkScannerMod.LOGGER.info("Cloth Config detected, configuration will be managed by Cloth Config.");
             }
         }
-        return false; // 回退 JSON 加载，Cloth Config 集成另行通过 createConfigScreen 处理
     }
 
     private static Path configPath() {

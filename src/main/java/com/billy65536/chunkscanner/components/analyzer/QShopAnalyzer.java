@@ -76,10 +76,6 @@ public class QShopAnalyzer implements ChunkAnalyzer {
     public AnalyzeResult analyze(WorldChunk chunk, int cx, int cz, String dimId, ChunkDb db, long now, World world) {
         int dimPoolId = db.intern(dimId);
 
-        // 删除此区块中所有旧 QShop 记录（保证已移除的商店被清理）
-        byte[] chunkPrefix = makeChunkPrefix(dimPoolId, cx, cz);
-        db.removeAllWithPrefix(chunkPrefix);
-
         List<byte[]> records = new ArrayList<>();
 
         for (BlockEntity be : chunk.getBlockEntities().values()) {
@@ -134,6 +130,10 @@ public class QShopAnalyzer implements ChunkAnalyzer {
             records.add(key);
             records.add(vb.array());
         }
+
+        // 先收集后替换：先删除旧记录再批量写入，确保异常安全（不在收集前删除）
+        byte[] chunkPrefix = makeChunkPrefix(dimPoolId, cx, cz);
+        db.removeAllWithPrefix(chunkPrefix);
 
         if (records.isEmpty()) {
             return AnalyzeResult.skipped();

@@ -160,7 +160,7 @@ public class ChunkScannerMod implements ClientModInitializer {
                         .executes(ctx -> {
                             scanner.start(ctx.getSource().getClient(),
                                     StringArgumentType.getString(ctx, "name"),
-                                    String.valueOf(System.currentTimeMillis() / 1000));
+                                    String.valueOf(System.currentTimeMillis()));
                             return 1;
                         })));
 

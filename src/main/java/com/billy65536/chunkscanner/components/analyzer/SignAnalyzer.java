@@ -44,10 +44,6 @@ public class SignAnalyzer implements ChunkAnalyzer {
     public AnalyzeResult analyze(WorldChunk chunk, int cx, int cz, String dimId, ChunkDb db, long now) {
         int dimPoolId = db.intern(dimId);
 
-        // 先删除此区块中所有旧告示牌记录（保证已移除的告示牌从数据库中清除）
-        byte[] chunkPrefix = makeChunkPrefix(dimPoolId, cx, cz);
-        db.removeAllWithPrefix(chunkPrefix);
-
         List<byte[]> records = new ArrayList<>();
 
         for (BlockEntity be : chunk.getBlockEntities().values()) {
@@ -63,6 +59,10 @@ public class SignAnalyzer implements ChunkAnalyzer {
             collectRecord(records, sign.getFrontText(), keyHi, keyLo, cx, cz, SIDE_FRONT, now, db);
             collectRecord(records, sign.getBackText(), keyHi, keyLo, cx, cz, SIDE_BACK, now, db);
         }
+
+        // 先收集后替换：先删除旧记录再批量写入，确保异常安全（不在收集前删除）
+        byte[] chunkPrefix = makeChunkPrefix(dimPoolId, cx, cz);
+        db.removeAllWithPrefix(chunkPrefix);
 
         if (records.isEmpty()) {
             return AnalyzeResult.skipped();

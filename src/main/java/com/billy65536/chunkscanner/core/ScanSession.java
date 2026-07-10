@@ -159,7 +159,9 @@ public class ScanSession {
         resultQueue.clear();
         if (scanExecutor != null) {
             scanExecutor.shutdown();
-            try { scanExecutor.awaitTermination(2, TimeUnit.SECONDS); } catch (InterruptedException ignored) {}
+            try { scanExecutor.awaitTermination(2, TimeUnit.SECONDS); } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
         }
         if (db != null) db.close();
         ChunkScannerMod.LOGGER.debug("[scan:{}] Session stopped (scanned={}, found={}, errors={})",

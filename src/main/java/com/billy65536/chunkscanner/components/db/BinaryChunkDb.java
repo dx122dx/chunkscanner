@@ -644,11 +644,26 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
     // ==================== 文件名工具 ====================
 
     /**
-     * 根据 scanId 生成安全的文件名，避免特殊字符和 hashCode 碰撞。
-     * 使用 base-36 编码的未签名 hashCode，长度可控且无负号问题。
+     * 根据 scanId 生成安全的文件名，避免特殊字符和碰撞。
+     * 使用 SHA-256 前 8 字节（base-36 编码），保证跨 JVM 确定性，避免 String.hashCode() 不可移植问题。
      */
     static String safeFileName(String scanId) {
-        return "chunkscanner_" + Integer.toUnsignedString(scanId.hashCode(), 36) + ".dat";
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(scanId.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            long hash = ((long)(digest[0] & 0xFF) << 56)
+                      | ((long)(digest[1] & 0xFF) << 48)
+                      | ((long)(digest[2] & 0xFF) << 40)
+                      | ((long)(digest[3] & 0xFF) << 32)
+                      | ((long)(digest[4] & 0xFF) << 24)
+                      | ((long)(digest[5] & 0xFF) << 16)
+                      | ((long)(digest[6] & 0xFF) << 8)
+                      | (digest[7] & 0xFF);
+            return "chunkscanner_" + Long.toUnsignedString(hash & 0x7FFFFFFFFFFFFFFFL, 36) + ".dat";
+        } catch (java.security.NoSuchAlgorithmException e) {
+            // SHA-256 是 JVM 必需算法，不应发生
+            throw new RuntimeException("SHA-256 not available", e);
+        }
     }
 
     /** byte[] 包装器，提供正确的 hashCode/equals 用于 HashMap。 */

@@ -392,31 +392,38 @@ public class DatabaseScreen extends Screen {
         if (openedDb == null) return;
         Path dir = BinaryChunkDb.getDbRoot();
 
-        // 在后台线程调用 JFileChooser，避免 AWT 模态对话框阻塞 GL 渲染线程
+        // 在后台线程通过 EDT 调度 JFileChooser，避免 AWT 模态对话框阻塞 GL 渲染线程
         new Thread(() -> {
-            JFileChooser chooser = new JFileChooser();
-            chooser.setDialogTitle(Text.translatable("chunkscanner.gui.database.save_as").getString());
-            chooser.setSelectedFile(new File(openedDb.scanId() + "_export.txt"));
-            chooser.setFileFilter(new FileNameExtensionFilter("Text Files (*.txt)", "txt"));
+            try {
+                final JFileChooser chooser = new JFileChooser();
+                chooser.setDialogTitle(Text.translatable("chunkscanner.gui.database.save_as").getString());
+                chooser.setSelectedFile(new File(openedDb.scanId() + "_export.txt"));
+                chooser.setFileFilter(new FileNameExtensionFilter("Text Files (*.txt)", "txt"));
 
-            // 设置默认目录
-            if (Files.exists(dir)) {
-                chooser.setCurrentDirectory(dir.toFile());
-            }
+                // 设置默认目录
+                if (Files.exists(dir)) {
+                    chooser.setCurrentDirectory(dir.toFile());
+                }
 
-            int returnVal = chooser.showSaveDialog(null);
-            if (returnVal == JFileChooser.APPROVE_OPTION) {
-                Path outPath = chooser.getSelectedFile().toPath();
-                // 确保扩展名为 .txt
-                if (!outPath.getFileName().toString().contains(".")) {
-                    outPath = outPath.resolveSibling(outPath.getFileName() + ".txt");
+                final int[] returnVal = new int[1];
+                javax.swing.SwingUtilities.invokeAndWait(() -> {
+                    returnVal[0] = chooser.showSaveDialog(null);
+                });
+                if (returnVal[0] == JFileChooser.APPROVE_OPTION) {
+                    Path outPath = chooser.getSelectedFile().toPath();
+                    // 确保扩展名为 .txt
+                    if (!outPath.getFileName().toString().contains(".")) {
+                        outPath = outPath.resolveSibling(outPath.getFileName() + ".txt");
+                    }
+                    try {
+                        Files.createDirectories(outPath.getParent());
+                        exportToFile(outPath);
+                    } catch (Exception e) {
+                        ChunkScannerMod.LOGGER.warn("Failed to export database: {}", e.getMessage());
+                    }
                 }
-                try {
-                    Files.createDirectories(outPath.getParent());
-                    exportToFile(outPath);
-                } catch (Exception e) {
-                    ChunkScannerMod.LOGGER.warn("Failed to export database: {}", e.getMessage());
-                }
+            } catch (Exception e) {
+                ChunkScannerMod.LOGGER.warn("File save dialog failed: {}", e.getMessage());
             }
         }, "ChunkScanner-FileSave").start();
     }
