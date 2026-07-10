@@ -4,9 +4,20 @@
     "version": "${version}",
     "name": "Chunk Scanner",
     "description": "Client-side progressive chunk scanner. Asynchronously scans loaded chunks with extensible analyzers (Sign, QShop). Features: multi-task parallel scanning, dual-axis GUI database browser with specialized views, adaptive rate control, context-aware storage, Xaero waypoint integration, Cloth Config support. Use /cs task begin <analyzer> [id] | /cs help.",
-    "authors": ["billy65536"],
-    "contact": {},
-    "license": "MIT",
+    "authors": [
+        {
+            "name": "billy65536",
+            "contact": {
+                "homepage": "https://github.com/dx122dx"
+            }
+        }
+    ],
+    "contact": {
+        "homepage": "https://modrinth.com/mod/chunkscanner",
+        "issues": "https://github.com/dx122dx/chunkscanner/issues",
+        "sources": "https://github.com/dx122dx/chunkscanner"
+    },
+    "license": "AGPL-3.0-only",
     "icon": "assets/chunkscanner/icon.png",
     "environment": "client",
     "entrypoints": {
