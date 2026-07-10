@@ -40,6 +40,8 @@ public final class XaeroWaypointHelper {
     private static final String DEFAULT_WAYPOINT_NAME = "选中的坐标点";
     /** 默认路径点缩写。 */
     private static final String DEFAULT_WAYPOINT_INITIALS = "目标";
+    /** 默认路径点颜色 (ARGB AQUA)。 */
+    private static final int DEFAULT_WAYPOINT_COLOR = 0xFF55FFFF;
     /** Xaero 默认世界容器键名。 */
     private static final String DEFAULT_WORLD_KEY = "waypoints";
     /** Xaero 默认路径点组名。 */
@@ -47,6 +49,7 @@ public final class XaeroWaypointHelper {
 
     // ==================== 缓存反射句柄 ====================
 
+    private static volatile boolean initialized;
     private static volatile Boolean minimapAvailable;
     private static volatile Constructor<?> waypointConstructor;
     private static volatile Class<?> waypointClass;       // xaero.common.minimap.waypoints.Waypoint
@@ -555,8 +558,7 @@ public final class XaeroWaypointHelper {
      * 新版 Xaero 可能不存在这些类，此时自动降级使用无需枚举的构造函数。</p>
      */
     private static synchronized boolean initMinimapReflection() {
-        // 用 waypointConstructor 作为"已完成完整初始化"的标志
-        if (waypointConstructor != null) return true;
+        if (initialized) return true;
         try {
             // 1. Waypoint 类及构造函数、相关枚举
             waypointClass = Class.forName("xaero.common.minimap.waypoints.Waypoint");
@@ -708,11 +710,43 @@ public final class XaeroWaypointHelper {
             }
 
             LOGGER.info("Xaero's Minimap integration enabled");
+            initialized = true;
             return true;
         } catch (Exception e) {
             LOGGER.info("Xaero's Minimap not available: {}", e.getMessage());
+            resetReflectionHandles();
             return false;
         }
+    }
+
+    /** 重置所有反射句柄，防止部分初始化状态泄漏导致后续 NPE。 */
+    private static void resetReflectionHandles() {
+        waypointClass = null;
+        waypointConstructor = null;
+        minimapModule = null;
+        defaultWaypointColor = null;
+        defaultWaypointPurpose = null;
+        getCurrentSession = null;
+        getWorldManager = null;
+        getCurrentWorld = null;
+        getCurrentWaypointSet = null;
+        getNamedWaypointSet = null;
+        addWaypointSetByName = null;
+        getWorldManagerIO = null;
+        saveWorldMethod = null;
+        xaeroPathClass = null;
+        xaeroPathRoot = null;
+        xaeroPathResolve = null;
+        xaeroPathGetRoot = null;
+        xaeroPathGetLastNode = null;
+        worldManagerAddWorldContainer = null;
+        containerGetFirstWorld = null;
+        containerAddWorldMethod = null;
+        getWorldState = null;
+        getAutoWorldPath = null;
+        getWorldDimIdMethod = null;
+        getDimensionHelperMethod = null;
+        getDimensionDirNameMethod = null;
     }
 
     /**
@@ -899,7 +933,7 @@ public final class XaeroWaypointHelper {
                         // int 颜色版：(x, y, z, name, initials, colorInt, purposeOrdinal, temp)
                         return waypointConstructor.newInstance(
                                 pos.x(), pos.y(), pos.z(),
-                                name, initials, 0xFF55FFFF, 0, false);
+                                name, initials, DEFAULT_WAYPOINT_COLOR, 0, false);
                     } else if (lastIsBoolean) {
                         // 枚举版：(x, y, z, name, initials, WaypointColor, WaypointPurpose, temp)
                         return waypointConstructor.newInstance(
@@ -908,14 +942,15 @@ public final class XaeroWaypointHelper {
                                 defaultWaypointColor, defaultWaypointPurpose,
                                 false);
                     }
-                    break;
+                    LOGGER.warn("Unhandled 8-param Waypoint constructor pattern");
+                    return null;
 
                 case 7:
                     if (paramTypes[5] == int.class && paramTypes[6] == int.class) {
                         // int 颜色版：(x, y, z, name, initials, colorInt, purposeOrdinal)
                         return waypointConstructor.newInstance(
                                 pos.x(), pos.y(), pos.z(),
-                                name, initials, 0xFF55FFFF, 0);
+                                name, initials, DEFAULT_WAYPOINT_COLOR, 0);
                     } else {
                         // 枚举版：(x, y, z, name, initials, WaypointColor, WaypointPurpose)
                         return waypointConstructor.newInstance(
@@ -929,7 +964,7 @@ public final class XaeroWaypointHelper {
                         // int 颜色版：(x, y, z, name, initials, colorInt)
                         return waypointConstructor.newInstance(
                                 pos.x(), pos.y(), pos.z(),
-                                name, initials, 0xFF55FFFF);
+                                name, initials, DEFAULT_WAYPOINT_COLOR);
                     } else {
                         // 枚举颜色版：(x, y, z, name, initials, WaypointColor)
                         return waypointConstructor.newInstance(
@@ -941,9 +976,6 @@ public final class XaeroWaypointHelper {
                     LOGGER.warn("Unsupported Waypoint constructor param count: {}", count);
                     return null;
             }
-
-            LOGGER.warn("Unhandled Waypoint constructor pattern: {} params", count);
-            return null;
         } catch (Exception e) {
             LOGGER.warn("Failed to create Waypoint: {}", e.getMessage());
             return null;
