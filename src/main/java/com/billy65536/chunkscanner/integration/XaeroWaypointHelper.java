@@ -2,8 +2,12 @@ package com.billy65536.chunkscanner.integration;
 
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.registry.RegistryKey;
+import net.minecraft.registry.RegistryKeys;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
+import net.minecraft.util.Identifier;
+import net.minecraft.world.World;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,6 +57,14 @@ public final class XaeroWaypointHelper {
     private static volatile Method addWaypointSetByName;  // addWaypointSet(String) — 创建新组
     private static volatile Method getWorldManagerIO;     // MinimapSession.getWorldManagerIO()
     private static volatile Method saveWorldMethod;       // MinimapWorldManagerIO.saveWorld(MinimapWorld)
+
+    // 跨维度路径点创建所需的反射句柄
+    private static volatile Method getContainerMethod;            // MinimapWorld.getContainer()
+    private static volatile Method containerGetWorldsMethod;      // MinimapWorldContainer.getWorlds()
+    private static volatile Method containerAddWorldByNameMethod; // MinimapWorldContainer.addWorld(String)
+    private static volatile Method getWorldDimIdMethod;           // MinimapWorld.getDimId() → RegistryKey<World>
+    private static volatile Method getDimensionHelperMethod;      // MinimapSession.getDimensionHelper()
+    private static volatile Method getDimensionDirNameMethod;     // MinimapDimensionHelper.getDimensionDirectoryName(RegistryKey<World>)
 
     private XaeroWaypointHelper() {}
 
@@ -141,8 +153,15 @@ public final class XaeroWaypointHelper {
                 return false;
             }
 
-            // session.getWorldManager().getCurrentWorld().getWaypointSet(group) / getCurrentWaypointSet()
-            Object waypointSet = resolveCurrentWaypointSet(session, group);
+            // 查找路径点所属维度的 MinimapWorld（而非玩家当前维度）
+            Object targetWorld = getWorldForDimension(session, pos.dimensionId());
+            if (targetWorld == null) {
+                LOGGER.warn("Could not find MinimapWorld for dimension {}", pos.dimensionId());
+                return false;
+            }
+
+            // 在目标世界中解析 WaypointSet
+            Object waypointSet = resolveWaypointSetForWorld(targetWorld, group);
             if (waypointSet == null) return false;
 
             Object wp = createWaypoint(pos, name, initials);
@@ -155,7 +174,7 @@ public final class XaeroWaypointHelper {
             }
 
             // 触发持久化保存（避免维度切换后丢失）
-            saveCurrentWorld(session);
+            saveWorld(session, targetWorld);
 
             sendSuccessMessage(pos, name);
             return true;
@@ -166,25 +185,99 @@ public final class XaeroWaypointHelper {
     }
 
     /**
-     * 从 MinimapSession 出发，获取 WaypointSet。
-     * 优先按 group 名称获取指定组，回退到当前 WaypointSet。
+     * 根据目标维度 ID 查找或创建对应的 MinimapWorld。
+     *
+     * <p>当路径点坐标所属维度与玩家当前所在维度不同时，不能使用 getCurrentWorld()，
+     * 因为那会返回玩家当前维度对应的 MinimapWorld，导致路径点存错文件。
+     * 此方法通过遍历容器中已有世界并通过 getDimId() 匹配，未命中则通过
+     * container.addWorld(dimDirName) 动态创建目标维度的世界。</p>
+     *
+     * @param session     MinimapSession
+     * @param dimensionId 目标维度标识符（如 {@code "minecraft:the_end"}）
+     * @return 目标维度对应的 MinimapWorld，失败返回 {@code null}
      */
-    private static Object resolveCurrentWaypointSet(Object session, String group) {
+    private static Object getWorldForDimension(Object session, String dimensionId) {
+        if (dimensionId == null || dimensionId.isEmpty()) return null;
         try {
-            // session.getWorldManager() → WorldManager
+            // 1. 构造 RegistryKey<World>
+            RegistryKey<World> targetKey = RegistryKey.of(
+                    RegistryKeys.WORLD, new Identifier(dimensionId));
+
+            // 2. 获取 worldManager 和当前 world（用于获取容器引用）
             Object worldManager = getWorldManager.invoke(session);
             if (worldManager == null) {
                 LOGGER.warn("getWorldManager() returned null");
-                return resolveViaLegacyApi(session);
+                return null;
             }
-
-            // worldManager.getCurrentWorld() → MinimapWorld
-            Object world = getCurrentWorld.invoke(worldManager);
-            if (world == null) {
+            Object currentWorld = getCurrentWorld.invoke(worldManager);
+            if (currentWorld == null) {
                 LOGGER.warn("getCurrentWorld() returned null");
                 return null;
             }
 
+            // 3. 先检查：如果当前世界就是目标维度，直接返回
+            if (getWorldDimIdMethod != null) {
+                try {
+                    Object dimKey = getWorldDimIdMethod.invoke(currentWorld);
+                    if (targetKey.equals(dimKey)) {
+                        return currentWorld;
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            // 4. 获取容器并遍历已有世界，按 getDimId() 匹配
+            if (getContainerMethod != null && containerGetWorldsMethod != null
+                    && getWorldDimIdMethod != null) {
+                Object container = getContainerMethod.invoke(currentWorld);
+                if (container != null) {
+                    @SuppressWarnings("unchecked")
+                    Iterable<Object> worlds = (Iterable<Object>) containerGetWorldsMethod.invoke(container);
+                    if (worlds != null) {
+                        for (Object world : worlds) {
+                            if (world == null) continue;
+                            try {
+                                Object dimKey = getWorldDimIdMethod.invoke(world);
+                                if (targetKey.equals(dimKey)) {
+                                    LOGGER.debug("Found existing MinimapWorld for dimension {}", dimensionId);
+                                    return world;
+                                }
+                            } catch (Exception ignored) {}
+                        }
+                    }
+
+                    // 5. 未找到 → 通过 dimensionHelper 获取目录名后创建
+                    if (containerAddWorldByNameMethod != null
+                            && getDimensionHelperMethod != null
+                            && getDimensionDirNameMethod != null) {
+                        try {
+                            Object dimHelper = getDimensionHelperMethod.invoke(session);
+                            String dimDirName = (String) getDimensionDirNameMethod.invoke(dimHelper, targetKey);
+                            if (dimDirName != null) {
+                                Object newWorld = containerAddWorldByNameMethod.invoke(container, dimDirName);
+                                LOGGER.info("Created MinimapWorld for dimension {} (dir: {})", dimensionId, dimDirName);
+                                return newWorld;
+                            }
+                        } catch (Exception e) {
+                            LOGGER.debug("Failed to create MinimapWorld for {}: {}", dimensionId, e.getMessage());
+                        }
+                    }
+                }
+            }
+
+            LOGGER.warn("Could not find or create MinimapWorld for dimension {}", dimensionId);
+            return null;
+        } catch (Exception e) {
+            LOGGER.warn("getWorldForDimension failed for {}: {}", dimensionId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 在指定的 MinimapWorld 中获取 WaypointSet。
+     * 优先按 group 名称获取指定组，回退到当前 WaypointSet。
+     */
+    private static Object resolveWaypointSetForWorld(Object world, String group) {
+        try {
             // 优先：按配置的 group 获取指定 WaypointSet
             // 如果组不存在，自动创建（否则切换维度后自定义组不存在导致创建失败）
             if (group != null && !group.isEmpty() && getNamedWaypointSet != null) {
@@ -198,7 +291,7 @@ public final class XaeroWaypointHelper {
                         addWaypointSetByName.invoke(world, group);
                         namedSet = getNamedWaypointSet.invoke(world, group);
                         if (namedSet != null) {
-                            LOGGER.info("Created new waypoint set \"{}\" in current world", group);
+                            LOGGER.info("Created new waypoint set \"{}\" in target world", group);
                             return namedSet;
                         }
                     }
@@ -219,7 +312,6 @@ public final class XaeroWaypointHelper {
                             addWaypointSetByName.invoke(world, "gui.waypoints");
                             waypointSet = getCurrentWaypointSet.invoke(world);
                             if (waypointSet == null) {
-                                // 设置了默认组但仍为 null，尝试 getWaypointSet
                                 waypointSet = getNamedWaypointSet != null
                                         ? getNamedWaypointSet.invoke(world, "gui.waypoints") : null;
                             }
@@ -234,7 +326,7 @@ public final class XaeroWaypointHelper {
 
             return resolveFallbackWaypointSet(world);
         } catch (Exception e) {
-            LOGGER.warn("resolveCurrentWaypointSet failed: {}", e.getMessage());
+            LOGGER.warn("resolveWaypointSetForWorld failed: {}", e.getMessage());
             return null;
         }
     }
@@ -264,7 +356,7 @@ public final class XaeroWaypointHelper {
                 if (waypointSet != null) return waypointSet;
             } catch (NoSuchMethodException ignored) {}
 
-            // 尝试 getCurrentWaypointSet()（如果 main path 没走到这里就说明已经试过了，但作为 fallback 再试）
+            // 尝试 getCurrentWaypointSet()
             try {
                 Method getCurrent = world.getClass().getMethod("getCurrentWaypointSet");
                 Object waypointSet = getCurrent.invoke(world);
@@ -354,14 +446,14 @@ public final class XaeroWaypointHelper {
      * 通过 MinimapSession.getWorldManagerIO().saveWorld(world) 触发路径点持久化。
      * <p>Xaero's Minimap 在维度卸载时才保存路径点。如果玩家在保存前切换维度或退出，
      * 新增的路径点会丢失。显式调用 saveWorld 可立即持久化。</p>
+     *
+     * @param session MinimapSession
+     * @param world   要保存的 MinimapWorld（非当前世界时也需要显式传入）
      */
-    private static void saveCurrentWorld(Object session) {
+    private static void saveWorld(Object session, Object world) {
         try {
             if (getWorldManagerIO == null || saveWorldMethod == null) return;
-            Object worldManager = getWorldManager.invoke(session);
-            if (worldManager == null) return;
-            Object world = getCurrentWorld.invoke(worldManager);
-            if (world == null) return;
+            if (session == null || world == null) return;
             Object io = getWorldManagerIO.invoke(session);
             if (io == null) return;
             saveWorldMethod.invoke(io, world);
@@ -453,7 +545,49 @@ public final class XaeroWaypointHelper {
                 addWaypointSetByName = null;
             }
 
-            // 6. 持久化保存：MinimapSession.getWorldManagerIO() → MinimapWorldManagerIO
+            // 6. 跨维度世界查找：MinimapWorld.getContainer() / getDimId()
+            try {
+                getContainerMethod = worldClass.getMethod("getContainer");
+            } catch (NoSuchMethodException e) {
+                getContainerMethod = null;
+            }
+            try {
+                getWorldDimIdMethod = worldClass.getMethod("getDimId");
+            } catch (NoSuchMethodException e) {
+                getWorldDimIdMethod = null;
+            }
+
+            // 7. MinimapWorldContainer.getWorlds() / addWorld(String)
+            if (getContainerMethod != null) {
+                Class<?> containerClass = getContainerMethod.getReturnType();
+                try {
+                    containerGetWorldsMethod = containerClass.getMethod("getWorlds");
+                } catch (NoSuchMethodException e) {
+                    containerGetWorldsMethod = null;
+                }
+                try {
+                    containerAddWorldByNameMethod = containerClass.getMethod("addWorld", String.class);
+                } catch (NoSuchMethodException e) {
+                    containerAddWorldByNameMethod = null;
+                }
+            } else {
+                containerGetWorldsMethod = null;
+                containerAddWorldByNameMethod = null;
+            }
+
+            // 8. MinimapSession.getDimensionHelper() → MinimapDimensionHelper
+            try {
+                getDimensionHelperMethod = minimapSessionClass.getMethod("getDimensionHelper");
+                Class<?> dimHelperClass = getDimensionHelperMethod.getReturnType();
+                getDimensionDirNameMethod = dimHelperClass.getMethod("getDimensionDirectoryName",
+                        Class.forName("net.minecraft.class_5321")); // RegistryKey<World>
+            } catch (NoSuchMethodException e) {
+                getDimensionHelperMethod = null;
+                getDimensionDirNameMethod = null;
+                LOGGER.debug("DimensionHelper not available, cross-dimension waypoint creation limited");
+            }
+
+            // 9. 持久化保存：MinimapSession.getWorldManagerIO() → MinimapWorldManagerIO
             try {
                 getWorldManagerIO = minimapSessionClass.getMethod("getWorldManagerIO");
                 Class<?> ioClass = getWorldManagerIO.getReturnType();
