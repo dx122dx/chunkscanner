@@ -35,6 +35,14 @@ public abstract class KvPageRenderer {
     public abstract int computeContentWidth();
 
     /**
+     * 返回表头占用的像素高度（无需绘制上下文）。
+     * 特化视图返回 16，原始视图返回 0。
+     */
+    public int getHeaderHeight() {
+        return 0;
+    }
+
+    /**
      * 渲染表头（特化视图有列头 + 分隔线，原始视图无操作）。
      *
      * @return 表头占用的像素高度
@@ -118,7 +126,7 @@ public abstract class KvPageRenderer {
                     baseX, rowY, 0xFFFFFF);
 
             String keyStr = GuiUtil.bytesToHex(entry.key(), MAX_KEY_BYTES);
-            int keyX = baseX + 30;
+            int keyX = baseX + textRenderer.getWidth("[" + actualIdx + "] ");
             ctx.drawTextWithShadow(textRenderer,
                     Text.literal(keyStr).formatted(Formatting.YELLOW),
                     keyX, rowY, 0xFFFFFF);
@@ -228,6 +236,11 @@ public abstract class KvPageRenderer {
         }
 
         @Override
+        public int getHeaderHeight() {
+            return (headers != null && headers.length > 0) ? 16 : 0;
+        }
+
+        @Override
         public int renderHeader(DrawContext ctx, int listTop, int margin, int hScrollOffset) {
             if (headers == null || headers.length == 0) return 0;
             int hx = margin - hScrollOffset;
@@ -244,6 +257,9 @@ public abstract class KvPageRenderer {
         @Override
         public int renderRow(DrawContext ctx, int actualIdx, int rowY,
                               int margin, int hScrollOffset, int mouseX, int mouseY) {
+            if (actualIdx == 0) {
+                hoveredCol = -1; // 每帧首行重置悬停列，避免无行悬停时返回陈旧值
+            }
             String[] row = rows.get(actualIdx);
             int rx = margin - hScrollOffset;
             boolean rowHovered = false;

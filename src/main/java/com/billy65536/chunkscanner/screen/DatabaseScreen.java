@@ -743,9 +743,17 @@ public class DatabaseScreen extends Screen {
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
+    /** 计算 KV 视图的数据区域 top（含特化视图表头高度，与 renderKvView 保持一致）。 */
+    private int computeKvListTop() {
+        int listTop = 44; // infoY(28) + 16
+        if (pageRenderer != null) {
+            listTop += pageRenderer.getHeaderHeight();
+        }
+        return listTop;
+    }
+
     private boolean handleKvClick(double mouseX, double mouseY, int button) {
-        int infoY = 28;
-        int listTop = infoY + 16;
+        int listTop = computeKvListTop();
         int listBottomV = this.height - 34 - SCROLLBAR_RESERVE;
         int kvSize = pageRenderer != null ? pageRenderer.getItemCount() : 0;
 
@@ -796,8 +804,7 @@ public class DatabaseScreen extends Screen {
             }
         } else {
             // KV 垂直拖拽
-            int infoY = 28;
-            int listTop = infoY + 16;
+            int listTop = computeKvListTop();
             int listBottomV = this.height - 34 - SCROLLBAR_RESERVE;
             int kvSize = pageRenderer != null ? pageRenderer.getItemCount() : 0;
             kvPanel.setBounds(listTop, listBottomV, this.width - 6);
@@ -843,8 +850,7 @@ public class DatabaseScreen extends Screen {
     }
 
     private boolean handleKvScroll(double amount) {
-        int infoY = 28;
-        int listTop = infoY + 16;
+        int listTop = computeKvListTop();
         int listBottomV = this.height - 34 - SCROLLBAR_RESERVE;
         int kvSize = pageRenderer != null ? pageRenderer.getItemCount() : 0;
 

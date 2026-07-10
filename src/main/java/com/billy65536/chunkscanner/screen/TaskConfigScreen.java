@@ -319,6 +319,10 @@ public class TaskConfigScreen extends Screen {
 
     private void doStart() {
         TaskConfig config = buildConfig();
+        if (config == null) {
+            // buildConfig 返回 null 表示存在无效数值输入，取消创建并提示用户
+            return;
+        }
         String id = idField.getText().trim();
         if (id.isEmpty()) id = defaultScanId;
         if (analyzerList.isEmpty()) return;
@@ -353,6 +357,7 @@ public class TaskConfigScreen extends Screen {
                 }
             } catch (NumberFormatException e) {
                 ChunkScannerMod.LOGGER.warn("TaskConfig: invalid value for field '{}': '{}'", fieldIds[i], text);
+                return null; // 用户输入了无效数值，放弃所有配置
             }
         }
 

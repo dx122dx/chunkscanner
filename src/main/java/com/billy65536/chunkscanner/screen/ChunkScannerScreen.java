@@ -37,6 +37,8 @@ public class ChunkScannerScreen extends Screen {
     private static final int WIDTH = 340;
     private static final int LIST_ITEM_HEIGHT = 36;
     private static final int SCROLLBAR_X_OFFSET = WIDTH - 12; // relative to left margin
+    private static final int SEPARATOR_Y = 52;
+    private static final int LIST_TOP_OFFSET = 4;
 
     private final ChunkScanner scanner;
 
@@ -216,7 +218,7 @@ public class ChunkScannerScreen extends Screen {
                 centerX, 12, 0xFFFFFF);
 
         // 分隔线
-        int sepY = 52;
+        int sepY = SEPARATOR_Y;
         context.drawHorizontalLine(leftX, leftX + WIDTH, sepY, 0xFF555555);
 
         // 渲染活跃任务列表
@@ -224,7 +226,7 @@ public class ChunkScannerScreen extends Screen {
         List<ScanSession> list = new ArrayList<>(sessions);
 
         // 列表区域
-        int listTop = sepY + 4;
+        int listTop = sepY + LIST_TOP_OFFSET;
         int listBottom = this.height - 38;
         sessionPanel.setBounds(listTop, listBottom, leftX + SCROLLBAR_X_OFFSET);
         int maxVisible = sessionPanel.clamp(list.size());
@@ -437,7 +439,7 @@ public class ChunkScannerScreen extends Screen {
             }
 
             // 检查列表项按钮
-            int listTop = 52 + 4;
+            int listTop = SEPARATOR_Y + LIST_TOP_OFFSET;
             int maxVisible = sessionPanel.getMaxVisible(list.size());
             for (int i = 0; i < maxVisible; i++) {
                 int idx = sessionPanel.getOffset() + i;

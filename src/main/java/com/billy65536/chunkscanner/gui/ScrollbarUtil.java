@@ -93,6 +93,7 @@ public final class ScrollbarUtil {
      */
     public static int verticalOffsetFromMouse(double mouseY, int top, int bottom,
                                                int total, int maxVisible) {
+        if (total <= 0 || total <= maxVisible) return 0;
         int trackH = bottom - top;
         int thumbH = Math.max(8, (int) ((long) trackH * maxVisible / total));
         int travel = trackH - thumbH;
@@ -108,6 +109,7 @@ public final class ScrollbarUtil {
     public static int horizontalOffsetFromMouse(double mouseX, int left, int right,
                                                  int totalWidth) {
         int visible = right - left;
+        if (totalWidth <= 0 || totalWidth <= visible) return 0;
         int trackW = right - left;
         int thumbW = Math.max(16, (int) ((long) trackW * visible / totalWidth));
         int travel = trackW - thumbW;
