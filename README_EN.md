@@ -2,7 +2,7 @@
 
 **Client-side Progressive Chunk Scanner** — Asynchronously scans loaded chunks in Minecraft, working with extensible analyzers to automatically discover and log items of interest.
 
-[![License: GNU AGPL v3](https://img.shields.io/badge/License-GNU%20APGL%20v3-green.svg)](LICENSE)
+[![License: GNU AGPL v3](https://img.shields.io/badge/License-GNU%20AGPL%20v3-green.svg)](LICENSE)
 [![Minecraft](https://img.shields.io/badge/Minecraft-1.20.1-blue.svg)](https://minecraft.net/)
 [![Fabric Loader](https://img.shields.io/badge/Fabric%20Loader-%E2%89%A50.14.24-orange.svg)](https://fabricmc.net/)
 
@@ -356,7 +356,7 @@ This mechanism ensures the scanner runs silently in the background without affec
 
 ```bash
 # Clone the repository
-git clone https://github.com/billy65536/chunkscanner.git
+git clone https://github.com/dx122dx/chunkscanner.git
 cd chunkscanner
 
 # Build
@@ -380,48 +380,69 @@ cd chunkscanner
 ## Project Structure
 
 ```
-src/main/java/com/billy65536/chunkscanner/
-├── ChunkScannerMod.java              # Main entry: initialization, command registration, callbacks
-├── config/
-│   ├── ChunkScannerConfig.java        # Global config data model
-│   ├── ConfigLoader.java              # Config load/save
-│   └── TaskConfig.java                # Task-level config
-├── core/
-│   ├── ChunkScanner.java              # Scan engine core
-│   ├── ChunkAnalyzer.java             # Analyzer interface
-│   ├── ChunkDb.java                   # Generic database interface
-│   ├── ScanSession.java               # Scan session state
-│   ├── AnalyzeResult.java             # Analysis result
-│   ├── DbViewProvider.java            # DB view provider interface + registry
-│   ├── LocatedPosition.java           # World location record
-│   └── CoreUtil.java                  # Utility methods
-├── components/
-│   ├── analyzer/
-│   │   ├── SignAnalyzer.java          # Sign analyzer
-│   │   └── QShopAnalyzer.java         # QShop store analyzer
-│   ├── db/
-│   │   ├── BinaryChunkDb.java         # Binary database implementation
-│   │   └── DbFileUtil.java            # Database file utilities
-│   └── view_provider/
-│       ├── SignDbViewProvider.java    # Sign specialized view
-│       ├── QShopDbViewProvider.java   # QShop specialized view
-│       └── QShopFilterScreen.java     # QShop filter screen
-├── screen/
-│   ├── ChunkScannerScreen.java        # Task management GUI
-│   ├── DatabaseScreen.java            # Database browser GUI
-│   └── TaskConfigScreen.java          # Task configuration GUI
-├── gui/
-│   ├── GuiUtil.java                   # GUI common utilities
-│   ├── KvPageRenderer.java            # Database page renderer
-│   ├── PlaceholderTextField.java      # Placeholder text field
-│   ├── ScrollManager.java             # Scroll manager
-│   ├── ScrollableListPanel.java       # Scrollable list panel
-│   └── ScrollbarUtil.java             # Scrollbar renderer
-└── integration/
-    ├── ClothConfigIntegration.java     # Cloth Config integration
-    ├── ModMenuIntegration.java         # ModMenu integration
-    └── XaeroWaypointHelper.java       # Xaero waypoint integration
+src/main/
+├── java/com/billy65536/chunkscanner/
+│   ├── ChunkScannerMod.java              # Main entry: initialization, command registration, callbacks
+│   ├── config/
+│   │   ├── ChunkScannerConfig.java        # Global config data model
+│   │   ├── ConfigLoader.java              # Config load/save
+│   │   └── TaskConfig.java                # Task-level config
+│   ├── core/
+│   │   ├── ChunkScanner.java              # Scan engine core
+│   │   ├── ChunkAnalyzer.java             # Analyzer interface
+│   │   ├── ChunkDb.java                   # Generic database interface
+│   │   ├── ScanSession.java               # Scan session state
+│   │   ├── AnalyzeResult.java             # Analysis result
+│   │   ├── DbViewProvider.java            # DB view provider interface + registry
+│   │   ├── LocatedPosition.java           # World location record
+│   │   └── CoreUtil.java                  # Utility methods
+│   ├── components/
+│   │   ├── analyzer/
+│   │   │   ├── SignAnalyzer.java          # Sign analyzer
+│   │   │   └── QShopAnalyzer.java         # QShop store analyzer
+│   │   ├── db/
+│   │   │   ├── BinaryChunkDb.java         # Binary database implementation
+│   │   │   └── DbFileUtil.java            # Database file utilities
+│   │   └── view_provider/
+│   │       ├── SignDbViewProvider.java    # Sign specialized view
+│   │       ├── QShopDbViewProvider.java   # QShop specialized view
+│   │       └── QShopFilterScreen.java     # QShop filter screen
+│   ├── screen/
+│   │   ├── ChunkScannerScreen.java        # Task management GUI
+│   │   ├── DatabaseScreen.java            # Database browser GUI
+│   │   └── TaskConfigScreen.java          # Task configuration GUI
+│   ├── gui/
+│   │   ├── GuiUtil.java                   # GUI common utilities
+│   │   ├── KvPageRenderer.java            # Database page renderer
+│   │   ├── PlaceholderTextField.java      # Placeholder text field
+│   │   ├── ScrollManager.java             # Scroll manager
+│   │   ├── ScrollableListPanel.java       # Scrollable list panel
+│   │   └── ScrollbarUtil.java             # Scrollbar renderer
+│   └── integration/
+│       ├── ClothConfigIntegration.java     # Cloth Config integration
+│       ├── ModMenuIntegration.java         # ModMenu integration
+│       └── XaeroWaypointHelper.java       # Xaero waypoint integration
+└── resources/
+    ├── assets/chunkscanner/
+    │   ├── icon.png                       # Mod icon
+    │   └── lang/
+    │       ├── en_us.json                  # English translation
+    │       └── zh_cn.json                  # Simplified Chinese translation
+    └── fabric.mod.json                    # Mod metadata
 ```
+
+Additionally, the project includes **8 JUnit 5 unit tests** (`src/test/java/com/billy65536/chunkscanner/`):
+
+| Test Class | Coverage |
+|------------|----------|
+| `config/ChunkScannerConfigTest` | Global config defaults & copy |
+| `config/TaskConfigTest` | Task config parsing, serialization, copy |
+| `core/AnalyzeResultTest` | Result factory methods & states |
+| `core/ChunkDbTest` | Database interface default methods |
+| `core/ChunkStatusBreakdownTest` | Chunk status breakdown |
+| `core/CoreUtilTest` | Utility methods (bit packing, etc.) |
+| `core/DbViewProviderRegistryTest` | View provider registry |
+| `core/LocatedPositionTest` | Location record |
 
 ---
 
