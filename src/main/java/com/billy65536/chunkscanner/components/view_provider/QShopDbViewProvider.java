@@ -44,7 +44,7 @@ public class QShopDbViewProvider implements DbViewProvider {
 
     /** 缓存解析后的商店记录（全量，未筛选）。 */
     private List<QShopRecord> cachedRecords;
-    private boolean cacheValid = false;
+    private volatile boolean cacheValid = false;
 
     // ==================== 排序常量 ====================
 

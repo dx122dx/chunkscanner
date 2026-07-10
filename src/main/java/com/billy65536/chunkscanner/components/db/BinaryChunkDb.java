@@ -87,7 +87,7 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
     /** 关闭标记：已调用 close() 时为 true，后续 flush() 将忽略。 */
     private volatile boolean closed = false;
     /** 打开标记：open() 被调用后为 true。 */
-    private boolean opened = false;
+    private volatile boolean opened = false;
     /**
      * 元数据模式：仅用于文件列表展示。
      * 构造时不加载文件内容，调用 open() 后才加载。
@@ -229,8 +229,8 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
             long key = e.getKey();
             int dimPoolId = (int) (key >> 48) & 0xFFFF;
             String dimensionId = lookup(dimPoolId);
-            int cx = (int) (key >> 24) & 0xFFFFFF;
-            int cz = (int) (key & 0xFFFFFF);
+            int cx = signExtend24Bit((int) (key >> 24));
+            int cz = signExtend24Bit((int) key);
             metas.add(new ChunkMeta(dimensionId, cx, cz, e.getValue()));
         }
         return metas;
@@ -429,6 +429,9 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
     @Override
     public synchronized void flush() {
         if (!dirty || closed) return;
+        // 在迭代 collection 之前重置脏标记：并发写入在迭代期间设置 dirty=true
+        // 会被下一次 flush 捕获，避免数据遗漏。
+        dirty = false;
         try {
             Files.createDirectories(dbDir);
             Path tmpPath = dataPath().resolveSibling(safeFileName + ".tmp");
@@ -465,8 +468,8 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
                     long key = e.getKey();
                     buf.clear();
                     buf.putInt((int) (key >> 48) & 0xFFFF);
-                    buf.putInt((int) (key >> 24) & 0xFFFFFF);
-                    buf.putInt((int) (key & 0xFFFFFF));
+                    buf.putInt(signExtend24Bit((int) (key >> 24)));
+                    buf.putInt(signExtend24Bit((int) key));
                     buf.putLong(e.getValue());
                     buf.flip(); ch.write(buf);
                 }
@@ -485,9 +488,10 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
             Files.move(tmpPath, dataPath(),
                     java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                     java.nio.file.StandardCopyOption.ATOMIC_MOVE);
-            dirty = false;
 
         } catch (IOException e) {
+            // 刷写失败时恢复脏标记，确保数据不会丢失
+            dirty = true;
             ChunkScannerMod.LOGGER.error("[scan:{}] Flush failed: {}", scanId, e.getMessage());
         }
     }
@@ -624,6 +628,17 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
         return ((long) (dimPoolId & 0xFFFF) << 48)
                 | ((long) (cx & 0xFFFFFF) << 24)
                 | (cz & 0xFFFFFFL);
+    }
+
+    /**
+     * 将 24-bit 无符号值符号扩展为 32-bit 有符号 int。
+     * 打包时低 24 位丢失了符号信息，解包时通过这一转换恢复原始 int 值。
+     * 前提：实际区块坐标不会超出 24-bit 有符号范围（±8,388,607），这对 Minecraft 始终成立。
+     */
+    private static int signExtend24Bit(int value) {
+        int v = value & 0xFFFFFF;
+        if ((v & 0x800000) != 0) v |= 0xFF000000;
+        return v;
     }
 
     // ==================== 文件名工具 ====================

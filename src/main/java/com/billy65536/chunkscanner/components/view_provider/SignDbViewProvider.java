@@ -42,7 +42,7 @@ public class SignDbViewProvider implements DbViewProvider {
 
     /** 缓存解析后的告示牌记录，避免每帧重复解析。 */
     private List<SignRecord> cachedRecords;
-    private boolean cacheValid = false;
+    private volatile boolean cacheValid = false;
 
     public SignDbViewProvider(BinaryChunkDb delegate) {
         this.delegate = delegate;
