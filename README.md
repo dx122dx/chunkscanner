@@ -2,7 +2,7 @@
 
 **客户端渐进式区块扫描器** — 在 Minecraft 中异步扫描已加载区块，配合可扩展的分析器自动发现和记录感兴趣的内容。
 
-[![License: GNU AGPL v3](https://img.shields.io/badge/License-GNU%20APGL%20v3-green.svg)](LICENSE)
+[![License: GNU AGPL v3](https://img.shields.io/badge/License-GNU%20AGPL%20v3-green.svg)](LICENSE)
 [![Minecraft](https://img.shields.io/badge/Minecraft-1.20.1-blue.svg)](https://minecraft.net/)
 [![Fabric Loader](https://img.shields.io/badge/Fabric%20Loader-%E2%89%A50.14.24-orange.svg)](https://fabricmc.net/)
 
@@ -356,7 +356,7 @@ Chunk Scanner 内置了智能速率调节机制：
 
 ```bash
 # 克隆仓库
-git clone https://github.com/billy65536/chunkscanner.git
+git clone https://github.com/dx122dx/chunkscanner.git
 cd chunkscanner
 
 # 构建
@@ -380,48 +380,69 @@ cd chunkscanner
 ## 项目结构
 
 ```
-src/main/java/com/billy65536/chunkscanner/
-├── ChunkScannerMod.java              # 主入口：初始化、命令注册、回调
-├── config/
-│   ├── ChunkScannerConfig.java        # 全局配置数据模型
-│   ├── ConfigLoader.java              # 配置加载/保存
-│   └── TaskConfig.java                # 任务级配置
-├── core/
-│   ├── ChunkScanner.java              # 扫描引擎核心
-│   ├── ChunkAnalyzer.java             # 分析器接口
-│   ├── ChunkDb.java                   # 通用数据库接口
-│   ├── ScanSession.java               # 扫描会话状态
-│   ├── AnalyzeResult.java             # 分析结果
-│   ├── DbViewProvider.java            # 数据库视图提供者接口 + 注册表
-│   ├── LocatedPosition.java           # 世界位置记录
-│   └── CoreUtil.java                  # 工具方法
-├── components/
-│   ├── analyzer/
-│   │   ├── SignAnalyzer.java          # 告示牌分析器
-│   │   └── QShopAnalyzer.java         # QShop 商店分析器
-│   ├── db/
-│   │   ├── BinaryChunkDb.java         # 二进制数据库实现
-│   │   └── DbFileUtil.java            # 数据库文件工具
-│   └── view_provider/
-│       ├── SignDbViewProvider.java    # 告示牌特化视图
-│       ├── QShopDbViewProvider.java   # QShop 特化视图
-│       └── QShopFilterScreen.java     # QShop 筛选界面
-├── screen/
-│   ├── ChunkScannerScreen.java        # 任务管理 GUI
-│   ├── DatabaseScreen.java            # 数据库浏览器 GUI
-│   └── TaskConfigScreen.java          # 任务配置 GUI
-├── gui/
-│   ├── GuiUtil.java                   # GUI 通用工具
-│   ├── KvPageRenderer.java            # 数据库页面渲染
-│   ├── PlaceholderTextField.java      # Placeholder 输入框
-│   ├── ScrollManager.java             # 滚动管理器
-│   ├── ScrollableListPanel.java       # 可滚动列表面板
-│   └── ScrollbarUtil.java             # 滚动条渲染
-└── integration/
-    ├── ClothConfigIntegration.java     # Cloth Config 集成
-    ├── ModMenuIntegration.java         # ModMenu 集成
-    └── XaeroWaypointHelper.java       # Xaero 路径点集成
+src/main/
+├── java/com/billy65536/chunkscanner/
+│   ├── ChunkScannerMod.java              # 主入口：初始化、命令注册、回调
+│   ├── config/
+│   │   ├── ChunkScannerConfig.java        # 全局配置数据模型
+│   │   ├── ConfigLoader.java              # 配置加载/保存
+│   │   └── TaskConfig.java                # 任务级配置
+│   ├── core/
+│   │   ├── ChunkScanner.java              # 扫描引擎核心
+│   │   ├── ChunkAnalyzer.java             # 分析器接口
+│   │   ├── ChunkDb.java                   # 通用数据库接口
+│   │   ├── ScanSession.java               # 扫描会话状态
+│   │   ├── AnalyzeResult.java             # 分析结果
+│   │   ├── DbViewProvider.java            # 数据库视图提供者接口 + 注册表
+│   │   ├── LocatedPosition.java           # 世界位置记录
+│   │   └── CoreUtil.java                  # 工具方法
+│   ├── components/
+│   │   ├── analyzer/
+│   │   │   ├── SignAnalyzer.java          # 告示牌分析器
+│   │   │   └── QShopAnalyzer.java         # QShop 商店分析器
+│   │   ├── db/
+│   │   │   ├── BinaryChunkDb.java         # 二进制数据库实现
+│   │   │   └── DbFileUtil.java            # 数据库文件工具
+│   │   └── view_provider/
+│   │       ├── SignDbViewProvider.java    # 告示牌特化视图
+│   │       ├── QShopDbViewProvider.java   # QShop 特化视图
+│   │       └── QShopFilterScreen.java     # QShop 筛选界面
+│   ├── screen/
+│   │   ├── ChunkScannerScreen.java        # 任务管理 GUI
+│   │   ├── DatabaseScreen.java            # 数据库浏览器 GUI
+│   │   └── TaskConfigScreen.java          # 任务配置 GUI
+│   ├── gui/
+│   │   ├── GuiUtil.java                   # GUI 通用工具
+│   │   ├── KvPageRenderer.java            # 数据库页面渲染
+│   │   ├── PlaceholderTextField.java      # Placeholder 输入框
+│   │   ├── ScrollManager.java             # 滚动管理器
+│   │   ├── ScrollableListPanel.java       # 可滚动列表面板
+│   │   └── ScrollbarUtil.java             # 滚动条渲染
+│   └── integration/
+│       ├── ClothConfigIntegration.java     # Cloth Config 集成
+│       ├── ModMenuIntegration.java         # ModMenu 集成
+│       └── XaeroWaypointHelper.java       # Xaero 路径点集成
+└── resources/
+    ├── assets/chunkscanner/
+    │   ├── icon.png                       # 模组图标
+    │   └── lang/
+    │       ├── en_us.json                  # 英文翻译
+    │       └── zh_cn.json                  # 简体中文翻译
+    └── fabric.mod.json                    # 模组元数据
 ```
+
+此外，项目包含 **8 个 JUnit 5 单元测试** (`src/test/java/com/billy65536/chunkscanner/`)：
+
+| 测试类 | 覆盖范围 |
+|--------|---------|
+| `config/ChunkScannerConfigTest` | 全局配置默认值与拷贝 |
+| `config/TaskConfigTest` | 任务配置解析、序列化、拷贝 |
+| `core/AnalyzeResultTest` | 分析结果工厂方法与状态 |
+| `core/ChunkDbTest` | 数据库接口默认方法 |
+| `core/ChunkStatusBreakdownTest` | 区块状态分类 |
+| `core/CoreUtilTest` | 工具方法（位打包等） |
+| `core/DbViewProviderRegistryTest` | 视图提供者注册表 |
+| `core/LocatedPositionTest` | 位置记录 |
 
 ---
 
