@@ -40,6 +40,10 @@ public final class XaeroWaypointHelper {
     private static final String DEFAULT_WAYPOINT_NAME = "选中的坐标点";
     /** 默认路径点缩写。 */
     private static final String DEFAULT_WAYPOINT_INITIALS = "目标";
+    /** Xaero 默认世界容器键名。 */
+    private static final String DEFAULT_WORLD_KEY = "waypoints";
+    /** Xaero 默认路径点组名。 */
+    private static final String DEFAULT_WAYPOINT_SET_NAME = "gui.waypoints";
 
     // ==================== 缓存反射句柄 ====================
 
@@ -65,8 +69,10 @@ public final class XaeroWaypointHelper {
     private static volatile Method xaeroPathResolve;              // XaeroPath.resolve(String)
     private static volatile Method xaeroPathGetRoot;              // XaeroPath.getRoot()
     private static volatile Method xaeroPathGetLastNode;          // XaeroPath.getLastNode()
-    // MinimapWorldManager.addWorld(XaeroPath)：唯一正确的跨维度世界获取方式
-    private static volatile Method worldManagerAddWorldByPath;    // MinimapWorldManager.addWorld(XaeroPath)
+    // MinimapWorldManager.addWorldContainer(XaeroPath)：获取维度容器，配合 getFirstWorld() 避免子世界冲突
+    private static volatile Method worldManagerAddWorldContainer; // MinimapWorldManager.addWorldContainer(XaeroPath)
+    private static volatile Method containerGetFirstWorld;        // MinimapWorldContainer.getFirstWorld()
+    private static volatile Method containerAddWorldMethod;       // MinimapWorldContainer.addWorld(String)
     // worldState：获取 autoWorldPath 以提取根容器名
     private static volatile Method getWorldState;                 // MinimapSession.getWorldState()
     private static volatile Method getAutoWorldPath;              // MinimapWorldState.getAutoWorldPath()
@@ -214,8 +220,11 @@ public final class XaeroWaypointHelper {
      * <ul>
      *   <li>目标维度 = 玩家当前维度 → 使用 {@code getCurrentWorld()}
      *       以正确处理子世界</li>
-     *   <li>目标维度 ≠ 玩家当前维度 → 在目标维度容器创建默认
-     *       {@code "waypoints"} 世界（跨维度不存在子世界问题）</li>
+     *   <li>目标维度 ≠ 玩家当前维度 → 先通过
+     *       {@code addWorldContainer(dimPath)} 获取维度容器，
+     *       再调用 {@code container.getFirstWorld()} 读取已有世界
+     *       （无视键名，避免 addWorld 的重命名副作用）。
+     *       仅在容器为空时创建默认 {@code "waypoints"} 世界。</li>
      * </ul></p>
      *
      * @param session     MinimapSession
@@ -252,7 +261,7 @@ public final class XaeroWaypointHelper {
                         return currentWorld;
                     }
                 } catch (Exception e) {
-                    LOGGER.debug("Failed to compare dimension keys for current world: {}", e.getMessage());
+                    LOGGER.warn("Failed to compare dimension keys for current world, falling back to cross-dimension resolution: {}", e.getMessage());
                 }
             }
 
@@ -282,24 +291,57 @@ public final class XaeroWaypointHelper {
                 return null;
             }
 
-            // 7. 构建目标维度 XaeroPath：root(rootName).resolve(dimDirName).resolve("waypoints")
-            //    跨维度时使用默认 "waypoints" 名（目标维度不存在玩家子世界）
+            // 7. 构建目标维度容器路径：root(rootName).resolve(dimDirName)
             if (xaeroPathClass == null || xaeroPathRoot == null || xaeroPathResolve == null) {
                 LOGGER.warn("XaeroPath reflection not available");
                 return null;
             }
-            if (worldManagerAddWorldByPath == null) {
-                LOGGER.warn("worldManager.addWorld(XaeroPath) not available");
+            if (worldManagerAddWorldContainer == null) {
+                LOGGER.warn("worldManager.addWorldContainer(XaeroPath) not available");
                 return null;
             }
             Object rootPath = xaeroPathRoot.invoke(null, rootName);
             Object dimPath = xaeroPathResolve.invoke(rootPath, dimDirName);
-            Object worldPath = xaeroPathResolve.invoke(dimPath, "waypoints");
 
-            // 8. 通过 worldManager.addWorld(path) 获取目标维度的 MinimapWorld
-            Object targetWorld = worldManagerAddWorldByPath.invoke(worldManager, worldPath);
+            // 8. 获取目标维度容器，然后通过 getFirstWorld() 获取已有世界
+            //    关键：不能使用 addWorld(XaeroPath) 或 container.addWorld("waypoints")，
+            //    因为如果该维度已有子世界（worlds["waypoints"] 被 remove），
+            //    addWorld("waypoints") 会创建全新空世界导致路径点写入孤立子世界。
+            //    正确做法：getFirstWorld() 直接读取 worlds Map 的第一个值，无视键名。
+            Object dimContainer = worldManagerAddWorldContainer.invoke(worldManager, dimPath);
+            if (dimContainer == null) {
+                LOGGER.warn("addWorldContainer() returned null for dimension {}", dimensionId);
+                return null;
+            }
+            Object targetWorld;
+            if (containerGetFirstWorld != null) {
+                try {
+                    targetWorld = containerGetFirstWorld.invoke(dimContainer);
+                } catch (Exception e) {
+                    LOGGER.warn("getFirstWorld() invocation failed: {}", e.getMessage());
+                    return null;
+                }
+            } else {
+                LOGGER.warn("MinimapWorldContainer.getFirstWorld() not available");
+                return null;
+            }
             if (targetWorld == null) {
-                LOGGER.warn("worldManager.addWorld() returned null for dimension {}", dimensionId);
+                // 维度容器中没有任何世界，首次访问，创建默认世界
+                LOGGER.debug("No existing world in container for {}, creating new", dimensionId);
+                if (containerAddWorldMethod != null) {
+                    try {
+                        targetWorld = containerAddWorldMethod.invoke(dimContainer, DEFAULT_WORLD_KEY);
+                    } catch (Exception e) {
+                        LOGGER.warn("addWorld() invocation failed: {}", e.getMessage());
+                        return null;
+                    }
+                } else {
+                    LOGGER.warn("MinimapWorldContainer.addWorld(String) not available");
+                    return null;
+                }
+            }
+            if (targetWorld == null) {
+                LOGGER.warn("Failed to resolve MinimapWorld for dimension {}", dimensionId);
                 return null;
             }
 
@@ -362,15 +404,16 @@ public final class XaeroWaypointHelper {
                     LOGGER.warn("getCurrentWaypointSet() returned null, trying to create default set");
                     if (addWaypointSetByName != null) {
                         try {
-                            addWaypointSetByName.invoke(world, "gui.waypoints");
+                            addWaypointSetByName.invoke(world, DEFAULT_WAYPOINT_SET_NAME);
                             waypointSet = getCurrentWaypointSet.invoke(world);
                             if (waypointSet == null) {
                                 waypointSet = getNamedWaypointSet != null
-                                        ? getNamedWaypointSet.invoke(world, "gui.waypoints") : null;
+                                        ? getNamedWaypointSet.invoke(world, DEFAULT_WAYPOINT_SET_NAME) : null;
                             }
                         } catch (Exception e) {
                             LOGGER.debug("Failed to create default waypoint set: {}", e.getMessage());
                         }
+                    }
                     if (waypointSet == null) {
                         return resolveFallbackWaypointSet(world);
                     }
@@ -391,7 +434,7 @@ public final class XaeroWaypointHelper {
             // 尝试 getWaypointSet(String) 用默认 set 名
             try {
                 Method getWaypointSet = world.getClass().getMethod("getWaypointSet", String.class);
-                Object waypointSet = getWaypointSet.invoke(world, "gui.waypoints");
+                Object waypointSet = getWaypointSet.invoke(world, DEFAULT_WAYPOINT_SET_NAME);
                 if (waypointSet != null) return waypointSet;
             } catch (NoSuchMethodException ignored) {}
 
@@ -544,7 +587,6 @@ public final class XaeroWaypointHelper {
                     waypointClass, waypointColorClass, waypointPurposeClass);
             if (waypointConstructor == null) {
                 LOGGER.error("Could not find any usable Waypoint constructor");
-                minimapAvailable = false;
                 return false;
             }
             LOGGER.info("Waypoint constructor: {} params", waypointConstructor.getParameterCount());
@@ -600,12 +642,28 @@ public final class XaeroWaypointHelper {
                 LOGGER.debug("XaeroPath not available, cross-dimension waypoint creation limited");
             }
 
-            // 7. MinimapWorldManager.addWorld(XaeroPath)：唯一正确的跨维度世界获取方式
+            // 7. MinimapWorldManager.addWorldContainer(XaeroPath)：安全获取维度容器（不触发 addWorld 重命名）
             try {
-                worldManagerAddWorldByPath = worldManagerClass.getMethod("addWorld", xaeroPathClass);
+                worldManagerAddWorldContainer = worldManagerClass.getMethod("addWorldContainer", xaeroPathClass);
+                // 同时缓存容器类的 getFirstWorld() 和 addWorld(String)
+                Class<?> containerClass = worldManagerAddWorldContainer.getReturnType();
+                try {
+                    containerGetFirstWorld = containerClass.getMethod("getFirstWorld");
+                } catch (NoSuchMethodException e) {
+                    containerGetFirstWorld = null;
+                    LOGGER.debug("MinimapWorldContainer.getFirstWorld() not available");
+                }
+                try {
+                    containerAddWorldMethod = containerClass.getMethod("addWorld", String.class);
+                } catch (NoSuchMethodException e) {
+                    containerAddWorldMethod = null;
+                    LOGGER.debug("MinimapWorldContainer.addWorld(String) not available");
+                }
             } catch (NoSuchMethodException e) {
-                worldManagerAddWorldByPath = null;
-                LOGGER.debug("worldManager.addWorld(XaeroPath) not available");
+                worldManagerAddWorldContainer = null;
+                containerGetFirstWorld = null;
+                containerAddWorldMethod = null;
+                LOGGER.debug("worldManager.addWorldContainer(XaeroPath) not available");
             }
 
             // 8. MinimapSession.getWorldState() / MinimapWorldState.getAutoWorldPath()
@@ -649,11 +707,9 @@ public final class XaeroWaypointHelper {
                 LOGGER.debug("WorldManagerIO.saveWorld not available, waypoints will be saved on world unload");
             }
 
-            minimapAvailable = true;
             LOGGER.info("Xaero's Minimap integration enabled");
             return true;
         } catch (Exception e) {
-            minimapAvailable = false;
             LOGGER.info("Xaero's Minimap not available: {}", e.getMessage());
             return false;
         }
@@ -823,23 +879,19 @@ public final class XaeroWaypointHelper {
             Class<?>[] paramTypes = waypointConstructor.getParameterTypes();
             int count = paramTypes.length;
             boolean lastIsBoolean = count > 0 && paramTypes[count - 1] == boolean.class;
-            boolean secondLastIsBoolean = count > 1 && paramTypes[count - 2] == boolean.class;
 
             switch (count) {
                 case 9:
                     // 完整版：(x, y, z, name, initials, color/purpose, temp, yIncluded)
-                    if (secondLastIsBoolean && lastIsBoolean) {
-                        return waypointConstructor.newInstance(
-                                pos.x(), pos.y(), pos.z(),
-                                name, initials,
-                                defaultWaypointColor != null ? defaultWaypointColor
-                                        : paramTypes[5] == int.class ? 0 : null,
-                                defaultWaypointPurpose != null ? defaultWaypointPurpose
-                                        : paramTypes[6] == int.class ? 0 : null,
-                                false, true);
-                    }
-                    break;
-
+                    // findBestConstructor 保证 count==9 时末尾两个参数必为 boolean.class
+                    return waypointConstructor.newInstance(
+                            pos.x(), pos.y(), pos.z(),
+                            name, initials,
+                            defaultWaypointColor != null ? defaultWaypointColor
+                                    : paramTypes[5] == int.class ? 0 : null,
+                            defaultWaypointPurpose != null ? defaultWaypointPurpose
+                                    : paramTypes[6] == int.class ? 0 : null,
+                            false, true);
                 case 8:
                     // (x, y, z, name, initials, color/purpose, temp)
                     // 或 (x, y, z, name, initials, int, int, boolean)
