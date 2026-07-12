@@ -43,6 +43,32 @@ public class ChunkScannerConfig {
     /** 扫描视距倍率。默认 1.0。 */
     public double scanRadiusMultiplier = 1.0;
 
+    // ==================== QShop 分析器配置 ====================
+
+    /**
+     * QShop 第二行"出售/收购 + 数量"的正则模式。
+     * 必须包含两个捕获组：group(1) = 出售/收购关键词，group(2) = 数量数字。
+     */
+    public String qshopSellBuyPattern = "^\\s*(出售|收购)\\s+(\\d+)";
+
+    /** QShop 第二行"出售/收购 + 无限"的正则模式。group(1) = 出售/收购关键词。 */
+    public String qshopInfinitePattern = "^\\s*(出售|收购)\\s+无限";
+
+    /** QShop 第二行"缺货"的正则模式。 */
+    public String qshopOutOfStockPattern = "^\\s*缺货";
+
+    /** QShop 第二行"空间不足"的正则模式。 */
+    public String qshopOutOfSpacePattern = "^\\s*空间不足";
+
+    /** QShop 第四行单价的正则模式。group(1) = 价格文本（去除前缀后）。 */
+    public String qshopPricePattern = "单价[：:]\\s*(.+)";
+
+    /** 出售关键词，用于匹配 sellBuyPattern/infinitePattern 的 group(1)。 */
+    public String qshopSellKeyword = "出售";
+
+    /** 收购关键词，用于匹配 sellBuyPattern/infinitePattern 的 group(1)。 */
+    public String qshopBuyKeyword = "收购";
+
     // ==================== 路径点默认值 ====================
 
     /** 路径点名称。默认 "选中的坐标点"。 */
@@ -64,6 +90,13 @@ public class ChunkScannerConfig {
         c.flushIntervalTicks = this.flushIntervalTicks;
         c.workerThreads = this.workerThreads;
         c.scanRadiusMultiplier = this.scanRadiusMultiplier;
+        c.qshopSellBuyPattern = this.qshopSellBuyPattern;
+        c.qshopInfinitePattern = this.qshopInfinitePattern;
+        c.qshopOutOfStockPattern = this.qshopOutOfStockPattern;
+        c.qshopOutOfSpacePattern = this.qshopOutOfSpacePattern;
+        c.qshopPricePattern = this.qshopPricePattern;
+        c.qshopSellKeyword = this.qshopSellKeyword;
+        c.qshopBuyKeyword = this.qshopBuyKeyword;
         c.waypointName = this.waypointName;
         c.waypointInitials = this.waypointInitials;
         c.waypointGroup = this.waypointGroup;

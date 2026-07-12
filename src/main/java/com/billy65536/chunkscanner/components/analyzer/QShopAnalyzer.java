@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.AnalyzeResult;
 import com.billy65536.chunkscanner.core.ChunkAnalyzer;
 import com.billy65536.chunkscanner.core.ChunkDb;
@@ -25,15 +26,18 @@ import com.billy65536.chunkscanner.core.ChunkDb;
 /**
  * QShop 商店分析器：扫描贴在容器上的特化告示牌，识别 QShop 格式商店。
  *
- * 告示牌必须贴靠在箱子、木桶等具有物品栏的容器方块上，只有正面有文字，且格式为：
+ * 告示牌必须贴靠在箱子、木桶等具有物品栏的容器方块上，只有正面有文字。
+ * 解析所用的正则模式和关键词完全由配置文件驱动，支持任意语言的 QShop 告示牌格式。
+ *
+ * <h3>默认中文格式</h3>
  * <pre>
  *   第一行：玩家名称或"系统商店"（商店所有者）
- *   第二行：出售/收购 + 空格 + 数量/无限  或  缺货（前面可能有空格缩进）
+ *   第二行：出售/收购 + 空格 + 数量/无限  或  缺货/空间不足
  *   第三行：商品名称
  *   第四行：单价：数字 货币符号（如 "单价：0.50 ₦"）
  * </pre>
  *
- * 系统商店：第一行为"系统商店"，数量为"无限"，用 quantity=0xFFFFFF 表示。
+ * 系统商店：数量为"无限"，用 quantity=0xFFFFFF 表示。
  *
  * 键格式（34 字节）：
  *   "qshop:" (6B) | dimPoolId:u32 (4B) | cx:i32 (4B) | cz:i32 (4B) | keyHi:u64 (8B) | keyLo:u64 (8B)
@@ -58,20 +62,77 @@ public class QShopAnalyzer implements ChunkAnalyzer {
     /** 特殊值：通过译名映射表成功恢复了物品注册名。 */
     public static final int FLAG_ID_RECOVERED = 0x01;
 
-    /** 销售/收购：第二行 "出售/收购" + 空格 + 数量（前面可能有空格缩进） */
-    private static final Pattern SELL_BUY_PATTERN = Pattern.compile("^\\s*(出售|收购)\\s+(\\d+)");
-    /** 无限库存：第二行 "出售/收购" + 空格 + 无限（系统商店） */
-    private static final Pattern INFINITE_PATTERN = Pattern.compile("^\\s*(出售|收购)\\s+无限");
-    /** 缺货（前面可能有空格缩进） */
-    private static final Pattern OUT_OF_STOCK_PATTERN = Pattern.compile("^\\s*缺货");
-    /** 单价：【数字】【货币符号】 */
-    private static final Pattern PRICE_PATTERN = Pattern.compile("单价[：:]\\s*(.+)");
-
     /** quantity 的最大值 (24-bit)，用作"无限"的哨兵值 */
     public static final int INFINITE_QUANTITY = 0xFFFFFF;
 
     public static final byte MODE_SELL = 0;
     public static final byte MODE_BUY  = 1;
+
+    // ==================== 正则模式（由配置文件驱动） ====================
+
+    /**
+     * QuickShop 告示牌解析所需的正则模式。
+     * 由 {@link #getPatterns()} 根据当前配置动态构建并缓存。
+     */
+    private record LocalePatterns(
+            Pattern sellBuyPattern,
+            Pattern infinitePattern,
+            Pattern outOfStockPattern,
+            Pattern outOfSpacePattern,
+            Pattern pricePattern,
+            String modeSell,
+            String modeBuy
+    ) {
+        boolean isSell(String group1) {
+            return modeSell.equalsIgnoreCase(group1);
+        }
+    }
+
+    /** 缓存的编译后模式及其对应的配置哈希，配置变更时自动重建。 */
+    private static volatile LocalePatterns cachedPatterns = null;
+    private static volatile String cachedConfigHash = null;
+
+    /** 从当前全局配置构建（或复用缓存）LocalePatterns。 */
+    private static LocalePatterns getPatterns() {
+        com.billy65536.chunkscanner.config.ChunkScannerConfig cfg = ChunkScannerMod.CONFIG;
+        String hash = cfg.qshopSellBuyPattern + "\0"
+                + cfg.qshopInfinitePattern + "\0"
+                + cfg.qshopOutOfStockPattern + "\0"
+                + cfg.qshopOutOfSpacePattern + "\0"
+                + cfg.qshopPricePattern + "\0"
+                + cfg.qshopSellKeyword + "\0"
+                + cfg.qshopBuyKeyword;
+        LocalePatterns p = cachedPatterns;
+        if (p != null && hash.equals(cachedConfigHash)) {
+            return p;
+        }
+        try {
+            p = new LocalePatterns(
+                    Pattern.compile(cfg.qshopSellBuyPattern),
+                    Pattern.compile(cfg.qshopInfinitePattern),
+                    Pattern.compile(cfg.qshopOutOfStockPattern),
+                    Pattern.compile(cfg.qshopOutOfSpacePattern),
+                    Pattern.compile(cfg.qshopPricePattern),
+                    cfg.qshopSellKeyword,
+                    cfg.qshopBuyKeyword
+            );
+        } catch (java.util.regex.PatternSyntaxException e) {
+            ChunkScannerMod.LOGGER.error("QShopAnalyzer: invalid regex pattern in config, using defaults", e);
+            // 回退到硬编码默认值
+            p = new LocalePatterns(
+                    Pattern.compile("^\\s*(出售|收购)\\s+(\\d+)"),
+                    Pattern.compile("^\\s*(出售|收购)\\s+无限"),
+                    Pattern.compile("^\\s*缺货"),
+                    Pattern.compile("^\\s*空间不足"),
+                    Pattern.compile("单价[：:]\\s*(.+)"),
+                    "出售",
+                    "收购"
+            );
+        }
+        cachedPatterns = p;
+        cachedConfigHash = hash;
+        return p;
+    }
 
     @Override
     public AnalyzeResult analyze(WorldChunk chunk, int cx, int cz, String dimId, ChunkDb db, long now) {
@@ -81,6 +142,9 @@ public class QShopAnalyzer implements ChunkAnalyzer {
     @Override
     public AnalyzeResult analyze(WorldChunk chunk, int cx, int cz, String dimId, ChunkDb db, long now, World world) {
         int dimPoolId = db.intern(dimId);
+
+        // 从全局配置读取 QShop 正则模式（缓存编译结果）
+        LocalePatterns patterns = getPatterns();
 
         List<byte[]> records = new ArrayList<>();
 
@@ -107,8 +171,8 @@ public class QShopAnalyzer implements ChunkAnalyzer {
             }
             if (!hasContent) continue;
 
-            // 正则匹配 QShop 四行格式
-            QShopParsed parsed = parseQShop(lines);
+            // 正则匹配 QShop 四行格式（使用当前语言环境的模式）
+            QShopParsed parsed = parseQShop(lines, patterns);
             if (parsed == null) continue;
 
             // keyHi: [dimPoolId(32bit) | x(32bit)]，keyLo: [z(32bit) | y(32bit)]
@@ -201,22 +265,25 @@ public class QShopAnalyzer implements ChunkAnalyzer {
     /**
      * 解析 QShop 告示牌四行文字。
      *
-     * <p>支持三种第二行格式：
+     * <p>根据给定的 LocalePatterns 解析第二行状态/数量和第四行价格。
+     * 支持四种第二行格式：
      * <ul>
-     *   <li>{@code 出售/收购 N} — 普通玩家商店，指定数量</li>
-     *   <li>{@code 出售/收购 无限} — 系统商店，无限库存</li>
-     *   <li>{@code 缺货} — 出售模式，余量为 0</li>
+     *   <li>{@code 出售/收购 N} (zh_cn) 或 {@code Selling/Buying N} (en_us) — 普通玩家商店</li>
+     *   <li>{@code 出售/收购 无限} 或 {@code Selling/Buying Unlimited} — 系统商店，无限库存</li>
+     *   <li>{@code 缺货} 或 {@code Out of Stock} — 出售模式，余量为 0</li>
+     *   <li>{@code 空间不足} 或 {@code Out of Space} — 收购模式，余量为 0</li>
      * </ul>
      *
-     * @param lines 四行文本（未去除首尾空白）
+     * @param lines    四行文本（未去除首尾空白）
+     * @param patterns 当前语言环境的正则模式
      * @return 解析结果，格式不符则返回 null
      */
-    static QShopParsed parseQShop(String[] lines) {
+    static QShopParsed parseQShop(String[] lines, LocalePatterns patterns) {
         // 第一行：所有者名称（不能为空）
         String owner = lines[0];
         if (owner == null || owner.trim().isEmpty()) return null;
 
-        // 第二行：出售/收购 + 数量/无限  或  缺货
+        // 第二行：出售/收购 + 数量/无限  或  缺货/空间不足
         String line2 = lines[1];
         if (line2 == null || line2.trim().isEmpty()) return null;
         line2 = line2.trim();
@@ -224,21 +291,25 @@ public class QShopAnalyzer implements ChunkAnalyzer {
         byte mode;
         int quantity;
 
-        Matcher sellBuyMatcher = SELL_BUY_PATTERN.matcher(line2);
-        Matcher infiniteMatcher = INFINITE_PATTERN.matcher(line2);
+        Matcher sellBuyMatcher = patterns.sellBuyPattern().matcher(line2);
+        Matcher infiniteMatcher = patterns.infinitePattern().matcher(line2);
         if (sellBuyMatcher.matches()) {
-            mode = "出售".equals(sellBuyMatcher.group(1)) ? MODE_SELL : MODE_BUY;
+            mode = patterns.isSell(sellBuyMatcher.group(1)) ? MODE_SELL : MODE_BUY;
             try {
                 quantity = Integer.parseInt(sellBuyMatcher.group(2));
             } catch (NumberFormatException e) {
                 return null;
             }
         } else if (infiniteMatcher.matches()) {
-            mode = "出售".equals(infiniteMatcher.group(1)) ? MODE_SELL : MODE_BUY;
+            mode = patterns.isSell(infiniteMatcher.group(1)) ? MODE_SELL : MODE_BUY;
             quantity = INFINITE_QUANTITY;
-        } else if (OUT_OF_STOCK_PATTERN.matcher(line2).matches()) {
+        } else if (patterns.outOfStockPattern().matcher(line2).matches()) {
             // 缺货 = 出售模式，余量为 0
             mode = MODE_SELL;
+            quantity = 0;
+        } else if (patterns.outOfSpacePattern().matcher(line2).matches()) {
+            // 空间不足 = 收购模式，余量为 0
+            mode = MODE_BUY;
             quantity = 0;
         } else {
             return null;
@@ -248,11 +319,11 @@ public class QShopAnalyzer implements ChunkAnalyzer {
         String itemName = lines[2];
         if (itemName == null || itemName.trim().isEmpty()) return null;
 
-        // 第四行：单价：【数字】【货币符号】
+        // 第四行：单价（根据语言环境提取价格部分）
         String line4 = lines[3];
         if (line4 == null || line4.trim().isEmpty()) return null;
 
-        Matcher priceMatcher = PRICE_PATTERN.matcher(line4.trim());
+        Matcher priceMatcher = patterns.pricePattern().matcher(line4.trim());
         String price;
         if (priceMatcher.matches()) {
             price = priceMatcher.group(1).trim();
@@ -292,7 +363,7 @@ public class QShopAnalyzer implements ChunkAnalyzer {
      *
      * @param owner    商店所有者名称
      * @param mode     0=出售, 1=收购
-     * @param quantity 剩余数量（出售模式且 quantity=0 表示缺货）
+     * @param quantity 剩余数量（出售模式 quantity=0 表示缺货，收购模式 quantity=0 表示空间不足）
      * @param itemName 商品名称
      * @param price    单价文本（含货币符号）
      */

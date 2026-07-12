@@ -223,18 +223,23 @@ public class QShopDbViewProvider implements DbViewProvider {
             String modeStr;
             String quantityStr;
             if (r.mode() == QShopAnalyzer.MODE_SELL) {
-                modeStr = "出售";
+                modeStr = Text.translatable("chunkscanner.filter.mode.sell").getString();
                 if (r.quantity() == QShopAnalyzer.INFINITE_QUANTITY) {
-                    quantityStr = "无限";
+                    quantityStr = Text.translatable("chunkscanner.qshop.infinite").getString();
                 } else if (r.quantity() == 0) {
-                    quantityStr = "缺货";
+                    quantityStr = Text.translatable("chunkscanner.qshop.out_of_stock").getString();
                 } else {
                     quantityStr = String.valueOf(r.quantity());
                 }
             } else {
-                modeStr = "收购";
-                quantityStr = r.quantity() == QShopAnalyzer.INFINITE_QUANTITY
-                        ? "无限" : String.valueOf(r.quantity());
+                modeStr = Text.translatable("chunkscanner.filter.mode.buy").getString();
+                if (r.quantity() == QShopAnalyzer.INFINITE_QUANTITY) {
+                    quantityStr = Text.translatable("chunkscanner.qshop.infinite").getString();
+                } else if (r.quantity() == 0) {
+                    quantityStr = Text.translatable("chunkscanner.qshop.out_of_space").getString();
+                } else {
+                    quantityStr = String.valueOf(r.quantity());
+                }
             }
 
             String posStr = new LocatedPosition(r.dimId(), r.x(), r.y(), r.z()).toString();
@@ -489,7 +494,7 @@ public class QShopDbViewProvider implements DbViewProvider {
      * @param x,y,z    告示牌坐标
      * @param owner    商店所有者名称
      * @param mode     0=出售, 1=收购
-     * @param quantity 剩余数量（出售模式 quantity=0 表示缺货）
+     * @param quantity 剩余数量（出售 mode quantity=0 表示缺货，收购 mode quantity=0 表示空间不足）
      * @param itemName 商品名称（告示牌原文）
      * @param price    单价文本（含货币符号）
      * @param timestamp 扫描时间戳

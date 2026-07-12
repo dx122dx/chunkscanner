@@ -83,6 +83,20 @@ public class ConfigLoader {
                 config.workerThreads = defaults.get("workerThreads").getAsInt();
             if (defaults.has("scanRadiusMultiplier"))
                 config.scanRadiusMultiplier = defaults.get("scanRadiusMultiplier").getAsDouble();
+            if (defaults.has("qshopSellBuyPattern"))
+                config.qshopSellBuyPattern = defaults.get("qshopSellBuyPattern").getAsString();
+            if (defaults.has("qshopInfinitePattern"))
+                config.qshopInfinitePattern = defaults.get("qshopInfinitePattern").getAsString();
+            if (defaults.has("qshopOutOfStockPattern"))
+                config.qshopOutOfStockPattern = defaults.get("qshopOutOfStockPattern").getAsString();
+            if (defaults.has("qshopOutOfSpacePattern"))
+                config.qshopOutOfSpacePattern = defaults.get("qshopOutOfSpacePattern").getAsString();
+            if (defaults.has("qshopPricePattern"))
+                config.qshopPricePattern = defaults.get("qshopPricePattern").getAsString();
+            if (defaults.has("qshopSellKeyword"))
+                config.qshopSellKeyword = defaults.get("qshopSellKeyword").getAsString();
+            if (defaults.has("qshopBuyKeyword"))
+                config.qshopBuyKeyword = defaults.get("qshopBuyKeyword").getAsString();
 
             // 读取路径点默认值
             if (json.has("waypoint")) {
@@ -113,6 +127,13 @@ public class ConfigLoader {
             defaults.addProperty("flushIntervalTicks", config.flushIntervalTicks);
             defaults.addProperty("workerThreads", config.workerThreads);
             defaults.addProperty("scanRadiusMultiplier", config.scanRadiusMultiplier);
+            defaults.addProperty("qshopSellBuyPattern", config.qshopSellBuyPattern);
+            defaults.addProperty("qshopInfinitePattern", config.qshopInfinitePattern);
+            defaults.addProperty("qshopOutOfStockPattern", config.qshopOutOfStockPattern);
+            defaults.addProperty("qshopOutOfSpacePattern", config.qshopOutOfSpacePattern);
+            defaults.addProperty("qshopPricePattern", config.qshopPricePattern);
+            defaults.addProperty("qshopSellKeyword", config.qshopSellKeyword);
+            defaults.addProperty("qshopBuyKeyword", config.qshopBuyKeyword);
             json.add("defaults", defaults);
 
             // 路径点默认值

@@ -160,5 +160,9 @@
     "chunkscanner.filter.placeholder.owner": "Owner...",
     "chunkscanner.filter.placeholder.item": "Item...",
 
-    "chunkscanner.qshop.flag.recovered": "R - Registry ID recovered via translation table"
+    "chunkscanner.qshop.flag.recovered": "R - Registry ID recovered via translation table",
+
+    "chunkscanner.qshop.infinite": "Unlimited",
+    "chunkscanner.qshop.out_of_stock": "Out of Stock",
+    "chunkscanner.qshop.out_of_space": "Out of Space"
 }

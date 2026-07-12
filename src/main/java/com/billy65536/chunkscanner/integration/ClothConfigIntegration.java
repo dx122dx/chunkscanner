@@ -73,6 +73,65 @@ public class ClothConfigIntegration {
                 .setSaveConsumer(v -> ChunkScannerMod.CONFIG.scanRadiusMultiplier = v)
                 .build());
 
+        // === QShop 分类 ===
+        var qshop = builder.getOrCreateCategory(Text.literal("QShop"));
+
+        qshop.addEntry(builder.entryBuilder()
+                .startStrField(Text.literal("出售关键词"),
+                        ChunkScannerMod.CONFIG.qshopSellKeyword)
+                .setDefaultValue("出售")
+                .setTooltip(Text.literal("告示牌第二行中表示出售的关键词"))
+                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopSellKeyword = v)
+                .build());
+
+        qshop.addEntry(builder.entryBuilder()
+                .startStrField(Text.literal("收购关键词"),
+                        ChunkScannerMod.CONFIG.qshopBuyKeyword)
+                .setDefaultValue("收购")
+                .setTooltip(Text.literal("告示牌第二行中表示收购的关键词"))
+                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopBuyKeyword = v)
+                .build());
+
+        qshop.addEntry(builder.entryBuilder()
+                .startStrField(Text.literal("出售/收购 数量 模式"),
+                        ChunkScannerMod.CONFIG.qshopSellBuyPattern)
+                .setDefaultValue("^\\s*(出售|收购)\\s+(\\d+)")
+                .setTooltip(Text.literal("正则：group(1)=出售/收购关键词，group(2)=数量"))
+                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopSellBuyPattern = v)
+                .build());
+
+        qshop.addEntry(builder.entryBuilder()
+                .startStrField(Text.literal("无限库存 模式"),
+                        ChunkScannerMod.CONFIG.qshopInfinitePattern)
+                .setDefaultValue("^\\s*(出售|收购)\\s+无限")
+                .setTooltip(Text.literal("正则：group(1)=出售/收购关键词"))
+                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopInfinitePattern = v)
+                .build());
+
+        qshop.addEntry(builder.entryBuilder()
+                .startStrField(Text.literal("缺货 模式"),
+                        ChunkScannerMod.CONFIG.qshopOutOfStockPattern)
+                .setDefaultValue("^\\s*缺货")
+                .setTooltip(Text.literal("正则：匹配出售模式下缺货状态"))
+                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopOutOfStockPattern = v)
+                .build());
+
+        qshop.addEntry(builder.entryBuilder()
+                .startStrField(Text.literal("空间不足 模式"),
+                        ChunkScannerMod.CONFIG.qshopOutOfSpacePattern)
+                .setDefaultValue("^\\s*空间不足")
+                .setTooltip(Text.literal("正则：匹配收购模式下空间不足状态"))
+                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopOutOfSpacePattern = v)
+                .build());
+
+        qshop.addEntry(builder.entryBuilder()
+                .startStrField(Text.literal("价格 模式"),
+                        ChunkScannerMod.CONFIG.qshopPricePattern)
+                .setDefaultValue("单价[：:]\\s*(.+)")
+                .setTooltip(Text.literal("正则：group(1)=价格文本"))
+                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopPricePattern = v)
+                .build());
+
         // === 路径点分类 ===
         var waypoint = builder.getOrCreateCategory(Text.literal("路径点"));
 
