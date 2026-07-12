@@ -94,20 +94,18 @@ public final class ChatItemExtractor {
     }
 
     /**
-     * 在组件树中查找同时包含 SHOW_ITEM hover 和 /qs silentpreview click 的组件，
-     * 并提取 ItemStack 数据。
+     * 在组件树中查找 SHOW_ITEM hover 并提取 ItemStack 数据。
+     *
+     * <p>注意：QuickShop 将 HoverEvent（物品详情）和 ClickEvent（/qs silentpreview）
+     * 放在<b>不同</b>的 Text 组件上（物品名称带 hover，[物品预览] 带 click）。
+     * 因此本方法只查找 SHOW_ITEM hover，前置的 {@link #containsSilentPreview}
+     * 已确认这是 QuickShop 消息。</p>
      */
     private static ExtractedItem findItemComponent(Text text) {
         Style style = text.getStyle();
         if (style != null) {
             HoverEvent hover = style.getHoverEvent();
-            ClickEvent click = style.getClickEvent();
-
-            if (hover != null && hover.getAction() == HoverEvent.Action.SHOW_ITEM
-                    && click != null && click.getAction() == ClickEvent.Action.RUN_COMMAND
-                    && click.getValue().startsWith("/qs silentpreview")) {
-
-                // 从 HoverEvent 中提取 ItemStack
+            if (hover != null && hover.getAction() == HoverEvent.Action.SHOW_ITEM) {
                 ItemStack stack = extractItemStack(hover);
                 if (stack != null && !stack.isEmpty()) {
                     return buildExtractedItem(stack);

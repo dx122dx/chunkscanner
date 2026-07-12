@@ -28,6 +28,9 @@
             "com.billy65536.chunkscanner.integration.ModMenuIntegration"
         ]
     },
+    "mixins": [
+        "chunkscanner.mixins.json"
+    ],
     "depends": {
         "fabricloader": ">=${loader_version}",
         "minecraft": "~${minecraft_version}",

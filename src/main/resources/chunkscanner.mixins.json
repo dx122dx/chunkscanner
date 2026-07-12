@@ -1,0 +1,12 @@
+{
+    "required": true,
+    "minVersion": "0.8",
+    "package": "com.billy65536.chunkscanner.mixin",
+    "compatibilityLevel": "JAVA_17",
+    "client": [
+        "SystemChatMixin"
+    ],
+    "injectors": {
+        "defaultRequire": 1
+    }
+}

@@ -102,7 +102,10 @@ public final class QShopChatListener {
         if (registered) return;
         registered = true;
 
-        // QuickShop 通过 spigot().sendMessage() 发送，被归类为 GAME 消息
+        // 系统消息（QuickShop 通过 Bukkit player.sendMessage() 发送，走 ClientboundSystemChatPacket）
+        // 通过 SystemChatMixin 注入拦截，此处无需额外注册
+
+        // GAME 消息作为兜底（某些服务器配置下 QuickShop 可能走此通道）
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             onChatMessage(message);
         });
@@ -112,7 +115,18 @@ public final class QShopChatListener {
             detectSignClick(client);
         });
 
-        LOGGER.info("QShop chat listener registered (chat + key press detection)");
+        LOGGER.info("QShop chat listener registered (system chat via mixin + game msg + key press detection)");
+    }
+
+    /**
+     * 接收由 {@link com.billy65536.chunkscanner.mixin.SystemChatMixin} 拦截的系统消息。
+     *
+     * <p>MC 1.20.1 中 {@code ChatMessageS2CPacket} 无 overlay 字段，
+     * 所有系统消息均在聊天区域显示，无需 action bar 过滤。</p>
+     */
+    public static void onSystemMessage(Text message) {
+        if (message == null) return;
+        onChatMessage(message);
     }
 
     // ==================== 按键检测 ====================
@@ -162,11 +176,8 @@ public final class QShopChatListener {
     private static void onChatMessage(Text message) {
         if (message == null) return;
 
-        // 快速预检：是否包含 "/qs silentpreview"
-        String str = message.getString();
-        if (str == null || !str.contains("/qs silentpreview")) return;
-
-        // 尝试提取物品数据
+        // 提取物品数据（ChatItemExtractor.extract 内部通过遍历 Text 组件树
+        // 检测 ClickEvent 和 HoverEvent，不依赖 getString() 纯文本匹配）
         ChatItemExtractor.ExtractedItem item = ChatItemExtractor.extract(message);
         if (item == null) return;
 
