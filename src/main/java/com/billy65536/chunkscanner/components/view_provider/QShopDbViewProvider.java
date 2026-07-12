@@ -30,16 +30,16 @@ import com.billy65536.chunkscanner.core.CoreUtil;
  * 键格式（34 字节）：
  *   "qshop:" (6B) | dimPoolId:u32 (4B) | cx:i32 (4B) | cz:i32 (4B) | keyHi:u64 (8B) | keyLo:u64 (8B)
  *
- * 值格式（40 字节）：
+ * 值格式（48 字节）：
  *   keyHi:u64 (8B) | keyLo:u64 (8B) | owner:u32 (4B) | mode+quantity packed:u32 (4B) |
- *   itemName:u32 (4B) | price:u32 (4B) | timestamp:u64 (8B)
+ *   itemName:u32 (4B) | price:u32 (4B) | timestamp:u64 (8B) | itemId:u32 (4B) | flags:u32 (4B)
  *
  *   mode+quantity 打包：byte0 = mode (0=出售,1=收购), bytes1-3 = quantity (24-bit unsigned)
  */
 public class QShopDbViewProvider implements DbViewProvider {
 
     private static final byte[] KEY_PREFIX = "qshop:".getBytes(StandardCharsets.UTF_8);
-    private static final int RECORD_SIZE = 40;
+    private static final int RECORD_SIZE = 48;
 
     private final BinaryChunkDb delegate;
 
@@ -209,7 +209,7 @@ public class QShopDbViewProvider implements DbViewProvider {
 
     @Override
     public String[] getSpecializedHeaders() {
-        return new String[]{"位置", "Owner", "Type", "Qty", "Item", "Price"};
+        return new String[]{"位置", "Owner", "Type", "Qty", "Item", "Price", "Item ID", "Flags"};
     }
 
     @Override
@@ -243,7 +243,9 @@ public class QShopDbViewProvider implements DbViewProvider {
                     modeStr,
                     quantityStr,
                     r.itemName(),
-                    r.price()
+                    r.price(),
+                    r.itemId(),
+                    String.format("0x%02X", r.flags())
             });
         }
         return rows;
@@ -415,7 +417,13 @@ public class QShopDbViewProvider implements DbViewProvider {
                 String itemName = delegate.lookup(itemNameId);
                 String price = delegate.lookup(priceId);
 
-                records.add(new QShopRecord(dimId, x, y, z, owner, mode, quantity, itemName, price, ts));
+                // 读取新增字段：itemId 和 flags
+                int itemIdPoolId = vb.getInt();
+                int flags = vb.getInt();
+                String itemId = itemIdPoolId != 0 ? delegate.lookup(itemIdPoolId) : "";
+
+                records.add(new QShopRecord(dimId, x, y, z, owner, mode, quantity, itemName, price, ts,
+                        itemId, flags));
             } catch (Exception e) {
                 ChunkScannerMod.LOGGER.warn("QShopDbViewProvider: failed to parse entry: {}", e.getMessage());
             }
@@ -434,13 +442,16 @@ public class QShopDbViewProvider implements DbViewProvider {
      * @param owner    商店所有者名称
      * @param mode     0=出售, 1=收购
      * @param quantity 剩余数量（出售模式 quantity=0 表示缺货）
-     * @param itemName 商品名称
+     * @param itemName 商品名称（告示牌原文）
      * @param price    单价文本（含货币符号）
      * @param timestamp 扫描时间戳
+     * @param itemId   商品注册名（如 "minecraft:diamond"），恢复失败为空串
+     * @param flags    特殊值标志位（参见 {@link QShopAnalyzer#FLAG_ID_RECOVERED}）
      */
     public record QShopRecord(String dimId, int x, int y, int z,
                                String owner, byte mode, int quantity,
-                               String itemName, String price, long timestamp) {}
+                               String itemName, String price, long timestamp,
+                               String itemId, int flags) {}
 
     // ==================== DbViewProvider.Type ====================
 

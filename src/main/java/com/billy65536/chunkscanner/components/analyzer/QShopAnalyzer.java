@@ -38,19 +38,25 @@ import com.billy65536.chunkscanner.core.ChunkDb;
  * 键格式（34 字节）：
  *   "qshop:" (6B) | dimPoolId:u32 (4B) | cx:i32 (4B) | cz:i32 (4B) | keyHi:u64 (8B) | keyLo:u64 (8B)
  *
- * 值格式（40 字节）：
+ * 值格式（48 字节）：
  *   keyHi:u64 (8B) | keyLo:u64 (8B) | owner:u32 (4B) | mode+quantity packed:u32 (4B) |
- *   itemName:u32 (4B) | price:u32 (4B) | timestamp:u64 (8B)
+ *   itemName:u32 (4B) | price:u32 (4B) | timestamp:u64 (8B) | itemId:u32 (4B) | flags:u32 (4B)
  *
  *   mode+quantity 打包：byte0 = mode (0=出售,1=收购), bytes1-3 = quantity (24-bit unsigned)
+ *
+ *   特殊值 flag bits:
+ *     FLAG_ID_RECOVERED (0x01) — 通过译名映射表成功恢复了物品注册名
  */
 public class QShopAnalyzer implements ChunkAnalyzer {
 
-    private static final int RECORD_SIZE = 40; // 8+8+4+4+4+4+8
+    private static final int RECORD_SIZE = 48; // 8+8+4+4+4+4+8+4+4
     private static final byte[] KEY_PREFIX = "qshop:".getBytes(StandardCharsets.UTF_8);
     // "qshop:"(6) + dimPoolId(4) + cx(4) + cz(4) + keyHi(8) + keyLo(8)
     private static final int KEY_SIZE = KEY_PREFIX.length + 4 + 4 + 4 + 8 + 8; // 34
     private static final int CHUNK_PREFIX_LEN = KEY_PREFIX.length + 4 + 4 + 4; // 18
+
+    /** 特殊值：通过译名映射表成功恢复了物品注册名。 */
+    public static final int FLAG_ID_RECOVERED = 0x01;
 
     /** 销售/收购：第二行 "出售/收购" + 空格 + 数量（前面可能有空格缩进） */
     private static final Pattern SELL_BUY_PATTERN = Pattern.compile("^\\s*(出售|收购)\\s+(\\d+)");
@@ -114,7 +120,18 @@ public class QShopAnalyzer implements ChunkAnalyzer {
             int itemNameId = db.intern(parsed.itemName());
             int priceId = db.intern(parsed.price());
 
-            // 构造 40 字节的值
+            // 通过译名映射表尝试恢复物品注册名
+            int itemIdPoolId;
+            int flags = 0;
+            String registryId = ItemTranslator.lookup(parsed.itemName());
+            if (registryId != null) {
+                itemIdPoolId = db.intern(registryId);
+                flags |= FLAG_ID_RECOVERED;
+            } else {
+                itemIdPoolId = 0; // StringPoolId 0 = null/空串
+            }
+
+            // 构造 48 字节的值
             ByteBuffer vb = ByteBuffer.allocate(RECORD_SIZE).order(ByteOrder.LITTLE_ENDIAN);
             vb.putLong(keyHi);
             vb.putLong(keyLo);
@@ -125,6 +142,8 @@ public class QShopAnalyzer implements ChunkAnalyzer {
             vb.putInt(itemNameId);
             vb.putInt(priceId);
             vb.putLong(now); // 扫描时间戳
+            vb.putInt(itemIdPoolId);
+            vb.putInt(flags);
 
             byte[] key = makeKey(keyHi, keyLo, dimPoolId, cx, cz);
             records.add(key);

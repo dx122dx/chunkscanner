@@ -1,5 +1,6 @@
 package com.billy65536.chunkscanner;
 
+import com.billy65536.chunkscanner.components.analyzer.ItemTranslator;
 import com.billy65536.chunkscanner.components.analyzer.QShopAnalyzer;
 import com.billy65536.chunkscanner.components.analyzer.SignAnalyzer;
 import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
@@ -105,10 +106,18 @@ public class ChunkScannerMod implements ClientModInitializer {
         // 注册客户端 tick 回调：每帧执行扫描调度
         ClientTickEvents.END_CLIENT_TICK.register(scanner::onClientTick);
 
-        // 注册断连事件：退出服务器/世界时清理所有扫描会话
+        // 注册连接事件：进入服务器/世界时构建物品译名映射表
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+            LOGGER.info("Joined world, building item translation mapping...");
+            ItemTranslator.buildMapping();
+            LOGGER.info("Item translation mapping built: {} entries", ItemTranslator.size());
+        });
+
+        // 注册断连事件：退出服务器/世界时清理所有扫描会话和映射表
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             LOGGER.info("Disconnected from server, shutting down all scan sessions...");
             scanner.shutdown();
+            ItemTranslator.clear();
         });
 
         // JVM 关闭钩子：确保数据库正确关闭
