@@ -158,5 +158,7 @@
 
     "chunkscanner.filter.placeholder.dimension": "Dimension...",
     "chunkscanner.filter.placeholder.owner": "Owner...",
-    "chunkscanner.filter.placeholder.item": "Item..."
+    "chunkscanner.filter.placeholder.item": "Item...",
+
+    "chunkscanner.qshop.flag.recovered": "R - Registry ID recovered via translation table"
 }

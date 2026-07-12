@@ -1,9 +1,12 @@
 package com.billy65536.chunkscanner.core;
 
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.text.Text;
 
 import java.nio.file.Path;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
@@ -98,6 +101,19 @@ public interface DbViewProvider {
         List<String[]> rows = getSpecializedRows();
         if (rowIndex < 0 || rowIndex >= rows.size()) return null;
         return rows.get(rowIndex);
+    }
+
+    /**
+     * 获取特化视图的单元格级 tooltip。
+     *
+     * <p>返回一个 Map&lt;行索引, Map&lt;列标题, tooltip文本列表&gt;&gt;。
+     * 行索引对应 {@link #getSpecializedRows()} 的返回顺序。
+     * 仅在 {@link #isSpecialized()} 返回 true 时使用。</p>
+     *
+     * @return 单元格 tooltip 映射，默认返回空 Map
+     */
+    default Map<Integer, Map<String, List<Text>>> getSpecializedCellTooltips() {
+        return Collections.emptyMap();
     }
 
     // ==================== 筛选 ====================

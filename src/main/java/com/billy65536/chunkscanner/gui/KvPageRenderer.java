@@ -6,7 +6,10 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import com.billy65536.chunkscanner.core.ChunkDb;
 
@@ -188,6 +191,9 @@ public abstract class KvPageRenderer {
         /** 上次渲染时检测到的悬停列索引，-1 表示无悬停列。 */
         private int hoveredCol = -1;
 
+        /** 单元格级 tooltip：行索引 → 列标题 → tooltip 文本列表。 */
+        private Map<Integer, Map<String, List<Text>>> cellTooltips = Collections.emptyMap();
+
         public Specialized(TextRenderer tr, List<String[]> rows, String[] headers, int metaCount) {
             super(tr);
             this.rows = rows;
@@ -210,6 +216,22 @@ public abstract class KvPageRenderer {
 
         /** 获取上次渲染时检测到的悬停列索引。 */
         public int getHoveredCol() { return hoveredCol; }
+
+        /** 设置单元格级 tooltip 数据。 */
+        public void setCellTooltips(Map<Integer, Map<String, List<Text>>> tooltips) {
+            this.cellTooltips = tooltips != null ? tooltips : Collections.emptyMap();
+        }
+
+        /**
+         * 获取指定行、指定列的单元格 tooltip。
+         * @return tooltip 文本列表，无 tooltip 时返回 null
+         */
+        public List<Text> getCellTooltip(int rowIdx, int colIdx) {
+            if (cellTooltips.isEmpty() || colIdx < 0 || colIdx >= headers.length) return null;
+            Map<String, List<Text>> rowTips = cellTooltips.get(rowIdx);
+            if (rowTips == null) return null;
+            return rowTips.get(headers[colIdx]);
+        }
 
         /** 判断指定列是否为位置列（可点击创建路径点）。 */
         public boolean isPositionColumn(int colIdx) {

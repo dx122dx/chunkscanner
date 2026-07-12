@@ -159,5 +159,7 @@
 
     "chunkscanner.filter.placeholder.dimension": "维度...",
     "chunkscanner.filter.placeholder.owner": "所有者...",
-    "chunkscanner.filter.placeholder.item": "商品..."
+    "chunkscanner.filter.placeholder.item": "商品...",
+
+    "chunkscanner.qshop.flag.recovered": "R - 通过映射表恢复的注册名"
 }

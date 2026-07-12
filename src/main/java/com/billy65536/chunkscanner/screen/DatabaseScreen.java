@@ -244,10 +244,16 @@ public class DatabaseScreen extends Screen {
                 rows = List.of();
                 headers = new String[0];
             }
-            pageRenderer = new KvPageRenderer.Specialized(textRenderer,
+            KvPageRenderer.Specialized specRenderer = new KvPageRenderer.Specialized(textRenderer,
                     rows != null ? rows : List.of(),
                     headers != null ? headers : new String[0],
                     metaCount);
+            try {
+                specRenderer.setCellTooltips(currentView.getSpecializedCellTooltips());
+            } catch (Exception e) {
+                ChunkScannerMod.LOGGER.debug("Failed to set cell tooltips: {}", e.getMessage());
+            }
+            pageRenderer = specRenderer;
         } else {
             List<ChunkDb.Entry> entries;
             try {
@@ -514,6 +520,12 @@ public class DatabaseScreen extends Screen {
                 context.drawTooltip(textRenderer,
                         Text.translatable(key).formatted(Formatting.AQUA),
                         mouseX, mouseY);
+            } else {
+                // 非位置列的单元格 tooltip
+                List<Text> cellTooltip = spec.getCellTooltip(hoveredKvIdx, hoveredKvCol);
+                if (cellTooltip != null && !cellTooltip.isEmpty()) {
+                    context.drawTooltip(textRenderer, cellTooltip, mouseX, mouseY);
+                }
             }
         }
         if (showingKvView && hoveredKvIdx >= 0 && pageRenderer != null) {

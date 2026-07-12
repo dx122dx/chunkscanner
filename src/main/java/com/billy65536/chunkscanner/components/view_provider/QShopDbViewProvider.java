@@ -9,7 +9,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -245,7 +247,7 @@ public class QShopDbViewProvider implements DbViewProvider {
                     r.itemName(),
                     r.price(),
                     r.itemId(),
-                    String.format("0x%02X", r.flags())
+                    formatFlagsShort(r.flags())
             });
         }
         return rows;
@@ -257,6 +259,52 @@ public class QShopDbViewProvider implements DbViewProvider {
         if (rowIndex < 0 || rowIndex >= matched.size()) return null;
         QShopRecord r = matched.get(rowIndex);
         return new LocatedPosition(r.dimId(), r.x(), r.y(), r.z());
+    }
+
+    // ==================== 特殊值展示 ====================
+
+    /**
+     * 将标志位转换为简写字符显示。每个置位的标志用一个单字符表示。
+     * 如果 flags 为 0，返回空字符串。
+     */
+    public static String formatFlagsShort(int flags) {
+        if (flags == 0) return "";
+        StringBuilder sb = new StringBuilder();
+        if ((flags & QShopAnalyzer.FLAG_ID_RECOVERED) != 0) {
+            sb.append("R");
+        }
+        // 将来新增的标志位在此处追加
+        return sb.toString();
+    }
+
+    /**
+     * 构建标志位的 tooltip 文本列表。每行一个标志："{缩写} - {描述}"。
+     * 返回 null 表示无需 tooltip。
+     */
+    public static List<Text> formatFlagsTooltip(int flags) {
+        if (flags == 0) return null;
+        List<Text> lines = new ArrayList<>();
+        if ((flags & QShopAnalyzer.FLAG_ID_RECOVERED) != 0) {
+            lines.add(Text.translatable("chunkscanner.qshop.flag.recovered"));
+        }
+        // 将来新增的标志位在此处追加
+        return lines.isEmpty() ? null : lines;
+    }
+
+    @Override
+    public Map<Integer, Map<String, List<Text>>> getSpecializedCellTooltips() {
+        List<QShopRecord> matched = getFilteredSortedRecords();
+        Map<Integer, Map<String, List<Text>>> result = new HashMap<>();
+        for (int i = 0; i < matched.size(); i++) {
+            QShopRecord r = matched.get(i);
+            int flags = r.flags();
+            if (flags == 0) continue;
+            List<Text> tooltip = formatFlagsTooltip(flags);
+            if (tooltip == null) continue;
+            result.computeIfAbsent(i, k -> new HashMap<>())
+                  .put("Flags", tooltip);
+        }
+        return result;
     }
 
     /** 获取筛选并排序后的记录列表。与 getSpecializedRows 返回顺序一致。 */
