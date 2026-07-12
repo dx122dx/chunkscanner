@@ -163,6 +163,14 @@ public class ChunkScannerScreen extends Screen {
         client.setScreen(new TaskConfigScreen(this, scanner, analyzerId, id));
     }
 
+    /**
+     * 打开已有任务的编辑配置页面。
+     */
+    private void doEditConfig(ScanSession session) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        client.setScreen(new TaskConfigScreen(this, scanner, session));
+    }
+
     private void doStopAll() {
         MinecraftClient client = MinecraftClient.getInstance();
         client.setScreen(new ConfirmScreen(
@@ -467,6 +475,15 @@ public class ChunkScannerScreen extends Screen {
                 if (mouseX >= rightBtnLeft && mouseX <= rightBtnRight
                         && mouseY >= y && mouseY < y + LIST_ITEM_HEIGHT) {
                     doStop(s.scanId);
+                    return true;
+                }
+
+                // 任务行主体区域：点击打开编辑配置页面
+                int rowLeft = leftX + 4;
+                int rowRight = leftX + SCROLLBAR_X_OFFSET - 32;
+                if (mouseX >= rowLeft && mouseX <= rowRight
+                        && mouseY >= y && mouseY < y + LIST_ITEM_HEIGHT) {
+                    doEditConfig(s);
                     return true;
                 }
             }

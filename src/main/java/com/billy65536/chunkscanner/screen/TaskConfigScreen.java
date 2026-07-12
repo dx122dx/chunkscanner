@@ -5,6 +5,7 @@ import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.TaskConfig;
 import com.billy65536.chunkscanner.core.ChunkAnalyzer;
 import com.billy65536.chunkscanner.core.ChunkScanner;
+import com.billy65536.chunkscanner.core.ScanSession;
 import com.billy65536.chunkscanner.gui.PlaceholderTextField;
 import com.billy65536.chunkscanner.gui.ScrollManager;
 import net.minecraft.client.MinecraftClient;
@@ -41,10 +42,21 @@ public class TaskConfigScreen extends Screen {
     private final Screen parent;
     private final ChunkScanner scanner;
 
+    /** 编辑模式：为 true 时修改已有任务的配置，不创建新任务。 */
+    private final boolean editMode;
+    /** 编辑模式下的目标会话。 */
+    private final ScanSession editSession;
+    /** 编辑模式下的扫描名称文本。 */
+    private Text scanNameText;
+
     /** 顶部控件 */
     private PlaceholderTextField idField;
     private ButtonWidget analyzerButton;
     private ButtonWidget createButton;
+
+    /** 底部按钮 */
+    private ButtonWidget cancelButton;
+    private ButtonWidget applyButton;
 
     /** 分析器列表 */
     private List<ChunkAnalyzer> analyzerList;
@@ -108,6 +120,8 @@ public class TaskConfigScreen extends Screen {
         super(Text.translatable("chunkscanner.task_config.title"));
         this.parent = parent;
         this.scanner = scanner;
+        this.editMode = false;
+        this.editSession = null;
         this.existingConfig = existingConfig;
         this.globalConfig = scanner.getConfig();
 
@@ -127,7 +141,35 @@ public class TaskConfigScreen extends Screen {
         this.defaultScanId = (initialScanId != null && !initialScanId.isEmpty())
                 ? initialScanId : String.valueOf(System.currentTimeMillis() / 1000);
 
-        this.defaults = new String[]{
+        this.defaults = buildDefaults();
+    }
+
+    /**
+     * 编辑模式构造器：打开已有任务的配置页面。
+     */
+    public TaskConfigScreen(Screen parent, ChunkScanner scanner, ScanSession session) {
+        super(Text.translatable("chunkscanner.task_config.title"));
+        this.parent = parent;
+        this.scanner = scanner;
+        this.editMode = true;
+        this.editSession = session;
+        this.existingConfig = session.getTaskConfig();
+        this.globalConfig = scanner.getConfig();
+
+        // 编辑模式下不需要分析器列表，但为了兼容性保留空列表
+        this.analyzerList = new ArrayList<>();
+
+        // 扫描名称
+        String analyzerName = session.analyzer.getName().getString();
+        this.scanNameText = Text.literal("[" + analyzerName + "] " + session.scanId)
+                .formatted(Formatting.YELLOW);
+        this.defaultScanId = session.scanId;
+
+        this.defaults = buildDefaults();
+    }
+
+    private String[] buildDefaults() {
+        return new String[]{
                 String.valueOf(globalConfig.minRevisitIntervalSec),
                 String.valueOf(globalConfig.maxTasksPerTick),
                 String.valueOf(globalConfig.initialTasksPerTick),
@@ -150,7 +192,8 @@ public class TaskConfigScreen extends Screen {
         // 可视区域边界
         scrollTop = CONFIG_TOP;
         scrollRight = leftX + DIALOG_WIDTH;
-        scrollBottom = this.height - 8;
+        // 编辑模式底部按钮需要留空间
+        scrollBottom = editMode ? this.height - 36 : this.height - 8;
 
         // 字段的绝对基准 Y
         fieldsBaseY = scrollTop;
@@ -159,33 +202,54 @@ public class TaskConfigScreen extends Screen {
 
         // ==================== 顶部栏 ====================
 
-        // 返回按钮（同 DB 内页样式）
+        // 返回按钮（两种模式共用，同 DB 内页样式）
         addDrawableChild(ButtonWidget.builder(
                 Text.literal("<").formatted(Formatting.WHITE),
                 btn -> doBack())
                 .dimensions(leftX + 2, TOP_BAR_Y, 18, 20).build());
 
-        // ID 输入框（使用 placeholder 显示默认值）
-        idField = new PlaceholderTextField(textRenderer, leftX + 22, TOP_BAR_Y, 144, 20,
-                defaultScanId);
-        idField.setMaxLength(64);
-        addDrawableChild(idField);
+        if (!editMode) {
+            // 创建模式：ID 输入框 + 分析器选择按钮 + 创建按钮
 
-        // 分析器选择按钮
-        analyzerButton = ButtonWidget.builder(getAnalyzerButtonText(), btn -> {
-            if (!analyzerList.isEmpty()) {
-                selectedAnalyzerIdx = (selectedAnalyzerIdx + 1) % analyzerList.size();
-                btn.setMessage(getAnalyzerButtonText());
-            }
-        }).dimensions(leftX + 168, TOP_BAR_Y, 64, 20).build();
-        addDrawableChild(analyzerButton);
+            // ID 输入框（使用 placeholder 显示默认值）
+            idField = new PlaceholderTextField(textRenderer, leftX + 22, TOP_BAR_Y, 144, 20,
+                    defaultScanId);
+            idField.setMaxLength(64);
+            addDrawableChild(idField);
 
-        // 创建按钮（右对齐，确保不超过 DIALOG_WIDTH）
-        createButton = ButtonWidget.builder(
-                Text.translatable("chunkscanner.gui.create"),
-                btn -> doStart())
-                .dimensions(leftX + DIALOG_WIDTH - 46, TOP_BAR_Y, 44, 20).build();
-        addDrawableChild(createButton);
+            // 分析器选择按钮
+            analyzerButton = ButtonWidget.builder(getAnalyzerButtonText(), btn -> {
+                if (!analyzerList.isEmpty()) {
+                    selectedAnalyzerIdx = (selectedAnalyzerIdx + 1) % analyzerList.size();
+                    btn.setMessage(getAnalyzerButtonText());
+                }
+            }).dimensions(leftX + 168, TOP_BAR_Y, 64, 20).build();
+            addDrawableChild(analyzerButton);
+
+            // 创建按钮（右对齐，确保不超过 DIALOG_WIDTH）
+            createButton = ButtonWidget.builder(
+                    Text.translatable("chunkscanner.gui.create"),
+                    btn -> doStart())
+                    .dimensions(leftX + DIALOG_WIDTH - 46, TOP_BAR_Y, 44, 20).build();
+            addDrawableChild(createButton);
+        }
+
+        // ==================== 底部按钮（仅编辑模式） ====================
+
+        if (editMode) {
+            int bottomY = this.height - 30;
+            cancelButton = ButtonWidget.builder(
+                    Text.translatable("chunkscanner.task_config.cancel"),
+                    btn -> doBack())
+                    .dimensions(leftX + 4, bottomY, 56, 20).build();
+            addDrawableChild(cancelButton);
+
+            applyButton = ButtonWidget.builder(
+                    Text.translatable("chunkscanner.task_config.apply"),
+                    btn -> doApply())
+                    .dimensions(leftX + DIALOG_WIDTH - 60, bottomY, 56, 20).build();
+            addDrawableChild(applyButton);
+        }
 
         // ==================== 配置字段 ====================
 
@@ -286,6 +350,13 @@ public class TaskConfigScreen extends Screen {
         int sepY = CONFIG_TOP - 2;
         context.drawHorizontalLine(leftX, leftX + DIALOG_WIDTH, sepY, 0xFF555555);
 
+        // --- 编辑模式：显示扫描名称 ---
+        if (editMode && scanNameText != null) {
+            int nameY = TOP_BAR_Y + (FIELD_HEIGHT - textRenderer.fontHeight) / 2;
+            context.drawTextWithShadow(textRenderer, scanNameText,
+                    leftX + 24, nameY, 0xFFFFFF);
+        }
+
         // --- 可滚动配置区域标签 ---
         int offset = scrollManager.getOffset();
         int labelX = leftX + LABEL_X_OFFSET;
@@ -330,6 +401,16 @@ public class TaskConfigScreen extends Screen {
         MinecraftClient client = MinecraftClient.getInstance();
         scanner.start(client, analyzerId, id, config);
         client.setScreen(parent);
+    }
+
+    /** 编辑模式：应用配置更改到运行中的任务。 */
+    private void doApply() {
+        TaskConfig config = buildConfig();
+        // buildConfig 返回 null 表示所有字段为空 → 清除任务级配置
+        if (editSession != null) {
+            editSession.updateTaskConfig(config);
+        }
+        MinecraftClient.getInstance().setScreen(parent);
     }
 
     private TaskConfig buildConfig() {

@@ -44,7 +44,7 @@ public class ScanSession {
     public final ChunkAnalyzer analyzer;
     public final ChunkDb db;
     /** 此任务独立的配置副本（合并了全局默认值和任务级配置覆盖）。 */
-    final ChunkScannerConfig sessionConfig;
+    ChunkScannerConfig sessionConfig;
     /** 原始任务配置引用（用于显示、数据库持久化和任务恢复）。 */
     private TaskConfig taskConfig;
 
@@ -391,6 +391,33 @@ public class ScanSession {
     /** 获取此任务的任务级配置（可能为 null，表示未设置任务级配置）。 */
     public TaskConfig getTaskConfig() {
         return taskConfig;
+    }
+
+    /**
+     * 运行时更新任务配置。
+     * 将新的任务级配置合并到 sessionConfig，并持久化到数据库。
+     * 注意：部分设置（如 workerThreads）需要重启会话才能完全生效。
+     */
+    public void updateTaskConfig(TaskConfig newConfig) {
+        this.taskConfig = newConfig;
+        // 使用 TaskConfig.applyTo() 合并配置，避免逐字段展开重复
+        this.sessionConfig = (newConfig != null)
+                ? newConfig.applyTo(this.chunkScanner.config)
+                : this.chunkScanner.config.copy();
+
+        ChunkScannerConfig cfg = this.sessionConfig;
+
+        // clamp 当前速率到新范围
+        if (tasksPerTick > cfg.maxTasksPerTick) tasksPerTick = cfg.maxTasksPerTick;
+        if (tasksPerTick < 1) tasksPerTick = 1;
+
+        // 清除已入队记录，下次 dispatch 会用新的 revisitInterval 重入队
+        enqueuedChunks.clear();
+
+        // 持久化到数据库（null 表示清除配置）
+        if (db instanceof BinaryChunkDb bdb) {
+            bdb.setTaskConfig(newConfig);
+        }
     }
 
     // ==================== 内部类型 ====================

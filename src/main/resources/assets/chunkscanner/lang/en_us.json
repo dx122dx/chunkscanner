@@ -122,6 +122,7 @@
     "chunkscanner.task_config.start": "Start Scan",
     "chunkscanner.task_config.cancel": "Cancel",
     "chunkscanner.task_config.defaults": "Use Defaults",
+    "chunkscanner.task_config.apply": "Apply",
     "chunkscanner.task_config.hint": "Empty fields will use global default values",
     "chunkscanner.task_config.field.revisit": "Revisit (s):",
     "chunkscanner.task_config.field.tasks": "Max Tasks:",

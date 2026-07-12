@@ -123,6 +123,7 @@
     "chunkscanner.task_config.start": "开始扫描",
     "chunkscanner.task_config.cancel": "取消",
     "chunkscanner.task_config.defaults": "使用默认",
+    "chunkscanner.task_config.apply": "应用",
     "chunkscanner.task_config.hint": "留空字段将使用全局默认值",
     "chunkscanner.task_config.field.revisit": "重新访问 (秒):",
     "chunkscanner.task_config.field.tasks": "最大任务数:",
