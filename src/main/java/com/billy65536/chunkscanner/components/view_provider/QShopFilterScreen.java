@@ -27,10 +27,11 @@ public class QShopFilterScreen extends Screen {
 
     // ==================== 布局常量 ====================
 
-    private static final int DIALOG_W = 240;
+    private static final int DIALOG_W = 268;
     private static final int DIALOG_H = 208;
     private static final int FIELD_W = 124;
     private static final int FIELD_H = 16;
+    private static final int MODE_BTN_W = 18;
     private static final int RANGE_FIELD_W = 46;
     private static final int ROW_SPACING = 22;
     private static final int LEFT_MARGIN = 8;
@@ -47,6 +48,10 @@ public class QShopFilterScreen extends Screen {
     private PlaceholderTextField qtyMinField;
     private PlaceholderTextField qtyMaxField;
 
+    private ButtonWidget dimModeButton;
+    private ButtonWidget ownerModeButton;
+    private ButtonWidget itemModeButton;
+
     // ==================== 状态 ====================
 
     private int modeFilter; // 0=全部, 1=出售, 2=收购
@@ -54,6 +59,9 @@ public class QShopFilterScreen extends Screen {
     private String dimFilter;
     private String ownerFilter;
     private String itemFilter;
+    private int dimFilterMode;
+    private int ownerFilterMode;
+    private int itemFilterMode;
     private String priceMinStr;
     private String priceMaxStr;
     private String qtyMinStr;
@@ -70,6 +78,9 @@ public class QShopFilterScreen extends Screen {
         this.dimFilter = provider.getDimFilter() != null ? provider.getDimFilter() : "";
         this.ownerFilter = provider.getOwnerFilter() != null ? provider.getOwnerFilter() : "";
         this.itemFilter = provider.getItemFilter() != null ? provider.getItemFilter() : "";
+        this.dimFilterMode = provider.getDimFilterMode();
+        this.ownerFilterMode = provider.getOwnerFilterMode();
+        this.itemFilterMode = provider.getItemFilterMode();
         this.priceMinStr = priceToDisplayString(provider.getPriceMinFilter());
         this.priceMaxStr = priceToDisplayString(provider.getPriceMaxFilter());
         this.qtyMinStr = provider.getQtyMinFilter() != null
@@ -103,6 +114,34 @@ public class QShopFilterScreen extends Screen {
 
         // === 文本筛选字段 ===
         int fy = topY + 48;
+        int modeBtnX = fieldX - MODE_BTN_W - 2;
+
+        // === 模式切换按钮（位于文本字段左侧） ===
+        dimModeButton = ButtonWidget.builder(
+                getPatternModeText(dimFilterMode),
+                btn -> {
+                    dimFilterMode = (dimFilterMode + 1) % 4;
+                    btn.setMessage(getPatternModeText(dimFilterMode));
+                }).dimensions(modeBtnX, fy, MODE_BTN_W, FIELD_H).build();
+        addDrawableChild(dimModeButton);
+
+        ownerModeButton = ButtonWidget.builder(
+                getPatternModeText(ownerFilterMode),
+                btn -> {
+                    ownerFilterMode = (ownerFilterMode + 1) % 4;
+                    btn.setMessage(getPatternModeText(ownerFilterMode));
+                }).dimensions(modeBtnX, fy + ROW_SPACING, MODE_BTN_W, FIELD_H).build();
+        addDrawableChild(ownerModeButton);
+
+        itemModeButton = ButtonWidget.builder(
+                getPatternModeText(itemFilterMode),
+                btn -> {
+                    itemFilterMode = (itemFilterMode + 1) % 4;
+                    btn.setMessage(getPatternModeText(itemFilterMode));
+                }).dimensions(modeBtnX, fy + ROW_SPACING * 2, MODE_BTN_W, FIELD_H).build();
+        addDrawableChild(itemModeButton);
+
+        // 文本输入字段
         dimField = createTextField(fieldX, fy, dimFilter,
                 Text.translatable("chunkscanner.filter.placeholder.dimension").getString());
         ownerField = createTextField(fieldX, fy + ROW_SPACING, ownerFilter,
@@ -205,6 +244,20 @@ public class QShopFilterScreen extends Screen {
         };
     }
 
+    private Text getPatternModeText(int mode) {
+        return switch (mode) {
+            case QShopDbViewProvider.PATTERN_CONTAINS ->
+                    Text.literal("含").formatted(Formatting.WHITE);
+            case QShopDbViewProvider.PATTERN_EXCLUDE ->
+                    Text.literal("除").formatted(Formatting.RED);
+            case QShopDbViewProvider.PATTERN_EXACT ->
+                    Text.literal("全").formatted(Formatting.YELLOW);
+            case QShopDbViewProvider.PATTERN_REGEX ->
+                    Text.literal("正").formatted(Formatting.AQUA);
+            default -> Text.literal("?").formatted(Formatting.GRAY);
+        };
+    }
+
     // ==================== 渲染 ====================
 
     @Override
@@ -258,8 +311,11 @@ public class QShopFilterScreen extends Screen {
         provider.setModeFilter(modeFilter);
         provider.setSortMode(sortMode);
         provider.setDimFilter(trimToNull(dimField.getText()));
+        provider.setDimFilterMode(dimFilterMode);
         provider.setOwnerFilter(trimToNull(ownerField.getText()));
+        provider.setOwnerFilterMode(ownerFilterMode);
         provider.setItemFilter(trimToNull(itemField.getText()));
+        provider.setItemFilterMode(itemFilterMode);
 
         // 价格范围：解析浮点数并乘以 100 存储（内部以货币最小单位表示）
         provider.setPriceMinFilter(parsePriceInt(priceMinField.getText()));
@@ -277,14 +333,20 @@ public class QShopFilterScreen extends Screen {
         modeFilter = 0;
         sortMode = QShopDbViewProvider.SORT_NONE;
         dimField.setText("");
+        dimFilterMode = QShopDbViewProvider.PATTERN_CONTAINS;
         ownerField.setText("");
+        ownerFilterMode = QShopDbViewProvider.PATTERN_CONTAINS;
         itemField.setText("");
+        itemFilterMode = QShopDbViewProvider.PATTERN_CONTAINS;
         priceMinField.setText("");
         priceMaxField.setText("");
         qtyMinField.setText("");
         qtyMaxField.setText("");
         if (modeButton != null) modeButton.setMessage(getModeText());
         if (sortButton != null) sortButton.setMessage(getSortText());
+        if (dimModeButton != null) dimModeButton.setMessage(getPatternModeText(dimFilterMode));
+        if (ownerModeButton != null) ownerModeButton.setMessage(getPatternModeText(ownerFilterMode));
+        if (itemModeButton != null) itemModeButton.setMessage(getPatternModeText(itemFilterMode));
     }
 
     @Override

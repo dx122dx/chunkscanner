@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.components.analyzer.QShopAnalyzer;
@@ -54,6 +55,17 @@ public class QShopDbViewProvider implements DbViewProvider {
     public static final int SORT_QTY_ASC = 3;
     public static final int SORT_QTY_DESC = 4;
 
+    // ==================== 模式常量 ====================
+
+    /** 包含模式：字段包含筛选文本即匹配（现有默认行为）。 */
+    public static final int PATTERN_CONTAINS = 0;
+    /** 排除模式：字段不包含筛选文本才匹配（包含的排除）。 */
+    public static final int PATTERN_EXCLUDE = 1;
+    /** 全字模式：字段完全等于筛选文本才匹配（忽略大小写）。 */
+    public static final int PATTERN_EXACT = 2;
+    /** 正则模式：字段满足正则表达式才匹配。 */
+    public static final int PATTERN_REGEX = 3;
+
     // ==================== 筛选状态 ====================
 
     /** 模式筛选：0=全部, 1=出售(MODE_SELL), 2=收购(MODE_BUY) */
@@ -61,6 +73,16 @@ public class QShopDbViewProvider implements DbViewProvider {
     private String dimFilter = null;
     private String ownerFilter = null;
     private String itemFilter = null;
+
+    /** 各文本筛选字段的匹配模式。 */
+    private int dimFilterMode = PATTERN_CONTAINS;
+    private int ownerFilterMode = PATTERN_CONTAINS;
+    private int itemFilterMode = PATTERN_CONTAINS;
+
+    /** 预编译的正则 Pattern 缓存（仅在 PATTERN_REGEX 模式下非 null）。 */
+    private Pattern compiledDimPattern = null;
+    private Pattern compiledOwnerPattern = null;
+    private Pattern compiledItemPattern = null;
 
     /** 价格范围筛选（null = 不限制）。内部以货币最小单位存储（乘以 100）。 */
     private Integer priceMinFilter = null;
@@ -142,10 +164,16 @@ public class QShopDbViewProvider implements DbViewProvider {
     public void setModeFilter(int v) { modeFilter = v; }
     public String getDimFilter() { return dimFilter; }
     public void setDimFilter(String v) { dimFilter = v; }
+    public int getDimFilterMode() { return dimFilterMode; }
+    public void setDimFilterMode(int v) { dimFilterMode = v; }
     public String getOwnerFilter() { return ownerFilter; }
     public void setOwnerFilter(String v) { ownerFilter = v; }
+    public int getOwnerFilterMode() { return ownerFilterMode; }
+    public void setOwnerFilterMode(int v) { ownerFilterMode = v; }
     public String getItemFilter() { return itemFilter; }
     public void setItemFilter(String v) { itemFilter = v; }
+    public int getItemFilterMode() { return itemFilterMode; }
+    public void setItemFilterMode(int v) { itemFilterMode = v; }
 
     public Integer getPriceMinFilter() { return priceMinFilter; }
     public void setPriceMinFilter(Integer v) { priceMinFilter = v; }
@@ -160,8 +188,22 @@ public class QShopDbViewProvider implements DbViewProvider {
     public int getSortMode() { return sortMode; }
     public void setSortMode(int v) { sortMode = v; }
 
-    /** 筛选条件变更后使缓存失效。 */
-    public void invalidateCache() { cacheValid = false; }
+    /** 筛选条件变更后使缓存失效，并预编译正则 Pattern。 */
+    public void invalidateCache() {
+        cacheValid = false;
+        compiledDimPattern = compileIfNeeded(dimFilter, dimFilterMode);
+        compiledOwnerPattern = compileIfNeeded(ownerFilter, ownerFilterMode);
+        compiledItemPattern = compileIfNeeded(itemFilter, itemFilterMode);
+    }
+
+    private static Pattern compileIfNeeded(String filter, int mode) {
+        if (mode != PATTERN_REGEX || filter == null || filter.isEmpty()) return null;
+        try {
+            return Pattern.compile(filter, Pattern.CASE_INSENSITIVE);
+        } catch (PatternSyntaxException e) {
+            return null;
+        }
+    }
 
     // ==================== 特化展示 ====================
 
@@ -252,13 +294,10 @@ public class QShopDbViewProvider implements DbViewProvider {
         if (modeFilter == 1 && r.mode() != QShopAnalyzer.MODE_SELL) return false;
         if (modeFilter == 2 && r.mode() != QShopAnalyzer.MODE_BUY) return false;
 
-        // 文本子串匹配（null = 不筛选，空串 = 不筛选，其他 = 包含即可）
-        if (dimFilter != null && !dimFilter.isEmpty()
-                && !r.dimId().toLowerCase().contains(dimFilter.toLowerCase())) return false;
-        if (ownerFilter != null && !ownerFilter.isEmpty()
-                && !r.owner().toLowerCase().contains(ownerFilter.toLowerCase())) return false;
-        if (itemFilter != null && !itemFilter.isEmpty()
-                && !r.itemName().toLowerCase().contains(itemFilter.toLowerCase())) return false;
+        // 文本筛选（null/空串 = 不筛选，否则按指定模式匹配）
+        if (!matchesPattern(r.dimId(), dimFilter, dimFilterMode, compiledDimPattern)) return false;
+        if (!matchesPattern(r.owner(), ownerFilter, ownerFilterMode, compiledOwnerPattern)) return false;
+        if (!matchesPattern(r.itemName(), itemFilter, itemFilterMode, compiledItemPattern)) return false;
 
         // 价格范围筛选
         if (priceMinFilter != null || priceMaxFilter != null) {
@@ -273,6 +312,27 @@ public class QShopDbViewProvider implements DbViewProvider {
         if (qtyMaxFilter != null && r.quantity() > qtyMaxFilter) return false;
 
         return true;
+    }
+
+    /**
+     * 根据匹配模式检查字段是否满足筛选条件。
+     *
+     * @param field           待检查的字段值
+     * @param filter          筛选文本（null 或空串 = 不筛选，直接通过）
+     * @param mode            匹配模式（PATTERN_CONTAINS/EXCLUDE/EXACT/REGEX）
+     * @param compiledPattern 预编译的正则 Pattern（仅 REGEX 模式下非 null）
+     * @return true 表示通过筛选
+     */
+    private boolean matchesPattern(String field, String filter, int mode, Pattern compiledPattern) {
+        if (filter == null || filter.isEmpty()) return true;
+        if (field == null) return false;
+        return switch (mode) {
+            case PATTERN_CONTAINS -> field.toLowerCase().contains(filter.toLowerCase());
+            case PATTERN_EXCLUDE -> !field.toLowerCase().contains(filter.toLowerCase());
+            case PATTERN_EXACT -> field.equalsIgnoreCase(filter);
+            case PATTERN_REGEX -> compiledPattern != null && compiledPattern.matcher(field).find();
+            default -> true;
+        };
     }
 
     /** 提取价格字符串中首个数字的整数表示（乘以 100，两位小数精度）。无法解析则返回 -1。 */
