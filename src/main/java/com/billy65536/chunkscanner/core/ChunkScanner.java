@@ -13,6 +13,7 @@ import java.util.*;
 import java.util.concurrent.*;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
+import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.TaskConfig;
 
@@ -251,7 +252,7 @@ public class ChunkScanner {
      * 从已有数据库文件恢复扫描任务（使用全局默认配置）。
      * 适用于 /cs db reboot 命令。
      */
-    public void startWithDb(MinecraftClient client, String scanId, String analyzerId, ChunkDb existingDb) {
+    public void startWithDb(MinecraftClient client, String scanId, String analyzerId, BinaryChunkDb existingDb) {
         startWithDb(client, scanId, analyzerId, null, existingDb);
     }
 
@@ -260,7 +261,7 @@ public class ChunkScanner {
      * 与 start() 的区别：不创建新的 BinaryChunkDb，而是复用已有的数据库实例。
      * 这会保留之前扫描的所有数据，继续在已有基础上扫描。
      */
-    public void startWithDb(MinecraftClient client, String scanId, String analyzerId, TaskConfig taskConfig, ChunkDb existingDb) {
+    public void startWithDb(MinecraftClient client, String scanId, String analyzerId, TaskConfig taskConfig, BinaryChunkDb existingDb) {
         if (client.player == null || client.world == null) {
             CoreUtil.sendMsg(client, Text.translatable(KEY_NOT_IN_WORLD).formatted(Formatting.RED));
             return;

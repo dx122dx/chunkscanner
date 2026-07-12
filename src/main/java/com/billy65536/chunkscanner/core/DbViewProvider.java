@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Set;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
-import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 
 /**
  * 数据库展示提供者接口。
@@ -144,10 +143,10 @@ public interface DbViewProvider {
         Set<String> applicableAnalyzers();
 
         /**
-         * 根据底层 BinaryChunkDb 创建此类型的 DbViewProvider 实例。
+         * 根据底层 ChunkDb 创建此类型的 DbViewProvider 实例。
          * 如果此类型不适用于该数据库，返回 null。
          */
-        DbViewProvider create(BinaryChunkDb db);
+        DbViewProvider create(ChunkDb db);
     }
 
     // ==================== 注册表 ====================

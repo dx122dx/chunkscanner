@@ -42,7 +42,7 @@ public class ScanSession {
     private final ChunkScanner chunkScanner;
     public final String scanId;
     public final ChunkAnalyzer analyzer;
-    public final ChunkDb db;
+    public final BinaryChunkDb db;
     /** 此任务独立的配置副本（合并了全局默认值和任务级配置覆盖）。 */
     ChunkScannerConfig sessionConfig;
     /** 原始任务配置引用（用于显示、数据库持久化和任务恢复）。 */
@@ -94,7 +94,7 @@ public class ScanSession {
     }
 
     /** 从已有数据库恢复会话。 */
-    ScanSession(ChunkScanner chunkScanner, String scanId, ChunkAnalyzer analyzer, ChunkDb existingDb) {
+    ScanSession(ChunkScanner chunkScanner, String scanId, ChunkAnalyzer analyzer, BinaryChunkDb existingDb) {
         this(chunkScanner, scanId, analyzer, null, existingDb);
     }
 
@@ -110,7 +110,7 @@ public class ScanSession {
      * @param taskConfig 任务级配置覆盖（可为 null，使用全局默认）
      * @param existingDb 已有数据库实例（用于恢复扫描）
      */
-    ScanSession(ChunkScanner chunkScanner, String scanId, ChunkAnalyzer analyzer, TaskConfig taskConfig, ChunkDb existingDb) {
+    ScanSession(ChunkScanner chunkScanner, String scanId, ChunkAnalyzer analyzer, TaskConfig taskConfig, BinaryChunkDb existingDb) {
         this.chunkScanner = chunkScanner;
         this.scanId = scanId;
         this.analyzer = analyzer;
@@ -141,9 +141,7 @@ public class ScanSession {
         String dim = client.world.getRegistryKey().getValue().toString();
         currentDimensionId = dim;
         // 将任务配置序列化到数据库，便于后续恢复
-        if (db instanceof BinaryChunkDb bdb) {
-            bdb.setTaskConfig(this.taskConfig);
-        }
+        db.setTaskConfig(this.taskConfig);
         ChunkScannerMod.LOGGER.debug("[scan:{}] Session started (analyzer={}, threads={}, radius={})",
                 scanId, analyzer.getId(), sessionConfig.workerThreads, sessionConfig.scanRadiusMultiplier);
     }
@@ -415,9 +413,7 @@ public class ScanSession {
         enqueuedChunks.clear();
 
         // 持久化到数据库（null 表示清除配置）
-        if (db instanceof BinaryChunkDb bdb) {
-            bdb.setTaskConfig(newConfig);
-        }
+        db.setTaskConfig(newConfig);
     }
 
     // ==================== 内部类型 ====================

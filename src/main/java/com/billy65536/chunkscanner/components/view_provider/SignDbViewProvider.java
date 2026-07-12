@@ -1,6 +1,6 @@
 package com.billy65536.chunkscanner.components.view_provider;
 
-import com.billy65536.chunkscanner.gui.GuiUtil;
+import com.billy65536.chunkscanner.core.CoreUtil;
 import net.minecraft.text.Text;
 
 import java.nio.ByteBuffer;
@@ -174,7 +174,7 @@ public class SignDbViewProvider implements DbViewProvider {
                 byte[] key = entry.key();
                 // 检查前缀
                 if (key.length < KEY_PREFIX.length) continue;
-                if (!GuiUtil.startsWith(key, KEY_PREFIX)) continue;
+                if (!CoreUtil.startsWith(key, KEY_PREFIX)) continue;
 
                 byte[] val = entry.value();
                 if (val.length < 48) continue;
@@ -249,10 +249,11 @@ public class SignDbViewProvider implements DbViewProvider {
         }
 
         @Override
-        public DbViewProvider create(BinaryChunkDb db) {
+        public DbViewProvider create(ChunkDb db) {
             // 只适用于 sign 分析器生成的数据库
-            if (!"sign".equals(db.analyzerName())) return null;
-            return new SignDbViewProvider(db);
+            if (!(db instanceof BinaryChunkDb bdb)) return null;
+            if (!"sign".equals(bdb.analyzerName())) return null;
+            return new SignDbViewProvider(bdb);
         }
     }
 }

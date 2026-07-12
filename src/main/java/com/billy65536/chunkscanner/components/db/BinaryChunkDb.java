@@ -19,8 +19,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.ChunkDb;
+import com.billy65536.chunkscanner.core.CoreUtil;
 import com.billy65536.chunkscanner.core.DbViewProvider;
-import com.billy65536.chunkscanner.gui.GuiUtil;
 import com.billy65536.chunkscanner.config.TaskConfig;
 
 /**
@@ -194,7 +194,7 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
         var it = kvStore.entrySet().iterator();
         while (it.hasNext()) {
             byte[] key = it.next().getKey().data;
-            if (key.length >= prefix.length && GuiUtil.startsWith(key, prefix)) {
+            if (key.length >= prefix.length && CoreUtil.startsWith(key, prefix)) {
                 it.remove();
                 removed++;
             }
@@ -574,8 +574,9 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
         }
 
         @Override
-        public DbViewProvider create(BinaryChunkDb db) {
-            return db; // BinaryChunkDb 自身就是 DbViewProvider
+        public DbViewProvider create(ChunkDb db) {
+            // BinaryChunkDb 同时实现了 ChunkDb 和 DbViewProvider
+            return db instanceof DbViewProvider dvp ? dvp : null;
         }
     }
 

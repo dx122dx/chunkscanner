@@ -22,6 +22,15 @@ public class CoreUtil {
         return ((long) cx << 32) | (cz & 0xFFFFFFFFL);
     }
 
+    /** 判断 data 是否以 prefix 为前缀。 */
+    public static boolean startsWith(byte[] data, byte[] prefix) {
+        if (data.length < prefix.length) return false;
+        for (int i = 0; i < prefix.length; i++) {
+            if (data[i] != prefix[i]) return false;
+        }
+        return true;
+    }
+
     /**
      * 替换字符串中的 {key} 占位符。
      * 根据 headers 和 values 数组，将 {headerName} 替换为对应的 value。

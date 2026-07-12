@@ -25,7 +25,7 @@ class DbViewProviderRegistryTest {
             @Override public String getName() { return name; }
             @Override public String getDescription() { return "desc: " + name; }
             @Override public Set<String> applicableAnalyzers() { return Set.of(); }
-            @Override public DbViewProvider create(BinaryChunkDb db) { return null; }
+            @Override public DbViewProvider create(ChunkDb db) { return null; }
         };
     }
 

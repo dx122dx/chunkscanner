@@ -21,7 +21,7 @@ import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 import com.billy65536.chunkscanner.core.ChunkDb;
 import com.billy65536.chunkscanner.core.DbViewProvider;
 import com.billy65536.chunkscanner.core.LocatedPosition;
-import com.billy65536.chunkscanner.gui.GuiUtil;
+import com.billy65536.chunkscanner.core.CoreUtil;
 /**
  * QShop 分析器特化的 DbViewProvider。
  *
@@ -384,7 +384,7 @@ public class QShopDbViewProvider implements DbViewProvider {
                 byte[] key = entry.key();
                 // 跳过非 qshop 前缀的条目
                 if (key.length < KEY_PREFIX.length) continue;
-                if (!GuiUtil.startsWith(key, KEY_PREFIX)) continue;
+                if (!CoreUtil.startsWith(key, KEY_PREFIX)) continue;
 
                 byte[] val = entry.value();
                 if (val.length < RECORD_SIZE) continue;
@@ -465,9 +465,10 @@ public class QShopDbViewProvider implements DbViewProvider {
         }
 
         @Override
-        public DbViewProvider create(BinaryChunkDb db) {
-            if (!"qshop".equals(db.analyzerName())) return null;
-            return new QShopDbViewProvider(db);
+        public DbViewProvider create(ChunkDb db) {
+            if (!(db instanceof BinaryChunkDb bdb)) return null;
+            if (!"qshop".equals(bdb.analyzerName())) return null;
+            return new QShopDbViewProvider(bdb);
         }
     }
 }

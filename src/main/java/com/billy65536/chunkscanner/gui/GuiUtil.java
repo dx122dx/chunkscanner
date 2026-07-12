@@ -47,17 +47,6 @@ public final class GuiUtil {
         return analyzerId;
     }
 
-    /* ==================== 字节数组工具 ==================== */
-
-    /** 判断 data 是否以 prefix 为前缀。 */
-    public static boolean startsWith(byte[] data, byte[] prefix) {
-        if (data.length < prefix.length) return false;
-        for (int i = 0; i < prefix.length; i++) {
-            if (data[i] != prefix[i]) return false;
-        }
-        return true;
-    }
-
     /* ==================== 字节 → 十六进制 ==================== */
 
     /** 截断式十六进制渲染。 */
