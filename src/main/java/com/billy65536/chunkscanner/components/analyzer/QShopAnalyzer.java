@@ -386,6 +386,25 @@ public class QShopAnalyzer implements ChunkAnalyzer {
      */
     record QShopParsed(String owner, byte mode, int quantity, String itemName, String price) {}
 
+    // ==================== 公开工具方法 ====================
+
+    /**
+     * 快速检查一个告示牌方块实体是否为 QShop 格式的商店告示牌。
+     * 供 {@link QShopChatListener} 在监听取块事件时使用，
+     * 避免重复完整的解析流程。
+     *
+     * @param sign 告示牌方块实体
+     * @return 是否为 QShop 商店告示牌
+     */
+    public static boolean isQShopSign(SignBlockEntity sign) {
+        SignText frontText = sign.getFrontText();
+        String[] lines = new String[4];
+        for (int i = 0; i < 4; i++) {
+            lines[i] = frontText.getMessage(i, false).getString();
+        }
+        return parseQShop(lines, getPatterns()) != null;
+    }
+
     // ==================== 分析器元数据 ====================
 
     @Override

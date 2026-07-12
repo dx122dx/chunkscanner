@@ -1,7 +1,13 @@
 package com.billy65536.chunkscanner.components.analyzer;
 
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
+import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.block.entity.SignBlockEntity;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.Text;
+import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.math.BlockPos;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -9,57 +15,59 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.ChunkDb;
-import com.billy65536.chunkscanner.core.CoreUtil;
 
 /**
- * 监听客户端聊天消息，捕获 QuickShop 商店 Item 行中的增强物品数据。
+ * 监听客户端聊天消息和按键事件，捕获 QuickShop 商店 Item 行中的增强物品数据。
  *
  * <h3>工作原理</h3>
  * <ol>
- *   <li>玩家左键点击 QShop 商店 → 服务器发送多条聊天消息</li>
- *   <li>本监听器检测 Item 行（同时包含 SHOW_ITEM hover 和 /qs silentpreview click）</li>
- *   <li>从 HoverEvent 中提取 ItemStack 详情（注册名、附魔、NBT 哈希）</li>
- *   <li>通过告示牌上的物品译名，在已扫描的 QShop 数据库中匹配对应记录</li>
- *   <li>将增强数据写回数据库记录</li>
+ *   <li>在 {@link ClientTickEvents#START_CLIENT_TICK} 中手动追踪攻击键状态变化，
+ *       检测玩家是否左键点击了 QShop 告示牌</li>
+ *   <li>QShop 服务器发送聊天消息（Item 行）→ 本监听器从 HoverEvent 中提取 ItemStack 详情</li>
+ *   <li>批量处理时，用记录的告示牌位置构造精确数据库键，直接查找并增强对应记录</li>
  * </ol>
  *
  * <h3>匹配策略</h3>
- * <p>由于 QuickShop 的 UUID 是临时的（重启后失效），无法直接通过 UUID 关联。
- * 替代方案：通过聊天消息中的物品注册名 → ItemTranslator 反向查找物品译名 →
- * 在数据库中通过译名匹配对应记录。如果存在多个同名物品的商店（同一物品不同价格），
- * 则无法精确匹配，跳过增强。</p>
+ * <p>通过追踪攻击键按下事件捕获点击位置，替代了之前基于物品译名的模糊匹配。
+ * 即使同一维度的多个商店出售相同物品，也能精确匹配到被点击的那个告示牌。
+ * 新点击会清空之前缓存的未处理消息和点击，确保消息与点击正确对应。</p>
  *
  * <h3>线程安全</h3>
- * <p>聊天消息在渲染线程接收，但消息处理被缓冲（每 5 秒批量处理一次），
- * 避免在聊天高峰期频繁写入数据库。</p>
+ * <p>所有回调（聊天、tick）均在渲染线程执行，无需额外同步。
+ * 数据库写入通过 {@link ChunkDb} 的标准接口执行。</p>
  *
  * <h3>防发包频率</h3>
- * <p>本监听器<b>不发送任何数据包</b>，仅被动监听已接收的聊天消息，
- * 因此不会触发服务器反作弊检测。数据库写入操作通过 {@link ChunkDb} 的标准接口执行，
- * 与扫描器共享同一个数据库实例。</p>
+ * <p>本监听器<b>不发送任何数据包</b>，仅被动监听，不会触发服务器反作弊检测。</p>
  */
 public final class QShopChatListener {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("chunkscanner.chat");
 
-    /** 批量处理间隔（毫秒）。聊天消息先缓存，定期批量处理。 */
+    /** 批量处理间隔（毫秒）。 */
     private static final long PROCESS_INTERVAL_MS = 5000;
 
-    /** 单次批量处理最大消息数。防止瞬间大量消息堆积。 */
+    /** 单次批量处理最大消息数。 */
     private static final int MAX_BATCH_SIZE = 32;
+
+    /** 点击有效期限（毫秒），超过此时间的点击将被丢弃。 */
+    private static final long MAX_CLICK_AGE_MS = 15_000;
+
+    /** 完整键长度："qshop:"(6) + dimPoolId(4) + cx(4) + cz(4) + keyHi(8) + keyLo(8) = 34 */
+    private static final int KEY_SIZE = 34;
 
     /** 数据库键前缀。 */
     private static final byte[] KEY_PREFIX = "qshop:".getBytes(StandardCharsets.UTF_8);
-    private static final int KEY_PREFIX_LEN = KEY_PREFIX.length;
 
-    /** 待处理的消息队列（线程安全）。 */
+    /** 待处理的消息队列。 */
     private static final ConcurrentLinkedQueue<PendingMessage> pendingMessages = new ConcurrentLinkedQueue<>();
+
+    /** 待处理的点击队列。 */
+    private static final ConcurrentLinkedQueue<PendingClick> pendingClicks = new ConcurrentLinkedQueue<>();
 
     /** 上次处理时间戳（毫秒）。 */
     private static volatile long lastProcessTime = 0;
@@ -67,28 +75,28 @@ public final class QShopChatListener {
     /** 是否已注册监听器。 */
     private static volatile boolean registered = false;
 
+    /** 攻击键上一帧是否按下（用于检测按下瞬间）。 */
+    private static boolean prevAttackPressed = false;
+
     /** 统计计数器。 */
     private static final AtomicInteger totalDetected = new AtomicInteger(0);
     private static final AtomicInteger totalEnhanced = new AtomicInteger(0);
 
     private QShopChatListener() {}
 
-    // ==================== 待处理消息 ====================
+    // ==================== 内部数据记录 ====================
 
-    /**
-     * 缓存一条待处理的聊天消息（含已提取的物品数据，避免批处理时重复解析）。
-     */
+    /** 缓存的聊天消息（含已提取的物品数据）。 */
     private record PendingMessage(ChatItemExtractor.ExtractedItem item, long receivedAt) {}
+
+    /** 缓存的告示牌点击信息。 */
+    private record PendingClick(String dimId, int x, int y, int z, long clickedAt) {}
 
     // ==================== 注册/注销 ====================
 
     /**
-     * 注册聊天消息监听器。
-     * 通过 Fabric API 的 {@link ClientReceiveMessageEvents} 订阅所有聊天消息。
+     * 注册聊天消息监听器和按键检测。
      * 重复调用安全（已注册则跳过）。
-     *
-     * <p>QuickShop 通过 {@code player.spigot().sendMessage()} 发送商店信息，
-     * 在客户端被分类为 GAME 消息（非玩家聊天），因此只监听 GAME 事件即可。
      */
     public static void register() {
         if (registered) return;
@@ -99,10 +107,53 @@ public final class QShopChatListener {
             onChatMessage(message);
         });
 
-        LOGGER.info("QShop chat listener registered");
+        // 在 START_CLIENT_TICK 检测攻击键按下（wasPressed 已被 MC 消费，手动追踪 isPressed 状态变化）
+        ClientTickEvents.START_CLIENT_TICK.register(client -> {
+            detectSignClick(client);
+        });
+
+        LOGGER.info("QShop chat listener registered (chat + key press detection)");
     }
 
-    // ==================== 消息处理 ====================
+    // ==================== 按键检测 ====================
+
+    /**
+     * 每帧检测攻击键状态变化。
+     * 使用 {@code isPressed()} 手动追踪状态转换（false→true），
+     * 因为 {@code wasPressed()} 在 START_CLIENT_TICK 之前已被 Minecraft 内部消费。
+     */
+    private static void detectSignClick(MinecraftClient client) {
+        if (client.player == null || client.world == null) {
+            prevAttackPressed = false;
+            return;
+        }
+
+        boolean nowPressed = client.options.attackKey.isPressed();
+        boolean justPressed = nowPressed && !prevAttackPressed;
+        prevAttackPressed = nowPressed;
+
+        if (!justPressed) return;
+
+        // 检查准星目标是否为方块
+        if (!(client.crosshairTarget instanceof BlockHitResult hit)) return;
+        BlockPos pos = hit.getBlockPos();
+
+        // 检查是否为 QShop 告示牌
+        BlockEntity be = client.world.getBlockEntity(pos);
+        if (!(be instanceof SignBlockEntity sign)) return;
+        if (!QShopAnalyzer.isQShopSign(sign)) return;
+
+        // 记录点击
+        String dimId = client.world.getRegistryKey().getValue().toString();
+        pendingMessages.clear();
+        pendingClicks.clear();
+        pendingClicks.offer(new PendingClick(dimId, pos.getX(), pos.getY(), pos.getZ(),
+                System.currentTimeMillis()));
+
+        LOGGER.info("QShop sign clicked at ({}, {}, {}) in {}", pos.getX(), pos.getY(), pos.getZ(), dimId);
+    }
+
+    // ==================== 聊天消息处理 ====================
 
     /**
      * 收到聊天消息时调用（在渲染线程）。
@@ -121,7 +172,7 @@ public final class QShopChatListener {
 
         totalDetected.incrementAndGet();
 
-        // 缓存到队列（存储已提取的物品数据，避免批处理时重复解析）
+        // 缓存到队列
         pendingMessages.offer(new PendingMessage(item, System.currentTimeMillis()));
 
         // 限制队列大小，防止内存泄漏
@@ -133,11 +184,11 @@ public final class QShopChatListener {
                 item.registryId(), item.enchants().size(), item.nbtHash());
     }
 
-    // ==================== 定时处理 ====================
+    // ==================== 定时处理（由 ChunkScannerMod 在 END_CLIENT_TICK 调用） ====================
 
     /**
      * 每 tick 调用，检查是否需要批量处理缓存的消息。
-     * 应在客户端 tick 回调中调用（例如 ChunkScanner.onClientTick）。
+     * 由 {@link ChunkScannerMod} 在 END_CLIENT_TICK 中调用。
      */
     public static void tick() {
         long now = System.currentTimeMillis();
@@ -150,7 +201,7 @@ public final class QShopChatListener {
 
     /**
      * 批量处理缓存的消息。
-     * 收集所有待处理消息，去重后尝试匹配数据库记录。
+     * 收集消息、去重，然后通过记录的点击位置精确查找数据库记录并增强。
      */
     private static void processBatch() {
         // 收集消息（限制批量大小）
@@ -162,6 +213,21 @@ public final class QShopChatListener {
 
         if (batch.isEmpty()) return;
 
+        // 获取有效的点击
+        long now = System.currentTimeMillis();
+        List<PendingClick> clicks = new ArrayList<>();
+        PendingClick click;
+        while ((click = pendingClicks.poll()) != null) {
+            if (now - click.clickedAt() <= MAX_CLICK_AGE_MS) {
+                clicks.add(click);
+            }
+        }
+
+        if (clicks.isEmpty()) {
+            LOGGER.debug("No valid sign click for {} chat messages, skipping enhancement", batch.size());
+            return;
+        }
+
         // 去重：同一物品注册名 + 附魔列表相同的消息只处理一次
         Map<String, ChatItemExtractor.ExtractedItem> uniqueItems = new LinkedHashMap<>();
         for (PendingMessage pm : batch) {
@@ -171,203 +237,126 @@ public final class QShopChatListener {
             uniqueItems.putIfAbsent(dedupKey, item);
         }
 
-        LOGGER.debug("Processing {} chat messages ({} unique items)", batch.size(), uniqueItems.size());
+        LOGGER.debug("Processing {} chat messages ({} unique, {} clicks)",
+                batch.size(), uniqueItems.size(), clicks.size());
 
-        // 获取当前活跃的扫描会话（所有 QShop 扫描器共享的数据库）
+        // 获取当前活跃的扫描会话
         var scanner = ChunkScannerMod.getScanner();
         if (scanner == null) return;
 
         int enhanced = 0;
-        for (ChatItemExtractor.ExtractedItem item : uniqueItems.values()) {
-            try {
-                if (tryEnhanceRecords(scanner, item)) {
-                    enhanced++;
+        for (PendingClick c : clicks) {
+            for (ChatItemExtractor.ExtractedItem item : uniqueItems.values()) {
+                try {
+                    if (enhanceRecordAt(scanner, c, item)) {
+                        enhanced++;
+                    }
+                } catch (Exception e) {
+                    LOGGER.debug("Failed to enhance record at ({}, {}, {}): {}",
+                            c.x(), c.y(), c.z(), e.getMessage());
                 }
-            } catch (Exception e) {
-                LOGGER.debug("Failed to enhance record for {}: {}", item.registryId(), e.getMessage());
             }
         }
 
         if (enhanced > 0) {
             totalEnhanced.addAndGet(enhanced);
-            LOGGER.debug("Enhanced {} QShop records with chat data (total: {})",
+            LOGGER.info("Enhanced {} QShop records with chat data (total: {})",
                     enhanced, totalEnhanced.get());
         }
     }
 
-    // ==================== 数据库匹配与增强 ====================
+    // ==================== 精确数据库增强 ====================
 
     /**
-     * 尝试在活跃的 QShop 扫描会话中匹配并增强记录。
+     * 通过点击位置精确查找并增强数据库记录。
      *
-     * <p>匹配流程：
-     * <ol>
-     *   <li>遍历所有活跃会话，找到 QShop 分析器对应的会话</li>
-     *   <li>从物品注册名通过 ItemTranslator 反向查找译名</li>
-     *   <li>在数据库中查找译名匹配的记录</li>
-     *   <li>如果恰好匹配到一条记录，写入增强数据</li>
-     *   <li>如果匹配到多条（同名不同价），无法精确区分，跳过</li>
-     * </ol>
+     * <p>直接使用点击坐标构造数据库键，通过 {@link ChunkDb#get(byte[])} 精确查找。
+     * 即使多个商店出售相同物品，也能准确匹配到被点击的那个。</p>
      *
-     * @return 是否成功增强了至少一条记录
+     * @param scanner 扫描器实例
+     * @param click   记录的点击信息（维度、坐标）
+     * @param item    从聊天消息提取的物品数据
+     * @return 是否成功增强了记录
      */
-    private static boolean tryEnhanceRecords(com.billy65536.chunkscanner.core.ChunkScanner scanner,
-                                             ChatItemExtractor.ExtractedItem item) {
-        boolean enhanced = false;
-
+    private static boolean enhanceRecordAt(com.billy65536.chunkscanner.core.ChunkScanner scanner,
+                                           PendingClick click, ChatItemExtractor.ExtractedItem item) {
         for (var session : scanner.getActiveSessions()) {
             if (!"qshop".equals(session.analyzer.getId())) continue;
 
-            com.billy65536.chunkscanner.core.ChunkDb db = session.db;
+            ChunkDb db = session.db;
             if (db == null) continue;
 
-            // 通过注册名反查译名
-            String translatedName = reverseLookupItemName(item.registryId());
-            if (translatedName == null) continue;
+            // 构造精确键
+            int dimPoolId = db.intern(click.dimId());
+            int cx = click.x() >> 4;
+            int cz = click.z() >> 4;
+            long keyHi = ((long) dimPoolId << 32) | (click.x() & 0xFFFFFFFFL);
+            long keyLo = ((long) click.z() << 32) | (click.y() & 0xFFFFFFFFL);
 
-            // 查找匹配的数据库记录
-            List<MatchResult> matches = findMatchingRecords(db, translatedName);
-            if (matches.size() != 1) {
-                // 0 条：没有匹配；>1 条：同名不同价，无法区分
+            byte[] key = buildKey(dimPoolId, cx, cz, keyHi, keyLo);
+            byte[] value = db.get(key);
+            if (value == null) {
+                LOGGER.debug("No DB record at ({}, {}, {}), may not be scanned yet",
+                        click.x(), click.y(), click.z());
                 continue;
             }
 
-            // 精确匹配：更新记录
-            MatchResult match = matches.get(0);
-            byte[] enhancedValue = buildEnhancedValue(match.value(), item);
+            // 将物品注册名也写入数据库字符串池
+            int registryIdPoolId = db.intern(item.registryId());
+
+            // 增强记录值
+            byte[] enhancedValue = buildEnhancedValue(value, item, registryIdPoolId);
             if (enhancedValue != null) {
-                db.put(match.key(), enhancedValue);
-                enhanced = true;
-                LOGGER.debug("Enhanced QShop record: {} at ({}, {}, {}) with enchants={}",
-                        item.registryId(), match.x(), match.y(), match.z(), item.enchants().size());
+                db.put(key, enhancedValue);
+                LOGGER.info("Enhanced QShop record: {} at ({}, {}, {}) with enchants={}",
+                        item.registryId(), click.x(), click.y(), click.z(), item.enchants().size());
+                return true;
             }
         }
 
-        return enhanced;
+        return false;
     }
 
-    // ==================== 译名反查 ====================
-
     /**
-     * 通过注册名反查物品译名。
-     * 遍历 ItemTranslator 的映射表找到对应译名。
-     * 注意：可能存在多个译名映射到同一个注册名（罕见），取第一个。
+     * 构造完整数据库键（34 字节）。
      */
-    private static String reverseLookupItemName(String registryId) {
-        if (registryId == null || registryId.isEmpty()) return null;
-
-        // ItemTranslator 是 displayName → registryId 的映射
-        // 需要反向查找
-        // 由于 ItemTranslator 不暴露内部 Map，这里直接使用 Registries 反向查询
-        try {
-            net.minecraft.util.Identifier id = net.minecraft.util.Identifier.tryParse(registryId);
-            if (id == null) return null;
-            net.minecraft.item.Item item = net.minecraft.registry.Registries.ITEM.get(id);
-            if (item == null) return null;
-            return item.getName().getString();
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    // ==================== 数据库记录匹配 ====================
-
-    /**
-     * 数据库匹配结果。
-     */
-    private record MatchResult(byte[] key, byte[] value, int x, int y, int z) {}
-
-    /**
-     * 在数据库中查找译名匹配的 QShop 记录。
-     *
-     * @param db             数据库实例
-     * @param translatedName 物品译名（告示牌第三行）
-     * @return 匹配的记录列表
-     */
-    private static List<MatchResult> findMatchingRecords(ChunkDb db, String translatedName) {
-        List<MatchResult> results = new ArrayList<>();
-
-        // 获取所有条目并过滤 qshop 前缀
-        List<ChunkDb.Entry> entries;
-        try {
-            entries = db.getAllEntries();
-        } catch (Exception e) {
-            return results;
-        }
-
-        for (ChunkDb.Entry entry : entries) {
-            byte[] key = entry.key();
-            if (key.length < KEY_PREFIX_LEN) continue;
-            if (!CoreUtil.startsWith(key, KEY_PREFIX)) continue;
-
-            byte[] val = entry.value();
-            if (val.length < 48) continue; // 至少需要基础 48 字节
-
-            try {
-                ByteBuffer vb = ByteBuffer.wrap(val).order(ByteOrder.LITTLE_ENDIAN);
-                // 跳过 keyHi(8) + keyLo(8) + ownerId(4) + modePacked(4)
-                vb.position(24);
-                int itemNameId = vb.getInt();
-                // 跳过 priceId(4) + timestamp(8) + itemId(4) + flags(4)
-                // 不需要这些字段
-
-                String itemName = db.lookup(itemNameId);
-                if (translatedName.equals(itemName)) {
-                    // 提取坐标
-                    vb.position(0);
-                    long keyHi = vb.getLong();
-                    long keyLo = vb.getLong();
-                    int x = (int) (keyHi & 0xFFFFFFFFL);
-                    int z = (int) (keyLo >> 32);
-                    int y = (int) (keyLo & 0xFFFFFFFFL);
-                    results.add(new MatchResult(key, val, x, y, z));
-                }
-            } catch (Exception e) {
-                LOGGER.debug("Error parsing QShop record during match: {}", e.getMessage());
-            }
-        }
-
-        return results;
+    private static byte[] buildKey(int dimPoolId, int cx, int cz, long keyHi, long keyLo) {
+        ByteBuffer bb = ByteBuffer.allocate(KEY_SIZE).order(ByteOrder.LITTLE_ENDIAN);
+        bb.put(KEY_PREFIX);
+        bb.putInt(dimPoolId);
+        bb.putInt(cx);
+        bb.putInt(cz);
+        bb.putLong(keyHi);
+        bb.putLong(keyLo);
+        return bb.array();
     }
 
     // ==================== 增强值构建 ====================
 
     /**
-     * 在现有 value 基础上追加增强数据。
+     * 在现有 value 基础上追加增强数据，同时更新物品注册名 ID。
      *
-     * <p>现有 value 格式（48 字节）：
-     * <pre>
-     *   keyHi:u64 (8) | keyLo:u64 (8) | owner:u32 (4) | modePacked:u32 (4) |
-     *   itemName:u32 (4) | price:u32 (4) | timestamp:u64 (8) | itemId:u32 (4) | flags:u32 (4)
-     * </pre>
-     *
-     * <p>增强后 value（56 字节）：
-     * <pre>
-     *   [0..47] 同上
-     *   enchantsCount:u16 (2) | itemNbtHash:u32 (4) | reserved:u16 (2)
-     * </pre>
-     *
-     * <p>flags 字段新增位：
-     * <pre>
-     *   FLAG_ENHANCED_DATA = 0x02  — 标记此记录包含增强数据
-     *   FLAG_HAS_ENCHANTS   = 0x04  — 标记物品有附魔
-     * </pre>
+     * @param originalValue    原始数据库值
+     * @param item             从聊天消息提取的物品数据
+     * @param registryIdPoolId 物品注册名在字符串池中的 ID
+     * @return 增强后的值，如果已增强过则返回 null
      */
-    private static byte[] buildEnhancedValue(byte[] originalValue, ChatItemExtractor.ExtractedItem item) {
+    private static byte[] buildEnhancedValue(byte[] originalValue, ChatItemExtractor.ExtractedItem item,
+                                             int registryIdPoolId) {
         try {
             ByteBuffer vb = ByteBuffer.wrap(originalValue).order(ByteOrder.LITTLE_ENDIAN);
             if (vb.remaining() < 48) return null;
 
-            // 读取并更新 flags
-            // flags 位于偏移 44 (48 - 4)
+            // 读取当前 flags（偏移 44）
             int flagsPos = 44;
             int flags = vb.getInt(flagsPos);
 
             // 如果已经增强过，不重复处理
             if ((flags & QShopAnalyzer.FLAG_ENHANCED_DATA) != 0) return null;
 
-            // 设置增强标志
+            // 设置标志位
             flags |= QShopAnalyzer.FLAG_ENHANCED_DATA;
+            flags |= QShopAnalyzer.FLAG_ID_RECOVERED; // 现在有了精确的注册名
             if (item.hasEnchants()) {
                 flags |= QShopAnalyzer.FLAG_HAS_ENCHANTS;
             }
@@ -375,11 +364,14 @@ public final class QShopChatListener {
             // 构建新的 56 字节值
             ByteBuffer newBuf = ByteBuffer.allocate(56).order(ByteOrder.LITTLE_ENDIAN);
 
-            // 复制原始 48 字节（除了 flags）
+            // 复制前 40 字节（keyHi..itemId 之前）
             vb.position(0);
-            byte[] head = new byte[44];
+            byte[] head = new byte[40];
             vb.get(head);
             newBuf.put(head);
+
+            // 写入更新后的 itemId（精确的注册名池 ID）
+            newBuf.putInt(registryIdPoolId);
 
             // 写入更新后的 flags
             newBuf.putInt(flags);
