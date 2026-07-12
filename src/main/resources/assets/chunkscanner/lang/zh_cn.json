@@ -162,6 +162,8 @@
     "chunkscanner.filter.placeholder.item": "商品...",
 
     "chunkscanner.qshop.flag.recovered": "R - 通过映射表恢复的注册名",
+    "chunkscanner.qshop.flag.enhanced": "E - 包含增强数据（通过聊天提取）",
+    "chunkscanner.qshop.flag.enchanted": "M - 物品有附魔",
 
     "chunkscanner.qshop.infinite": "无限",
     "chunkscanner.qshop.out_of_stock": "缺货",

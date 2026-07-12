@@ -32,16 +32,20 @@ import com.billy65536.chunkscanner.core.CoreUtil;
  * 键格式（34 字节）：
  *   "qshop:" (6B) | dimPoolId:u32 (4B) | cx:i32 (4B) | cz:i32 (4B) | keyHi:u64 (8B) | keyLo:u64 (8B)
  *
- * 值格式（48 字节）：
- *   keyHi:u64 (8B) | keyLo:u64 (8B) | owner:u32 (4B) | mode+quantity packed:u32 (4B) |
- *   itemName:u32 (4B) | price:u32 (4B) | timestamp:u64 (8B) | itemId:u32 (4B) | flags:u32 (4B)
+ * 值格式（48/56 字节）：
+ *   基础（48 字节）：
+ *     keyHi:u64 (8B) | keyLo:u64 (8B) | owner:u32 (4B) | mode+quantity packed:u32 (4B) |
+ *     itemName:u32 (4B) | price:u32 (4B) | timestamp:u64 (8B) | itemId:u32 (4B) | flags:u32 (4B)
+ *   增强（+8 字节，仅当 FLAG_ENHANCED_DATA 置位时存在）：
+ *     enchantsCount:u16 (2B) | itemNbtHash:u32 (4B) | reserved:u16 (2B)
  *
  *   mode+quantity 打包：byte0 = mode (0=出售,1=收购), bytes1-3 = quantity (24-bit unsigned)
  */
 public class QShopDbViewProvider implements DbViewProvider {
 
     private static final byte[] KEY_PREFIX = "qshop:".getBytes(StandardCharsets.UTF_8);
-    private static final int RECORD_SIZE = 48;
+    private static final int BASE_RECORD_SIZE = 48;
+    private static final int ENHANCED_RECORD_SIZE = 56;
 
     private final BinaryChunkDb delegate;
 
@@ -211,7 +215,7 @@ public class QShopDbViewProvider implements DbViewProvider {
 
     @Override
     public String[] getSpecializedHeaders() {
-        return new String[]{"位置", "Owner", "Type", "Qty", "Item", "Price", "Item ID", "Flags"};
+        return new String[]{"位置", "Owner", "Type", "Qty", "Item", "Price", "Item ID", "Ench", "Flags"};
     }
 
     @Override
@@ -244,6 +248,11 @@ public class QShopDbViewProvider implements DbViewProvider {
 
             String posStr = new LocatedPosition(r.dimId(), r.x(), r.y(), r.z()).toString();
 
+            String enchStr = "";
+            if ((r.flags() & QShopAnalyzer.FLAG_ENHANCED_DATA) != 0 && r.enchantsCount() > 0) {
+                enchStr = String.valueOf(r.enchantsCount());
+            }
+
             rows.add(new String[] {
                     posStr,
                     r.owner(),
@@ -252,6 +261,7 @@ public class QShopDbViewProvider implements DbViewProvider {
                     r.itemName(),
                     r.price(),
                     r.itemId(),
+                    enchStr,
                     formatFlagsShort(r.flags())
             });
         }
@@ -278,7 +288,12 @@ public class QShopDbViewProvider implements DbViewProvider {
         if ((flags & QShopAnalyzer.FLAG_ID_RECOVERED) != 0) {
             sb.append("R");
         }
-        // 将来新增的标志位在此处追加
+        if ((flags & QShopAnalyzer.FLAG_ENHANCED_DATA) != 0) {
+            sb.append("E");
+        }
+        if ((flags & QShopAnalyzer.FLAG_HAS_ENCHANTS) != 0) {
+            sb.append("M");
+        }
         return sb.toString();
     }
 
@@ -292,7 +307,12 @@ public class QShopDbViewProvider implements DbViewProvider {
         if ((flags & QShopAnalyzer.FLAG_ID_RECOVERED) != 0) {
             lines.add(Text.translatable("chunkscanner.qshop.flag.recovered"));
         }
-        // 将来新增的标志位在此处追加
+        if ((flags & QShopAnalyzer.FLAG_ENHANCED_DATA) != 0) {
+            lines.add(Text.translatable("chunkscanner.qshop.flag.enhanced"));
+        }
+        if ((flags & QShopAnalyzer.FLAG_HAS_ENCHANTS) != 0) {
+            lines.add(Text.translatable("chunkscanner.qshop.flag.enchanted"));
+        }
         return lines.isEmpty() ? null : lines;
     }
 
@@ -442,7 +462,7 @@ public class QShopDbViewProvider implements DbViewProvider {
                 if (!CoreUtil.startsWith(key, KEY_PREFIX)) continue;
 
                 byte[] val = entry.value();
-                if (val.length < RECORD_SIZE) continue;
+                if (val.length < BASE_RECORD_SIZE) continue;
 
                 ByteBuffer vb = ByteBuffer.wrap(val).order(ByteOrder.LITTLE_ENDIAN);
                 long keyHi = vb.getLong();
@@ -475,8 +495,18 @@ public class QShopDbViewProvider implements DbViewProvider {
                 int flags = vb.getInt();
                 String itemId = itemIdPoolId != 0 ? delegate.lookup(itemIdPoolId) : "";
 
+                // 读取增强字段（仅当 FLAG_ENHANCED_DATA 置位且 value 足够长）
+                int enchantsCount = 0;
+                int nbtHash = 0;
+                if ((flags & QShopAnalyzer.FLAG_ENHANCED_DATA) != 0
+                        && val.length >= ENHANCED_RECORD_SIZE) {
+                    enchantsCount = vb.getShort() & 0xFFFF;
+                    nbtHash = vb.getInt();
+                    // 跳过 reserved(2)
+                }
+
                 records.add(new QShopRecord(dimId, x, y, z, owner, mode, quantity, itemName, price, ts,
-                        itemId, flags));
+                        itemId, flags, enchantsCount, nbtHash));
             } catch (Exception e) {
                 ChunkScannerMod.LOGGER.warn("QShopDbViewProvider: failed to parse entry: {}", e.getMessage());
             }
@@ -499,12 +529,24 @@ public class QShopDbViewProvider implements DbViewProvider {
      * @param price    单价文本（含货币符号）
      * @param timestamp 扫描时间戳
      * @param itemId   商品注册名（如 "minecraft:diamond"），恢复失败为空串
-     * @param flags    特殊值标志位（参见 {@link QShopAnalyzer#FLAG_ID_RECOVERED}）
+     * @param flags    特殊值标志位（参见 {@link QShopAnalyzer#FLAG_ID_RECOVERED} 等）
+     * @param enchantsCount 附魔数量（0=无附魔或未增强）
+     * @param nbtHash  物品 NBT 的 CRC32 哈希（0=无 NBT 或未增强）
      */
     public record QShopRecord(String dimId, int x, int y, int z,
                                String owner, byte mode, int quantity,
                                String itemName, String price, long timestamp,
-                               String itemId, int flags) {}
+                               String itemId, int flags,
+                               int enchantsCount, int nbtHash) {
+        /** 兼容旧版（无增强字段）的构造器。 */
+        public QShopRecord(String dimId, int x, int y, int z,
+                           String owner, byte mode, int quantity,
+                           String itemName, String price, long timestamp,
+                           String itemId, int flags) {
+            this(dimId, x, y, z, owner, mode, quantity, itemName, price, timestamp,
+                    itemId, flags, 0, 0);
+        }
+    }
 
     // ==================== DbViewProvider.Type ====================
 
