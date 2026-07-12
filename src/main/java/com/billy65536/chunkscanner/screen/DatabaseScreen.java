@@ -29,6 +29,7 @@ import com.billy65536.chunkscanner.config.TaskConfig;
 import com.billy65536.chunkscanner.core.ChunkAnalyzer;
 import com.billy65536.chunkscanner.core.ChunkDb;
 import com.billy65536.chunkscanner.core.ChunkScanner;
+import com.billy65536.chunkscanner.core.CoreUtil;
 import com.billy65536.chunkscanner.core.DbViewProvider;
 import com.billy65536.chunkscanner.core.LocatedPosition;
 import com.billy65536.chunkscanner.gui.GuiUtil;
@@ -773,7 +774,7 @@ public class DatabaseScreen extends Screen {
             return true;
         }
 
-        // 位置列点击：创建 Xaero 路径点
+        // 位置列点击：创建 Xaero 路径点（支持 {key} 占位符替换）
         if (hoveredKvIdx >= 0 && hoveredKvCol >= 0
                 && pageRenderer instanceof KvPageRenderer.Specialized spec
                 && spec.isPositionColumn(hoveredKvCol)
@@ -781,8 +782,14 @@ public class DatabaseScreen extends Screen {
             LocatedPosition pos = currentView.getPositionAt(hoveredKvIdx);
             if (pos != null) {
                 ChunkScannerConfig cfg = ChunkScannerMod.CONFIG;
-                XaeroWaypointHelper.tryCreateWaypoint(pos,
-                        cfg.waypointName, cfg.waypointInitials, cfg.waypointGroup);
+                String[] headers = currentView.getSpecializedHeaders();
+                String[] row = currentView.getRowAt(hoveredKvIdx);
+                String wpName = CoreUtil.replacePlaceholders(cfg.waypointName, headers, row);
+                String wpInit = CoreUtil.replacePlaceholders(cfg.waypointInitials, headers, row);
+                String wpGroup = CoreUtil.replacePlaceholders(cfg.waypointGroup, headers, row);
+                XaeroWaypointHelper.tryCreateWaypoint(pos, wpName, wpInit, wpGroup);
+                ChunkScannerMod.LOGGER.info("Waypoint created: name template='{}' -> '{}', initials='{}', group='{}'",
+                        cfg.waypointName, wpName, wpInit, wpGroup);
                 return true;
             }
         }

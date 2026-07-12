@@ -89,6 +89,18 @@ public interface DbViewProvider {
      */
     default LocatedPosition getPositionAt(int rowIndex) { return null; }
 
+    /**
+     * 返回指定行的结构化数据（各列值数组）。
+     * 行索引对应 {@link #getSpecializedRows()} 返回列表中相同位置的行。
+     * 返回 null 表示该行不存在。
+     */
+    default String[] getRowAt(int rowIndex) {
+        if (!isSpecialized()) return null;
+        List<String[]> rows = getSpecializedRows();
+        if (rowIndex < 0 || rowIndex >= rows.size()) return null;
+        return rows.get(rowIndex);
+    }
+
     // ==================== 筛选 ====================
 
     /**
