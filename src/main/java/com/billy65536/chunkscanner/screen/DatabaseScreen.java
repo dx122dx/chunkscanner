@@ -89,6 +89,9 @@ public class DatabaseScreen extends Screen {
     /** 从筛选界面返回后需要重建渲染器。 */
     private boolean pendingRebuild = false;
 
+    /** 打开数据库时从 DB 中读取的任务配置（路径点命名等参数），可为 null。 */
+    private TaskConfig cachedTaskConfig;
+
     // ==================== 构造与初始化 ====================
 
     public DatabaseScreen(String scanId) {
@@ -154,7 +157,14 @@ public class DatabaseScreen extends Screen {
         } catch (Exception e) {
             ChunkScannerMod.LOGGER.warn("Failed to open database: {}", e.getMessage());
             openedDb = null;
+            cachedTaskConfig = null;
             return;
+        }
+
+        // 读取 DB 中存储的任务配置，用于路径点命名等
+        cachedTaskConfig = openedDb.getTaskConfig();
+        if (cachedTaskConfig != null) {
+            ChunkScannerMod.LOGGER.debug("Loaded TaskConfig from DB for '{}': {}", meta.scanId(), cachedTaskConfig.toDisplayString());
         }
 
         rebuildPageRenderer(true);
@@ -169,6 +179,7 @@ public class DatabaseScreen extends Screen {
             openedDb.close();
             openedDb = null;
             currentView = null;
+            cachedTaskConfig = null;
         }
     }
 
@@ -781,7 +792,10 @@ public class DatabaseScreen extends Screen {
                 && currentView != null) {
             LocatedPosition pos = currentView.getPositionAt(hoveredKvIdx);
             if (pos != null) {
-                ChunkScannerConfig cfg = ChunkScannerMod.CONFIG;
+                // 合并全局配置与 DB 中存储的任务配置（任务配置优先）
+                ChunkScannerConfig cfg = cachedTaskConfig != null
+                        ? cachedTaskConfig.applyTo(ChunkScannerMod.CONFIG)
+                        : ChunkScannerMod.CONFIG;
                 String[] headers = currentView.getSpecializedHeaders();
                 String[] row = currentView.getRowAt(hoveredKvIdx);
                 String wpName = CoreUtil.replacePlaceholders(cfg.waypointName, headers, row);
