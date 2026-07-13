@@ -48,13 +48,15 @@ public class QShopDbViewProvider implements DbViewProvider {
 
     private static final byte[] KEY_PREFIX = "qshop:".getBytes(StandardCharsets.UTF_8);
     private static final int BASE_RECORD_SIZE = 48;
-    private static final int ENHANCED_RECORD_SIZE = 60;
 
     private final BinaryChunkDb delegate;
 
     /** 缓存解析后的商店记录（全量，未筛选）。 */
     private List<QShopRecord> cachedRecords;
+    /** 缓存筛选并排序后的记录。 */
+    private List<QShopRecord> cachedFilteredSorted;
     private volatile boolean cacheValid = false;
+    private volatile boolean filteredCacheValid = false;
 
     // ==================== 排序常量 ====================
 
@@ -200,6 +202,7 @@ public class QShopDbViewProvider implements DbViewProvider {
     /** 筛选条件变更后使缓存失效，并预编译正则 Pattern。 */
     public void invalidateCache() {
         cacheValid = false;
+        filteredCacheValid = false;
         compiledDimPattern = compileIfNeeded(dimFilter, dimFilterMode);
         compiledOwnerPattern = compileIfNeeded(ownerFilter, ownerFilterMode);
         compiledItemPattern = compileIfNeeded(itemFilter, itemFilterMode);
@@ -438,6 +441,9 @@ public class QShopDbViewProvider implements DbViewProvider {
 
     /** 获取筛选并排序后的记录列表。与 getSpecializedRows 返回顺序一致。 */
     private List<QShopRecord> getFilteredSortedRecords() {
+        if (filteredCacheValid && cachedFilteredSorted != null) {
+            return cachedFilteredSorted;
+        }
         List<QShopRecord> records = getQShopRecords();
         List<QShopRecord> matched = new ArrayList<>();
         for (QShopRecord r : records) {
@@ -448,6 +454,8 @@ public class QShopDbViewProvider implements DbViewProvider {
         if (sortMode != SORT_NONE && matched.size() > 1) {
             matched.sort(getSortComparator());
         }
+        cachedFilteredSorted = matched;
+        filteredCacheValid = true;
         return matched;
     }
 
@@ -515,13 +523,23 @@ public class QShopDbViewProvider implements DbViewProvider {
     }
 
     /** 提取价格字符串中首个数字的整数表示（乘以 100，两位小数精度）。无法解析则返回 -1。 */
-    private static final Pattern PRICE_NUM_PATTERN = Pattern.compile("(\\d+\\.?\\d*)");
+    private static final Pattern PRICE_NUM_PATTERN = Pattern.compile("(\\d+)(?:\\.(\\d{1,2}))?");
     static int parseNumericPrice(String price) {
         if (price == null) return -1;
         Matcher m = PRICE_NUM_PATTERN.matcher(price.trim());
         if (m.find()) {
             try {
-                return (int) (Double.parseDouble(m.group(1)) * 100.0);
+                int integerPart = Integer.parseInt(m.group(1));
+                String fracStr = m.group(2);
+                int fractionalPart;
+                if (fracStr == null) {
+                    fractionalPart = 0;
+                } else if (fracStr.length() == 1) {
+                    fractionalPart = Integer.parseInt(fracStr) * 10;
+                } else {
+                    fractionalPart = Integer.parseInt(fracStr);
+                }
+                return integerPart * 100 + fractionalPart;
             } catch (NumberFormatException ignored) {
                 // fall through
             }
@@ -604,7 +622,7 @@ public class QShopDbViewProvider implements DbViewProvider {
                 int nbtHash = 0;
                 String detailNbtString = null;
                 if ((flags & QShopAnalyzer.FLAG_ENHANCED_DATA) != 0
-                        && val.length >= ENHANCED_RECORD_SIZE) {
+                        && val.length >= QShopAnalyzer.ENHANCED_RECORD_SIZE) {
                     int detailNbtPoolId = vb.getInt();
                     nbtHash = vb.getInt();
                     enchantsCount = vb.getShort() & 0xFFFF;
@@ -620,6 +638,7 @@ public class QShopDbViewProvider implements DbViewProvider {
 
         cachedRecords = records;
         cacheValid = true;
+        filteredCacheValid = false;
         return records;
     }
 

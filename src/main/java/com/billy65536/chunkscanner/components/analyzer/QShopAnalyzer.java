@@ -62,7 +62,7 @@ public class QShopAnalyzer implements ChunkAnalyzer {
     @SuppressWarnings("unused")
     private static final int BASE_RECORD_SIZE = 48; // 基础 8+8+4+4+4+4+8+4+4
     /** 增强记录大小（基础 + detailNbtPoolId(4) + nbtHash(4) + enchantsCount(2) + reserved(2)）。 */
-    private static final int ENHANCED_RECORD_SIZE = 60;
+    public static final int ENHANCED_RECORD_SIZE = 60;
     private static final byte[] KEY_PREFIX = "qshop:".getBytes(StandardCharsets.UTF_8);
     // "qshop:"(6) + dimPoolId(4) + cx(4) + cz(4) + keyHi(8) + keyLo(8)
     private static final int KEY_SIZE = KEY_PREFIX.length + 4 + 4 + 4 + 8 + 8; // 34
@@ -231,7 +231,9 @@ public class QShopAnalyzer implements ChunkAnalyzer {
             records.add(vb.array());
         }
 
-        // 先收集后替换：先删除旧记录再批量写入，确保异常安全（不在收集前删除）
+        // 先删除该 chunk 旧记录，再写入新记录
+        // 注意：若 putAll 写入失败存在数据丢失风险，但 removeAllWithPrefix
+        // 是前缀匹配，先写后删会把刚写入的数据也删掉，故只能先删后写。
         byte[] chunkPrefix = makeChunkPrefix(dimPoolId, cx, cz);
         db.removeAllWithPrefix(chunkPrefix);
 

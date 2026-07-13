@@ -263,7 +263,7 @@ public final class QShopChatListener {
                         enhanced++;
                     }
                 } catch (Exception e) {
-                    LOGGER.debug("Failed to enhance record at ({}, {}, {}): {}",
+                    LOGGER.warn("Failed to enhance record at ({}, {}, {}): {}",
                             c.x(), c.y(), c.z(), e.getMessage());
                 }
             }
@@ -388,7 +388,7 @@ public final class QShopChatListener {
             // 构建新的 60 字节值
             // 原始值布局(48B): keyHi(8)|keyLo(8)|owner(4)|modePacked(4)|itemNameId(4)|price(4)|timestamp(8)|itemId(4)|flags(4)
             // 新值布局(60B):   keyHi(8)|keyLo(8)|owner(4)|modePacked(4)|displayName(4)|price(4)|timestamp(8)|registryId(4)|flags(4)|detailNbt(4)|nbtHash(4)|enchCount(2)|reserved(2)
-            ByteBuffer newBuf = ByteBuffer.allocate(60).order(ByteOrder.LITTLE_ENDIAN);
+            ByteBuffer newBuf = ByteBuffer.allocate(QShopAnalyzer.ENHANCED_RECORD_SIZE).order(ByteOrder.LITTLE_ENDIAN);
 
             // 复制 bytes 0-23: keyHi(8) + keyLo(8) + owner(4) + modePacked(4)
             vb.position(0);
@@ -421,7 +421,7 @@ public final class QShopChatListener {
 
             return newBuf.array();
         } catch (Exception e) {
-            LOGGER.debug("Failed to build enhanced value: {}", e.getMessage());
+            LOGGER.warn("Failed to build enhanced value: {}", e.getMessage());
             return null;
         }
     }
