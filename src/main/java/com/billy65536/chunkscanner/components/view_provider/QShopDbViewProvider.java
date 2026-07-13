@@ -1,7 +1,10 @@
 package com.billy65536.chunkscanner.components.view_provider;
 
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
+import net.minecraft.util.Identifier;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -32,12 +35,12 @@ import com.billy65536.chunkscanner.core.CoreUtil;
  * 键格式（34 字节）：
  *   "qshop:" (6B) | dimPoolId:u32 (4B) | cx:i32 (4B) | cz:i32 (4B) | keyHi:u64 (8B) | keyLo:u64 (8B)
  *
- * 值格式（48/56 字节）：
+ * 值格式（48/60 字节）：
  *   基础（48 字节）：
  *     keyHi:u64 (8B) | keyLo:u64 (8B) | owner:u32 (4B) | mode+quantity packed:u32 (4B) |
  *     itemName:u32 (4B) | price:u32 (4B) | timestamp:u64 (8B) | itemId:u32 (4B) | flags:u32 (4B)
- *   增强（+8 字节，仅当 FLAG_ENHANCED_DATA 置位时存在）：
- *     enchantsCount:u16 (2B) | itemNbtHash:u32 (4B) | reserved:u16 (2B)
+ *   增强（+12 字节，仅当 FLAG_ENHANCED_DATA 置位时存在）：
+ *     detailNbtPoolId:u32 (4B) | nbtHash:u32 (4B) | enchantsCount:u16 (2B) | reserved:u16 (2B)
  *
  *   mode+quantity 打包：byte0 = mode (0=出售,1=收购), bytes1-3 = quantity (24-bit unsigned)
  */
@@ -45,7 +48,7 @@ public class QShopDbViewProvider implements DbViewProvider {
 
     private static final byte[] KEY_PREFIX = "qshop:".getBytes(StandardCharsets.UTF_8);
     private static final int BASE_RECORD_SIZE = 48;
-    private static final int ENHANCED_RECORD_SIZE = 56;
+    private static final int ENHANCED_RECORD_SIZE = 60;
 
     private final BinaryChunkDb delegate;
 
@@ -215,7 +218,7 @@ public class QShopDbViewProvider implements DbViewProvider {
 
     @Override
     public String[] getSpecializedHeaders() {
-        return new String[]{"位置", "Owner", "Type", "Qty", "Item", "Price", "Item ID", "Ench", "Flags"};
+        return new String[]{"位置", "Owner", "Type", "Qty", "Item", "Price", "Item ID", "Detail", "Flags"};
     }
 
     @Override
@@ -248,9 +251,9 @@ public class QShopDbViewProvider implements DbViewProvider {
 
             String posStr = new LocatedPosition(r.dimId(), r.x(), r.y(), r.z()).toString();
 
-            String enchStr = "";
-            if ((r.flags() & QShopAnalyzer.FLAG_ENHANCED_DATA) != 0 && r.enchantsCount() > 0) {
-                enchStr = String.valueOf(r.enchantsCount());
+            String detailStr = "";
+            if ((r.flags() & QShopAnalyzer.FLAG_ENHANCED_DATA) != 0) {
+                detailStr = "ⓘ";
             }
 
             rows.add(new String[] {
@@ -261,7 +264,7 @@ public class QShopDbViewProvider implements DbViewProvider {
                     r.itemName(),
                     r.price(),
                     r.itemId(),
-                    enchStr,
+                    detailStr,
                     formatFlagsShort(r.flags())
             });
         }
@@ -285,14 +288,14 @@ public class QShopDbViewProvider implements DbViewProvider {
     public static String formatFlagsShort(int flags) {
         if (flags == 0) return "";
         StringBuilder sb = new StringBuilder();
-        if ((flags & QShopAnalyzer.FLAG_ID_RECOVERED) != 0) {
-            sb.append("R");
-        }
         if ((flags & QShopAnalyzer.FLAG_ENHANCED_DATA) != 0) {
             sb.append("E");
         }
-        if ((flags & QShopAnalyzer.FLAG_HAS_ENCHANTS) != 0) {
-            sb.append("M");
+        if ((flags & QShopAnalyzer.FLAG_SHULKER_EXPANDED) != 0) {
+            sb.append("S");
+        }
+        if ((flags & QShopAnalyzer.FLAG_BOOK) != 0) {
+            sb.append("B");
         }
         return sb.toString();
     }
@@ -304,14 +307,14 @@ public class QShopDbViewProvider implements DbViewProvider {
     public static List<Text> formatFlagsTooltip(int flags) {
         if (flags == 0) return null;
         List<Text> lines = new ArrayList<>();
-        if ((flags & QShopAnalyzer.FLAG_ID_RECOVERED) != 0) {
-            lines.add(Text.translatable("chunkscanner.qshop.flag.recovered"));
-        }
         if ((flags & QShopAnalyzer.FLAG_ENHANCED_DATA) != 0) {
             lines.add(Text.translatable("chunkscanner.qshop.flag.enhanced"));
         }
-        if ((flags & QShopAnalyzer.FLAG_HAS_ENCHANTS) != 0) {
-            lines.add(Text.translatable("chunkscanner.qshop.flag.enchanted"));
+        if ((flags & QShopAnalyzer.FLAG_SHULKER_EXPANDED) != 0) {
+            lines.add(Text.translatable("chunkscanner.qshop.flag.shulker_expanded"));
+        }
+        if ((flags & QShopAnalyzer.FLAG_BOOK) != 0) {
+            lines.add(Text.translatable("chunkscanner.qshop.flag.book"));
         }
         return lines.isEmpty() ? null : lines;
     }
@@ -322,12 +325,113 @@ public class QShopDbViewProvider implements DbViewProvider {
         Map<Integer, Map<String, List<Text>>> result = new HashMap<>();
         for (int i = 0; i < matched.size(); i++) {
             QShopRecord r = matched.get(i);
-            int flags = r.flags();
-            if (flags == 0) continue;
-            List<Text> tooltip = formatFlagsTooltip(flags);
-            if (tooltip == null) continue;
-            result.computeIfAbsent(i, k -> new HashMap<>())
-                  .put("Flags", tooltip);
+            Map<String, List<Text>> rowTips = null;
+
+            // Flags 列 tooltip
+            List<Text> flagTips = formatFlagsTooltip(r.flags());
+            if (flagTips != null) {
+                if (rowTips == null) rowTips = new HashMap<>();
+                rowTips.put("Flags", flagTips);
+            }
+
+            // Detail 列 tooltip（物品悬停预览）
+            List<Text> detailTips = buildDetailTooltip(r);
+            if (detailTips != null) {
+                if (rowTips == null) rowTips = new HashMap<>();
+                rowTips.put("Detail", detailTips);
+            }
+
+            // Price 列 tooltip（S 标志：显示单价）
+            if ((r.flags() & QShopAnalyzer.FLAG_SHULKER_EXPANDED) != 0) {
+                List<Text> priceTips = buildShulkerUnitPriceTooltip(r);
+                if (priceTips != null) {
+                    if (rowTips == null) rowTips = new HashMap<>();
+                    rowTips.put("Price", priceTips);
+                }
+            }
+
+            if (rowTips != null) {
+                result.put(i, rowTips);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 构建 Detail 列物品悬停 tooltip。
+     *
+     * <p>从 detailNbtString（完整 ItemStack NBT JSON）重建 ItemStack，
+     * 调用原版 {@code getTooltip()} 获取物品描述文本。</p>
+     */
+    private static List<Text> buildDetailTooltip(QShopRecord record) {
+        if (record.detailNbtString() == null || record.detailNbtString().isEmpty()) return null;
+        try {
+            net.minecraft.nbt.NbtCompound nbt =
+                    net.minecraft.nbt.StringNbtReader.parse(record.detailNbtString());
+            net.minecraft.item.ItemStack stack =
+                    net.minecraft.item.ItemStack.fromNbt(nbt);
+            if (stack == null || stack.isEmpty()) return null;
+
+            net.minecraft.client.MinecraftClient client =
+                    net.minecraft.client.MinecraftClient.getInstance();
+            if (client.player == null) return null;
+            return stack.getTooltip(client.player,
+                    net.minecraft.client.item.TooltipContext.Default.BASIC);
+        } catch (Exception e) {
+            return List.of(net.minecraft.text.Text.literal(record.itemId()));
+        }
+    }
+
+    /**
+     * 构建 S 标志（潜影盒展开）的单价 tooltip。
+     *
+     * <p>单价 = 商店价格 / 满箱物品数 = 商店价格 / (27 × 物品堆叠上限)。
+     * 显示格式："单价约 X.XX"。</p>
+     */
+    private static List<Text> buildShulkerUnitPriceTooltip(QShopRecord record) {
+        try {
+            // 解析数字价格
+            int priceNum = parseNumericPrice(record.price());
+            if (priceNum < 0) return null;
+
+            // 获取物品堆叠上限
+            int maxStack;
+            if (record.itemId() != null && !record.itemId().isEmpty()) {
+                Identifier itemId = Identifier.tryParse(record.itemId());
+                if (itemId != null) {
+                    net.minecraft.item.Item item = Registries.ITEM.get(itemId);
+                    maxStack = item.getMaxCount();
+                } else {
+                    maxStack = 64;
+                }
+            } else {
+                maxStack = 64;
+            }
+
+            int totalCount = SHULKER_SLOTS * maxStack;
+            double unitPrice = (double) priceNum / totalCount;
+
+            return List.of(Text.translatable("chunkscanner.qshop.shulker_unit_price",
+                            String.format("%.2f", unitPrice))
+                    .formatted(Formatting.LIGHT_PURPLE));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static final int SHULKER_SLOTS = 27;
+
+    @Override
+    public Map<Integer, Map<String, Integer>> getSpecializedCellColors() {
+        List<QShopRecord> matched = getFilteredSortedRecords();
+        Map<Integer, Map<String, Integer>> result = new HashMap<>();
+        for (int i = 0; i < matched.size(); i++) {
+            QShopRecord r = matched.get(i);
+            if ((r.flags() & QShopAnalyzer.FLAG_SHULKER_EXPANDED) != 0) {
+                Map<String, Integer> rowColors = new HashMap<>();
+                rowColors.put("Price", 0xFFFF55FF); // 品红色
+                result.put(i, rowColors);
+            }
         }
         return result;
     }
@@ -498,15 +602,17 @@ public class QShopDbViewProvider implements DbViewProvider {
                 // 读取增强字段（仅当 FLAG_ENHANCED_DATA 置位且 value 足够长）
                 int enchantsCount = 0;
                 int nbtHash = 0;
+                String detailNbtString = null;
                 if ((flags & QShopAnalyzer.FLAG_ENHANCED_DATA) != 0
                         && val.length >= ENHANCED_RECORD_SIZE) {
-                    enchantsCount = vb.getShort() & 0xFFFF;
+                    int detailNbtPoolId = vb.getInt();
                     nbtHash = vb.getInt();
-                    // 跳过 reserved(2)
+                    enchantsCount = vb.getShort() & 0xFFFF;
+                    detailNbtString = detailNbtPoolId != 0 ? delegate.lookup(detailNbtPoolId) : null;
                 }
 
                 records.add(new QShopRecord(dimId, x, y, z, owner, mode, quantity, itemName, price, ts,
-                        itemId, flags, enchantsCount, nbtHash));
+                        itemId, flags, enchantsCount, nbtHash, detailNbtString));
             } catch (Exception e) {
                 ChunkScannerMod.LOGGER.warn("QShopDbViewProvider: failed to parse entry: {}", e.getMessage());
             }
@@ -525,26 +631,28 @@ public class QShopDbViewProvider implements DbViewProvider {
      * @param owner    商店所有者名称
      * @param mode     0=出售, 1=收购
      * @param quantity 剩余数量（出售 mode quantity=0 表示缺货，收购 mode quantity=0 表示空间不足）
-     * @param itemName 商品名称（告示牌原文）
+     * @param itemName 商品名称（告示牌原文，增强后为物品显示名/成书标题）
      * @param price    单价文本（含货币符号）
      * @param timestamp 扫描时间戳
      * @param itemId   商品注册名（如 "minecraft:diamond"），恢复失败为空串
-     * @param flags    特殊值标志位（参见 {@link QShopAnalyzer#FLAG_ID_RECOVERED} 等）
+     * @param flags    特殊值标志位（参见 {@link QShopAnalyzer#FLAG_ENHANCED_DATA} 等）
      * @param enchantsCount 附魔数量（0=无附魔或未增强）
      * @param nbtHash  物品 NBT 的 CRC32 哈希（0=无 NBT 或未增强）
+     * @param detailNbtString 物品完整 NBT 的 JSON 字符串（用于 Detail 列悬停展示）
      */
     public record QShopRecord(String dimId, int x, int y, int z,
                                String owner, byte mode, int quantity,
                                String itemName, String price, long timestamp,
                                String itemId, int flags,
-                               int enchantsCount, int nbtHash) {
+                               int enchantsCount, int nbtHash,
+                               String detailNbtString) {
         /** 兼容旧版（无增强字段）的构造器。 */
         public QShopRecord(String dimId, int x, int y, int z,
                            String owner, byte mode, int quantity,
                            String itemName, String price, long timestamp,
                            String itemId, int flags) {
             this(dimId, x, y, z, owner, mode, quantity, itemName, price, timestamp,
-                    itemId, flags, 0, 0);
+                    itemId, flags, 0, 0, null);
         }
     }
 

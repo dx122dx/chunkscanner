@@ -312,15 +312,21 @@ public final class QShopChatListener {
                 continue;
             }
 
-            // 将物品注册名也写入数据库字符串池
+            // 将物品注册名和详情 NBT 写入字符串池
             int registryIdPoolId = db.intern(item.registryId());
+            int detailNbtPoolId = item.fullNbtString() != null
+                    ? db.intern(item.fullNbtString()) : 0;
+            int displayNamePoolId = item.displayName() != null
+                    ? db.intern(item.displayName()) : 0;
 
             // 增强记录值
-            byte[] enhancedValue = buildEnhancedValue(value, item, registryIdPoolId);
+            byte[] enhancedValue = buildEnhancedValue(value, item, registryIdPoolId,
+                    detailNbtPoolId, displayNamePoolId);
             if (enhancedValue != null) {
                 db.put(key, enhancedValue);
-                LOGGER.info("Enhanced QShop record: {} at ({}, {}, {}) with enchants={}",
-                        item.registryId(), click.x(), click.y(), click.z(), item.enchants().size());
+                LOGGER.info("Enhanced QShop record: {} at ({}, {}, {}) enchants={} flags={}",
+                        item.registryId(), click.x(), click.y(), click.z(),
+                        item.enchants().size(), item.flags());
                 return true;
             }
         }
@@ -345,15 +351,20 @@ public final class QShopChatListener {
     // ==================== 增强值构建 ====================
 
     /**
-     * 在现有 value 基础上追加增强数据，同时更新物品注册名 ID。
+     * 在现有 value 基础上追加增强数据，同时更新物品注册名 ID 和显示名。
      *
-     * @param originalValue    原始数据库值
-     * @param item             从聊天消息提取的物品数据
-     * @param registryIdPoolId 物品注册名在字符串池中的 ID
+     * <p>增强后的值（60 字节）：基础 48 + detailNbtPoolId(4) + nbtHash(4) + enchantsCount(2) + reserved(2)。</p>
+     *
+     * @param originalValue     原始数据库值
+     * @param item              从聊天消息提取的物品数据
+     * @param registryIdPoolId  物品注册名在字符串池中的 ID
+     * @param detailNbtPoolId   完整 NBT 字符串在字符串池中的 ID
+     * @param displayNamePoolId 物品显示名在字符串池中的 ID（潜影盒展开后为内容物名，成书为标题）
      * @return 增强后的值，如果已增强过则返回 null
      */
     private static byte[] buildEnhancedValue(byte[] originalValue, ChatItemExtractor.ExtractedItem item,
-                                             int registryIdPoolId) {
+                                             int registryIdPoolId, int detailNbtPoolId,
+                                             int displayNamePoolId) {
         try {
             ByteBuffer vb = ByteBuffer.wrap(originalValue).order(ByteOrder.LITTLE_ENDIAN);
             if (vb.remaining() < 48) return null;
@@ -367,19 +378,33 @@ public final class QShopChatListener {
 
             // 设置标志位
             flags |= QShopAnalyzer.FLAG_ENHANCED_DATA;
-            flags |= QShopAnalyzer.FLAG_ID_RECOVERED; // 现在有了精确的注册名
-            if (item.hasEnchants()) {
-                flags |= QShopAnalyzer.FLAG_HAS_ENCHANTS;
+            if (item.isShulkerExpanded()) {
+                flags |= QShopAnalyzer.FLAG_SHULKER_EXPANDED;
+            }
+            if (item.isBook()) {
+                flags |= QShopAnalyzer.FLAG_BOOK;
             }
 
-            // 构建新的 56 字节值
-            ByteBuffer newBuf = ByteBuffer.allocate(56).order(ByteOrder.LITTLE_ENDIAN);
+            // 构建新的 60 字节值
+            ByteBuffer newBuf = ByteBuffer.allocate(60).order(ByteOrder.LITTLE_ENDIAN);
 
-            // 复制前 40 字节（keyHi..itemId 之前）
+            // 复制前 24 字节（keyHi, keyLo, owner）
             vb.position(0);
-            byte[] head = new byte[40];
-            vb.get(head);
-            newBuf.put(head);
+            byte[] head1 = new byte[24];
+            vb.get(head1);
+            newBuf.put(head1);
+
+            // 写入 modePacked（保持原值）
+            newBuf.putInt(vb.getInt());
+
+            // 写入更新后的 itemNameId（潜影盒展开/成书时用 displayNamePoolId）
+            newBuf.putInt(displayNamePoolId);
+
+            // 复制 price(4) + timestamp(8) = 12 字节
+            vb.getInt(); // 跳过旧的 itemNameId
+            byte[] middle = new byte[12];
+            vb.get(middle);
+            newBuf.put(middle);
 
             // 写入更新后的 itemId（精确的注册名池 ID）
             newBuf.putInt(registryIdPoolId);
@@ -387,10 +412,11 @@ public final class QShopChatListener {
             // 写入更新后的 flags
             newBuf.putInt(flags);
 
-            // 写入增强数据：enchantsCount(2) + nbtHash(4) + reserved(2)
+            // 写入增强数据：detailNbtPoolId(4) + nbtHash(4) + enchantsCount(2) + reserved(2)
+            newBuf.putInt(detailNbtPoolId);
+            newBuf.putInt(item.nbtHash());
             int enchCount = item.hasEnchants() ? item.enchants().size() : 0;
             newBuf.putShort((short) Math.min(enchCount, 65535));
-            newBuf.putInt(item.nbtHash());
             newBuf.putShort((short) 0); // reserved
 
             return newBuf.array();

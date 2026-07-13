@@ -250,6 +250,7 @@ public class DatabaseScreen extends Screen {
                     metaCount);
             try {
                 specRenderer.setCellTooltips(currentView.getSpecializedCellTooltips());
+                specRenderer.setCellColors(currentView.getSpecializedCellColors());
             } catch (Exception e) {
                 ChunkScannerMod.LOGGER.debug("Failed to set cell tooltips: {}", e.getMessage());
             }

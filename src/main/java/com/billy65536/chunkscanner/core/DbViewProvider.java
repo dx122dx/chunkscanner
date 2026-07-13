@@ -116,6 +116,19 @@ public interface DbViewProvider {
         return Collections.emptyMap();
     }
 
+    /**
+     * 获取特化视图的单元格级文字颜色。
+     *
+     * <p>返回一个 Map&lt;行索引, Map&lt;列标题, 颜色值(ARGB)&gt;&gt;。
+     * 行索引对应 {@link #getSpecializedRows()} 的返回顺序。
+     * 仅在 {@link #isSpecialized()} 返回 true 时使用。</p>
+     *
+     * @return 单元格颜色映射，默认返回空 Map
+     */
+    default Map<Integer, Map<String, Integer>> getSpecializedCellColors() {
+        return Collections.emptyMap();
+    }
+
     // ==================== 筛选 ====================
 
     /**

@@ -194,6 +194,9 @@ public abstract class KvPageRenderer {
         /** 单元格级 tooltip：行索引 → 列标题 → tooltip 文本列表。 */
         private Map<Integer, Map<String, List<Text>>> cellTooltips = Collections.emptyMap();
 
+        /** 单元格级颜色：行索引 → 列标题 → ARGB 颜色值。 */
+        private Map<Integer, Map<String, Integer>> cellColors = Collections.emptyMap();
+
         public Specialized(TextRenderer tr, List<String[]> rows, String[] headers, int metaCount) {
             super(tr);
             this.rows = rows;
@@ -220,6 +223,11 @@ public abstract class KvPageRenderer {
         /** 设置单元格级 tooltip 数据。 */
         public void setCellTooltips(Map<Integer, Map<String, List<Text>>> tooltips) {
             this.cellTooltips = tooltips != null ? tooltips : Collections.emptyMap();
+        }
+
+        /** 设置单元格级颜色数据。 */
+        public void setCellColors(Map<Integer, Map<String, Integer>> colors) {
+            this.cellColors = colors != null ? colors : Collections.emptyMap();
         }
 
         /**
@@ -297,16 +305,28 @@ public abstract class KvPageRenderer {
                     rowHovered = true;
                 }
 
-                int color;
+                // 确定文字颜色：优先使用单元格级自定义颜色
+                int color = OTHER_COL_COLOR;
                 if (isPositionCol) {
                     color = colHovered ? POSITION_HOVER_COLOR : POSITION_COL_COLOR;
                 } else {
-                    color = OTHER_COL_COLOR;
+                    Integer customColor = getCellColor(actualIdx, c);
+                    if (customColor != null) {
+                        color = customColor;
+                    }
                 }
                 ctx.drawTextWithShadow(textRenderer, Text.literal(cell), rx, rowY, color);
                 rx += colWidths[c] + 8;
             }
             return rowHovered ? actualIdx : -1;
+        }
+
+        /** 获取指定行列的自定义颜色，无自定义则返回 null。 */
+        private Integer getCellColor(int rowIdx, int colIdx) {
+            if (cellColors.isEmpty() || colIdx < 0 || colIdx >= headers.length) return null;
+            Map<String, Integer> rowColors = cellColors.get(rowIdx);
+            if (rowColors == null) return null;
+            return rowColors.get(headers[colIdx]);
         }
 
         @Override

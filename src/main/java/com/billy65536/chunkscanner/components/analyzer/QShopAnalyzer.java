@@ -42,38 +42,38 @@ import com.billy65536.chunkscanner.core.ChunkDb;
  * 键格式（34 字节）：
  *   "qshop:" (6B) | dimPoolId:u32 (4B) | cx:i32 (4B) | cz:i32 (4B) | keyHi:u64 (8B) | keyLo:u64 (8B)
  *
- * 值格式（48/56 字节）：
+ * 值格式（48/60 字节）：
  *   基础（48 字节）：
  *     keyHi:u64 (8B) | keyLo:u64 (8B) | owner:u32 (4B) | mode+quantity packed:u32 (4B) |
  *     itemName:u32 (4B) | price:u32 (4B) | timestamp:u64 (8B) | itemId:u32 (4B) | flags:u32 (4B)
- *   增强（+8 字节，仅当 FLAG_ENHANCED_DATA 置位时存在）：
- *     enchantsCount:u16 (2B) | itemNbtHash:u32 (4B) | reserved:u16 (2B)
+ *   增强（+12 字节，仅当 FLAG_ENHANCED_DATA 置位时存在）：
+ *     detailNbtPoolId:u32 (4B) | nbtHash:u32 (4B) | enchantsCount:u16 (2B) | reserved:u16 (2B)
  *
  *   mode+quantity 打包：byte0 = mode (0=出售,1=收购), bytes1-3 = quantity (24-bit unsigned)
  *
  *   特殊值 flag bits:
- *     FLAG_ID_RECOVERED  (0x01) — 通过译名映射表成功恢复了物品注册名
- *     FLAG_ENHANCED_DATA (0x02) — 此记录包含增强数据（value 至少 56 字节）
- *     FLAG_HAS_ENCHANTS  (0x04) — 物品有附魔
+ *     FLAG_ENHANCED_DATA     (0x02) — 此记录包含增强数据（value 至少 60 字节）
+ *     FLAG_SHULKER_EXPANDED  (0x08) — 潜影盒已展开（S），内容物作为商品
+ *     FLAG_BOOK              (0x10) — 成书（B），商品名已替换为标题
  */
 public class QShopAnalyzer implements ChunkAnalyzer {
 
     /** 基础记录大小（文档常量），实际序列化使用 {@link #ENHANCED_RECORD_SIZE}。 */
     @SuppressWarnings("unused")
     private static final int BASE_RECORD_SIZE = 48; // 基础 8+8+4+4+4+4+8+4+4
-    /** 增强记录大小（基础 + enchantsCount(2) + nbtHash(4) + reserved(2)）。 */
-    private static final int ENHANCED_RECORD_SIZE = 56;
+    /** 增强记录大小（基础 + detailNbtPoolId(4) + nbtHash(4) + enchantsCount(2) + reserved(2)）。 */
+    private static final int ENHANCED_RECORD_SIZE = 60;
     private static final byte[] KEY_PREFIX = "qshop:".getBytes(StandardCharsets.UTF_8);
     // "qshop:"(6) + dimPoolId(4) + cx(4) + cz(4) + keyHi(8) + keyLo(8)
     private static final int KEY_SIZE = KEY_PREFIX.length + 4 + 4 + 4 + 8 + 8; // 34
     private static final int CHUNK_PREFIX_LEN = KEY_PREFIX.length + 4 + 4 + 4; // 18
 
-    /** 特殊值：通过译名映射表成功恢复了物品注册名。 */
-    public static final int FLAG_ID_RECOVERED = 0x01;
-    /** 特殊值：此记录包含增强数据（附魔数量、NBT 哈希），value 至少 56 字节。 */
+    /** 特殊值：此记录包含增强数据（详情 NBT、附魔数量等），value 至少 60 字节。 */
     public static final int FLAG_ENHANCED_DATA = 0x02;
-    /** 特殊值：物品有附魔。 */
-    public static final int FLAG_HAS_ENCHANTS = 0x04;
+    /** 特殊值：潜影盒已展开（S），内容物作为商品。 */
+    public static final int FLAG_SHULKER_EXPANDED = 0x08;
+    /** 特殊值：成书（B），商品名已替换为标题。 */
+    public static final int FLAG_BOOK = 0x10;
 
     /** quantity 的最大值 (24-bit)，用作"无限"的哨兵值 */
     public static final int INFINITE_QUANTITY = 0xFFFFFF;
@@ -197,18 +197,17 @@ public class QShopAnalyzer implements ChunkAnalyzer {
             int itemNameId = db.intern(parsed.itemName());
             int priceId = db.intern(parsed.price());
 
-            // 通过译名映射表尝试恢复物品注册名
+            // 通过译名映射表尝试恢复物品注册名（不再设置 FLAG_ID_RECOVERED）
             int itemIdPoolId;
-            int flags = 0;
             String registryId = ItemTranslator.lookup(parsed.itemName());
             if (registryId != null) {
                 itemIdPoolId = db.intern(registryId);
-                flags |= FLAG_ID_RECOVERED;
             } else {
                 itemIdPoolId = 0; // StringPoolId 0 = null/空串
             }
 
-            // 构造 56 字节的值（基础 48 + 增强 8，增强初始为 0）
+            // 构造 60 字节的值（基础 48 + 增强 12，增强初始为 0）
+            int flags = 0;
             ByteBuffer vb = ByteBuffer.allocate(ENHANCED_RECORD_SIZE).order(ByteOrder.LITTLE_ENDIAN);
             vb.putLong(keyHi);
             vb.putLong(keyLo);
@@ -221,9 +220,10 @@ public class QShopAnalyzer implements ChunkAnalyzer {
             vb.putLong(now); // 扫描时间戳
             vb.putInt(itemIdPoolId);
             vb.putInt(flags);
-            // 增强字段初始化为 0（enchantsCount=0, nbtHash=0, reserved=0）
-            vb.putShort((short) 0);
+            // 增强字段初始化为 0（detailNbtPoolId=0, nbtHash=0, enchantsCount=0, reserved=0）
             vb.putInt(0);
+            vb.putInt(0);
+            vb.putShort((short) 0);
             vb.putShort((short) 0);
 
             byte[] key = makeKey(keyHi, keyLo, dimPoolId, cx, cz);
