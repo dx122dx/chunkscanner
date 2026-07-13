@@ -79,6 +79,26 @@ public interface ChunkDb {
     /** 关闭数据库，释放资源。 */
     void close();
 
+    // ==================== 子数据库 ====================
+
+    /**
+     * 获取或创建子数据库。
+     *
+     * <p>子数据库用于存储与主数据分离的附加数据（如聊天增强数据），
+     * 使得主数据库在重访区块时可以被安全清除而不丢失增强数据。</p>
+     *
+     * <p>id=0 返回自身，id>0 返回独立存储的子数据库。
+     * 子数据库与父数据库共享字符串池（intern/lookup），但 KV 存储和文件独立。</p>
+     *
+     * @param id 子数据库标识（非负整数，0 = 自身）
+     * @return 子数据库实例
+     * @throws UnsupportedOperationException 如果实现不支持子数据库
+     */
+    default ChunkDb getSubDb(int id) {
+        if (id == 0) return this;
+        throw new UnsupportedOperationException("Sub-database not supported");
+    }
+
     // ==================== 辅助类型 ====================
 
     /** 键值对条目。 */

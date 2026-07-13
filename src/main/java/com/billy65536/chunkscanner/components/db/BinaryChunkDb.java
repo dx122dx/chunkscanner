@@ -428,6 +428,10 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
      */
     @Override
     public synchronized void flush() {
+        // 先刷写所有子数据库
+        for (SubDb sub : subDbs.values()) {
+            sub.flush();
+        }
         if (!dirty || closed) return;
         // 在迭代 collection 之前重置脏标记：并发写入在迭代期间设置 dirty=true
         // 会被下一次 flush 捕获，避免数据遗漏。
@@ -498,9 +502,302 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
 
     @Override
     public void close() {
+        // 关闭所有子数据库
+        for (SubDb sub : subDbs.values()) {
+            sub.close();
+        }
+        subDbs.clear();
         flush();
         closed = true;
         opened = false;
+    }
+
+    // ==================== 子数据库 ====================
+
+    /** 子数据库缓存：id → SubDb。 */
+    private final Map<Integer, SubDb> subDbs = new ConcurrentHashMap<>();
+
+    @Override
+    public ChunkDb getSubDb(int id) {
+        if (id == 0) return this;
+        return subDbs.computeIfAbsent(id, k -> new SubDb(k));
+    }
+
+    /**
+     * 子数据库实现：共享父数据库的字符串池，独立 KV 存储和文件。
+     *
+     * <p>文件命名：chunkscanner_{hash}.{id}.dat（如 chunkscanner_abc123.1.dat）。
+     * 子数据库不支持 ChunkMeta 操作（getChunkScanTime/updateChunkScanTime/getAllChunkMetas），
+     * 这些操作始终由父数据库管理。</p>
+     */
+    private class SubDb implements ChunkDb {
+        private final int subId;
+        private final Map<ByteArrayKey, byte[]> subKvStore = new ConcurrentHashMap<>();
+        private volatile boolean subDirty = false;
+        private volatile boolean subClosed = false;
+
+        SubDb(int subId) {
+            this.subId = subId;
+            loadSubDb();
+        }
+
+        private Path subDataPath() {
+            String base = safeFileName.replace(".dat", "." + subId + ".dat");
+            return dbDir.resolve(base);
+        }
+
+        @Override
+        public String getScanId() {
+            return scanId + "#" + subId;
+        }
+
+        // ==================== 字符串池（委托给父） ====================
+
+        @Override
+        public int intern(String s) {
+            return BinaryChunkDb.this.intern(s);
+        }
+
+        @Override
+        public String lookup(int id) {
+            return BinaryChunkDb.this.lookup(id);
+        }
+
+        // ==================== KV 操作 ====================
+
+        @Override
+        public void put(byte[] key, byte[] value) {
+            subKvStore.put(new ByteArrayKey(key), value);
+            subDirty = true;
+        }
+
+        @Override
+        public void putAll(Iterable<Entry> entries) {
+            for (Entry e : entries) {
+                subKvStore.put(new ByteArrayKey(e.key()), e.value());
+            }
+            subDirty = true;
+        }
+
+        @Override
+        public byte[] get(byte[] key) {
+            return subKvStore.get(new ByteArrayKey(key));
+        }
+
+        @Override
+        public void remove(byte[] key) {
+            subKvStore.remove(new ByteArrayKey(key));
+            subDirty = true;
+        }
+
+        @Override
+        public int removeAllWithPrefix(byte[] prefix) {
+            int removed = 0;
+            var it = subKvStore.entrySet().iterator();
+            while (it.hasNext()) {
+                byte[] key = it.next().getKey().data;
+                if (key.length >= prefix.length && CoreUtil.startsWith(key, prefix)) {
+                    it.remove();
+                    removed++;
+                }
+            }
+            if (removed > 0) subDirty = true;
+            return removed;
+        }
+
+        @Override
+        public boolean containsKey(byte[] key) {
+            return subKvStore.containsKey(new ByteArrayKey(key));
+        }
+
+        @Override
+        public int size() {
+            return subKvStore.size();
+        }
+
+        @Override
+        public List<Entry> getAllEntries() {
+            List<Entry> entries = new ArrayList<>(subKvStore.size());
+            for (Map.Entry<ByteArrayKey, byte[]> e : subKvStore.entrySet()) {
+                entries.add(Entry.of(e.getKey().data, e.getValue()));
+            }
+            return entries;
+        }
+
+        // ==================== Chunk 元数据（不支持，委托给父） ====================
+
+        @Override
+        public long getChunkScanTime(String dimensionId, int cx, int cz) {
+            return BinaryChunkDb.this.getChunkScanTime(dimensionId, cx, cz);
+        }
+
+        @Override
+        public void updateChunkScanTime(String dimensionId, int cx, int cz, long timestamp) {
+            BinaryChunkDb.this.updateChunkScanTime(dimensionId, cx, cz, timestamp);
+        }
+
+        @Override
+        public List<ChunkMeta> getAllChunkMetas() {
+            return BinaryChunkDb.this.getAllChunkMetas();
+        }
+
+        // ==================== 生命周期 ====================
+
+        @Override
+        public synchronized void flush() {
+            if (!subDirty || subClosed) return;
+            subDirty = false;
+            try {
+                // 注意：IO 期间可能有并发线程写入数据（subDirty 被设回 true），
+                // 这些数据不会被此次 flush 捕获，但 subDirty 保持 true，
+                // 会在下次 flush 或 close 时刷写。
+                Files.createDirectories(dbDir);
+                Path tmpPath = subDataPath().resolveSibling(
+                        safeFileName.replace(".dat", "." + subId + ".dat.tmp"));
+
+                try (FileChannel ch = FileChannel.open(tmpPath,
+                        StandardOpenOption.CREATE, StandardOpenOption.WRITE,
+                        StandardOpenOption.TRUNCATE_EXISTING)) {
+
+                    ByteBuffer buf = ByteBuffer.allocateDirect(128 * 1024);
+                    buf.order(ByteOrder.LITTLE_ENDIAN);
+
+                    // 简化 header（无需字符串池和 chunk meta）
+                    buf.putLong(MAGIC);
+                    buf.putInt(4); // version 4: sub-db marker
+                    byte[] scanIdBytes = (scanId + "#" + subId).getBytes(StandardCharsets.UTF_8);
+                    buf.putShort((short) scanIdBytes.length);
+                    buf.put(scanIdBytes);
+                    buf.putShort((short) 0); // no analyzer name in sub-db
+                    buf.flip(); ch.write(buf);
+
+                    // 空字符串池（共享父的）
+                    buf.clear(); buf.putInt(0); buf.flip(); ch.write(buf);
+
+                    // 空 chunk meta
+                    buf.clear(); buf.putInt(0); buf.flip(); ch.write(buf);
+
+                    // KV records
+                    buf.clear(); buf.putInt(subKvStore.size()); buf.flip(); ch.write(buf);
+                    for (Map.Entry<ByteArrayKey, byte[]> e : subKvStore.entrySet()) {
+                        byte[] k = e.getKey().data;
+                        byte[] v = e.getValue();
+                        buf.clear(); buf.putInt(k.length); buf.put(k);
+                        buf.putInt(v.length); buf.put(v);
+                        buf.flip(); ch.write(buf);
+                    }
+                }
+
+                Files.move(tmpPath, subDataPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+
+            } catch (IOException e) {
+                subDirty = true;
+                ChunkScannerMod.LOGGER.error("[scan:{}] Sub-db {} flush failed: {}",
+                        scanId, subId, e.getMessage());
+            }
+        }
+
+        @Override
+        public void close() {
+            flush();
+            subClosed = true;
+        }
+
+        // ==================== 加载 ====================
+
+        private void loadSubDb() {
+            Path path = subDataPath();
+            if (!Files.exists(path)) return;
+
+            try (FileChannel ch = FileChannel.open(path, StandardOpenOption.READ)) {
+                ByteBuffer buf = ByteBuffer.allocateDirect(32 * 1024);
+                buf.order(ByteOrder.LITTLE_ENDIAN);
+
+                readFully(ch, buf, 8); buf.flip();
+                if (buf.getLong() != MAGIC) return;
+                buf.clear();
+
+                // version
+                readFully(ch, buf, 6); buf.flip();
+                int version = buf.getInt();
+                int scanIdLen = buf.getShort() & 0xFFFF;
+                buf.clear();
+                byte[] sidBytes = new byte[scanIdLen];
+                readFully(ch, ByteBuffer.wrap(sidBytes), scanIdLen);
+
+                // analyzerName (skip)
+                if (version >= 2) {
+                    buf.clear(); readFully(ch, buf, 2); buf.flip();
+                    int analyzerLen = buf.getShort() & 0xFFFF;
+                    buf.clear();
+                    if (analyzerLen > 0) {
+                        byte[] ab = new byte[analyzerLen];
+                        readFully(ch, ByteBuffer.wrap(ab), analyzerLen);
+                    }
+                }
+
+                // skip string pool
+                buf.clear(); readFully(ch, buf, 4); buf.flip();
+                long poolCount = buf.getInt() & 0xFFFFFFFFL;
+                buf.clear();
+                for (long i = 0; i < poolCount; i++) {
+                    if (version >= 3) {
+                        readFully(ch, buf, 8); buf.flip();
+                        int len = buf.getInt();
+                        buf.clear();
+                        if (len > 0) {
+                            byte[] b = new byte[len];
+                            readFully(ch, ByteBuffer.wrap(b), len);
+                        }
+                    } else {
+                        readFully(ch, buf, 4); buf.flip();
+                        int len = buf.getInt();
+                        buf.clear();
+                        if (len > 0) {
+                            byte[] b = new byte[len];
+                            readFully(ch, ByteBuffer.wrap(b), len);
+                        }
+                    }
+                }
+
+                // skip chunk meta
+                buf.clear(); readFully(ch, buf, 4); buf.flip();
+                long metaCount = buf.getInt() & 0xFFFFFFFFL;
+                buf.clear();
+                long skipBytes = metaCount * 20;
+                while (skipBytes > 0) {
+                    int toSkip = (int) Math.min(skipBytes, buf.capacity());
+                    readFully(ch, buf, toSkip);
+                    skipBytes -= toSkip;
+                }
+
+                // load KV records
+                buf.clear(); readFully(ch, buf, 4); buf.flip();
+                long kvCount = buf.getInt() & 0xFFFFFFFFL;
+                for (long i = 0; i < kvCount; i++) {
+                    buf.clear(); readFully(ch, buf, 4); buf.flip();
+                    int keyLen = buf.getInt();
+                    byte[] key = new byte[keyLen];
+                    readFully(ch, ByteBuffer.wrap(key), keyLen);
+
+                    buf.clear(); readFully(ch, buf, 4); buf.flip();
+                    int valLen = buf.getInt();
+                    byte[] val = new byte[valLen];
+                    readFully(ch, ByteBuffer.wrap(val), valLen);
+
+                    subKvStore.put(new ByteArrayKey(key), val);
+                }
+
+                ChunkScannerMod.LOGGER.info("[scan:{}] Loaded sub-db {} with {} kv.",
+                        scanId, subId, subKvStore.size());
+
+            } catch (IOException e) {
+                ChunkScannerMod.LOGGER.warn("[scan:{}] Sub-db {} load failed: {}",
+                        scanId, subId, e.getMessage());
+            }
+        }
     }
 
     // ==================== DbViewProvider 实现 ====================

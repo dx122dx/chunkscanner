@@ -623,16 +623,31 @@ public class QShopDbViewProvider implements DbViewProvider {
                 int flags = vb.getInt();
                 String itemId = itemIdPoolId != 0 ? delegate.lookup(itemIdPoolId) : "";
 
-                // 读取增强字段（仅当 FLAG_ENHANCED_DATA 置位且 value 足够长）
+                // 读取增强字段
+                // 优先从子数据库（id=1）中获取增强数据，fallback 到主记录内嵌的增强数据
                 int enchantsCount = 0;
                 int nbtHash = 0;
                 String detailNbtString = null;
-                if ((flags & QShopAnalyzer.FLAG_ENHANCED_DATA) != 0
-                        && val.length >= QShopAnalyzer.ENHANCED_RECORD_SIZE) {
-                    int detailNbtPoolId = vb.getInt();
-                    nbtHash = vb.getInt();
-                    enchantsCount = vb.getShort() & 0xFFFF;
-                    detailNbtString = detailNbtPoolId != 0 ? delegate.lookup(detailNbtPoolId) : null;
+                if ((flags & QShopAnalyzer.FLAG_ENHANCED_DATA) != 0) {
+                    ChunkDb subDb = delegate.getSubDb(1);
+                    byte[] enhancedVal = subDb.get(key);
+                    if (enhancedVal != null && enhancedVal.length >= QShopAnalyzer.ENHANCED_RECORD_SIZE) {
+                        // 从子数据库读取增强数据
+                        ByteBuffer evb = ByteBuffer.wrap(enhancedVal).order(ByteOrder.LITTLE_ENDIAN);
+                        // 跳过基础字段（48 字节）
+                        evb.position(48);
+                        int detailNbtPoolId = evb.getInt();
+                        nbtHash = evb.getInt();
+                        enchantsCount = evb.getShort() & 0xFFFF;
+                        detailNbtString = detailNbtPoolId != 0 ? delegate.lookup(detailNbtPoolId) : null;
+                    } else if (val.length >= QShopAnalyzer.ENHANCED_RECORD_SIZE) {
+                        // fallback: 从主记录的增强区域读取（旧版数据）
+                        vb.position(48);
+                        int detailNbtPoolId = vb.getInt();
+                        nbtHash = vb.getInt();
+                        enchantsCount = vb.getShort() & 0xFFFF;
+                        detailNbtString = detailNbtPoolId != 0 ? delegate.lookup(detailNbtPoolId) : null;
+                    }
                 }
 
                 records.add(new QShopRecord(dimId, x, y, z, owner, mode, quantity, itemName, price, ts,
