@@ -386,27 +386,27 @@ public final class QShopChatListener {
             }
 
             // 构建新的 60 字节值
+            // 原始值布局(48B): keyHi(8)|keyLo(8)|owner(4)|modePacked(4)|itemNameId(4)|price(4)|timestamp(8)|itemId(4)|flags(4)
+            // 新值布局(60B):   keyHi(8)|keyLo(8)|owner(4)|modePacked(4)|displayName(4)|price(4)|timestamp(8)|registryId(4)|flags(4)|detailNbt(4)|nbtHash(4)|enchCount(2)|reserved(2)
             ByteBuffer newBuf = ByteBuffer.allocate(60).order(ByteOrder.LITTLE_ENDIAN);
 
-            // 复制前 24 字节（keyHi, keyLo, owner）
+            // 复制 bytes 0-23: keyHi(8) + keyLo(8) + owner(4) + modePacked(4)
             vb.position(0);
-            byte[] head1 = new byte[24];
-            vb.get(head1);
-            newBuf.put(head1);
+            byte[] head = new byte[24];
+            vb.get(head);
+            newBuf.put(head);
 
-            // 写入 modePacked（保持原值）
-            newBuf.putInt(vb.getInt());
-
-            // 写入更新后的 itemNameId（潜影盒展开/成书时用 displayNamePoolId）
+            // 跳过旧 itemNameId (bytes 24-27)，写入新的 displayNamePoolId
+            vb.position(28);
             newBuf.putInt(displayNamePoolId);
 
-            // 复制 price(4) + timestamp(8) = 12 字节
-            vb.getInt(); // 跳过旧的 itemNameId
+            // 复制 bytes 28-39: price(4) + timestamp(8)
             byte[] middle = new byte[12];
             vb.get(middle);
             newBuf.put(middle);
 
-            // 写入更新后的 itemId（精确的注册名池 ID）
+            // 跳过旧 itemId (bytes 40-43)，写入新的 registryIdPoolId
+            vb.position(44);
             newBuf.putInt(registryIdPoolId);
 
             // 写入更新后的 flags
