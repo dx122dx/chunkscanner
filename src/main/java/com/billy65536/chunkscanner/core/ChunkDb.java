@@ -143,6 +143,12 @@ public interface ChunkDb {
         String getId();
 
         /**
+         * 数据库文件扩展标识符，由实现自行指定。
+         * 推荐使用 id + 版本号形式，如: “bin4”
+         */
+        String getdbExt();
+
+        /**
          * 创建数据库实例（完整模式，构造时立即加载数据）。
          *
          * @param scanId        扫描任务 ID

@@ -86,6 +86,9 @@ public final class DbFileUtil {
     /**
      * 列出所有数据库文件的文件元数据（跨所有上下文递归搜索）。
      * 不再局限于当前服务器/世界，确保断开重连后仍能看到之前的 DB 文件。
+     *
+     * <p>文件命名：chunkscanner_{hash}.{analyzerId}.{dbExt}
+     * 子数据库（含 .sub_ 的文件）会被过滤，不单独列出。</p>
      */
     public static List<FileMeta> listAllDbFiles() {
         List<FileMeta> result = new ArrayList<>();
@@ -95,7 +98,8 @@ public final class DbFileUtil {
         try (Stream<Path> files = Files.walk(root, 4)) {
             files.filter(p -> {
                 String name = p.getFileName().toString();
-                return name.startsWith("chunkscanner_") && name.endsWith(".dat");
+                // 匹配所有 chunkscanner_ 文件，排除子数据库 (.sub_)
+                return name.startsWith("chunkscanner_") && !name.contains(".sub_");
             }).forEach(p -> {
                 FileMeta meta = readFileMeta(p);
                 if (!meta.isEmpty()) result.add(meta);
@@ -122,6 +126,7 @@ public final class DbFileUtil {
      * 根据 scanId 查找对应的文件路径（跨所有上下文搜索）。
      * 用于删除、显示路径等操作。
      */
+    @SuppressWarnings("deprecation")
     public static Path resolveFilePath(String scanId) {
         // 先在已缓存的列表中查找
         for (FileMeta m : listAllDbFiles()) {

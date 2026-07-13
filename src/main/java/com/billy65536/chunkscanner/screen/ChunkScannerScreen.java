@@ -3,7 +3,7 @@ package com.billy65536.chunkscanner.screen;
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.config.TaskConfig;
 import com.billy65536.chunkscanner.core.ChunkAnalyzer;
-import com.billy65536.chunkscanner.core.ChunkAnalyzerRegistry;
+import com.billy65536.chunkscanner.core.AnalyzerRegistry;
 import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.ScanSession;
 import com.billy65536.chunkscanner.gui.GuiUtil;
