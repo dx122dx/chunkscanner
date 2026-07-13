@@ -171,7 +171,12 @@ public final class XaeroWaypointHelper {
             if (!initMinimapReflection()) return false;
 
             // BuiltInHudModules.MINIMAP.getCurrentSession() → MinimapSession
-            Object session = getCurrentSession.invoke(getMinimapModule());
+            Object module = getMinimapModule();
+            if (module == null) {
+                LOGGER.warn("MINIMAP module is null");
+                return false;
+            }
+            Object session = getCurrentSession.invoke(module);
             if (session == null) {
                 LOGGER.warn("getCurrentSession() returned null — minimap session not active?");
                 return false;

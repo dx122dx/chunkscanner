@@ -478,7 +478,8 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
                 buf.flip(); ch.write(buf);
 
                 // String pool — 保存全部（池很小，避免 scanIntsIn 误判）
-                List<Integer> sorted = new ArrayList<>(stringPool.keySet());
+                // 使用快照避免并发 intern() 导致迭代期间遗漏新条目
+                List<Integer> sorted = new ArrayList<>(new HashMap<>(stringPool).keySet());
                 Collections.sort(sorted);
                 buf.clear(); buf.putInt(sorted.size()); buf.flip(); ch.write(buf);
                 for (int id : sorted) {

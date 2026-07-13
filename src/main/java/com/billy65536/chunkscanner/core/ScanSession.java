@@ -167,7 +167,13 @@ public class ScanSession {
         resultQueue.clear();
         if (scanExecutor != null) {
             scanExecutor.shutdown();
-            try { scanExecutor.awaitTermination(2, TimeUnit.SECONDS); } catch (InterruptedException ignored) {
+            try {
+                if (!scanExecutor.awaitTermination(2, TimeUnit.SECONDS)) {
+                    scanExecutor.shutdownNow();
+                    scanExecutor.awaitTermination(1, TimeUnit.SECONDS);
+                }
+            } catch (InterruptedException ignored) {
+                scanExecutor.shutdownNow();
                 Thread.currentThread().interrupt();
             }
         }

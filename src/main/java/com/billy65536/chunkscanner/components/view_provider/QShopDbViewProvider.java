@@ -51,12 +51,12 @@ public class QShopDbViewProvider implements DbViewProvider {
 
     private final BinaryChunkDb delegate;
 
-    /** 缓存解析后的商店记录（全量，未筛选）。 */
+    /** 缓存解析后的商店记录（全量，未筛选）。仅渲染线程访问，无需同步。 */
     private List<QShopRecord> cachedRecords;
-    /** 缓存筛选并排序后的记录。 */
+    /** 缓存筛选并排序后的记录。仅渲染线程访问，无需同步。 */
     private List<QShopRecord> cachedFilteredSorted;
-    private volatile boolean cacheValid = false;
-    private volatile boolean filteredCacheValid = false;
+    private boolean cacheValid = false;
+    private boolean filteredCacheValid = false;
 
     // ==================== 排序常量 ====================
 
@@ -630,6 +630,10 @@ public class QShopDbViewProvider implements DbViewProvider {
                 String detailNbtString = null;
                 if ((flags & QShopAnalyzer.FLAG_ENHANCED_DATA) != 0) {
                     ChunkDb subDb = delegate.getSubDb(1);
+                    if (subDb == null) {
+                        ChunkScannerMod.LOGGER.warn("QShopDbViewProvider: getSubDb(1) returned null, cannot read enhanced data");
+                        continue;
+                    }
                     byte[] enhancedVal = subDb.get(key);
                     if (enhancedVal != null && enhancedVal.length >= QShopAnalyzer.ENHANCED_RECORD_SIZE) {
                         // 从子数据库读取增强数据
@@ -639,7 +643,7 @@ public class QShopDbViewProvider implements DbViewProvider {
                         int detailNbtPoolId = evb.getInt();
                         nbtHash = evb.getInt();
                         enchantsCount = evb.getShort() & 0xFFFF;
-                        detailNbtString = detailNbtPoolId != 0 ? delegate.lookup(detailNbtPoolId) : null;
+                        detailNbtString = detailNbtPoolId != 0 ? subDb.lookup(detailNbtPoolId) : null;
                     } else if (val.length >= QShopAnalyzer.ENHANCED_RECORD_SIZE) {
                         // fallback: 从主记录的增强区域读取（旧版数据）
                         vb.position(48);

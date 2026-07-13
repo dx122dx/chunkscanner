@@ -32,7 +32,9 @@ public class ConfigLoader {
 
     public static void load(ChunkScannerConfig config) {
         ensureClothDetected();
-        loadFromJson(config);
+        if (!clothAvailable) {
+            loadFromJson(config);
+        }
     }
 
     public static void save(ChunkScannerConfig config) {

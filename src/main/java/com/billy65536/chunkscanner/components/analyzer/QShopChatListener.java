@@ -38,8 +38,9 @@ import com.billy65536.chunkscanner.core.ChunkDb;
  * 新点击会清空之前缓存的未处理消息和点击，确保消息与点击正确对应。</p>
  *
  * <h3>线程安全</h3>
- * <p>所有回调（聊天、tick）均在渲染线程执行，无需额外同步。
- * 数据库写入通过 {@link ChunkDb} 的标准接口执行。</p>
+ * <p>聊天消息回调（GAME 通道）和按键检测在渲染线程执行，
+ * 但系统消息通过 Mixin 在网络线程注入。pendingMessages 和 pendingClicks
+ * 通过同步块保护，确保网络线程与渲染线程之间的操作安全。</p>
  *
  * <h3>防发包频率</h3>
  * <p>本监听器<b>不发送任何数据包</b>，仅被动监听，不会触发服务器反作弊检测。</p>
@@ -157,12 +158,15 @@ public final class QShopChatListener {
         if (!(be instanceof SignBlockEntity sign)) return;
         if (!QShopAnalyzer.isQShopSign(sign)) return;
 
-        // 记录点击
+        // 记录点击（使用同步块确保 clear 和 offer 操作的原子性，
+        // 避免网络线程在两次 clear() 之间插入新消息导致消息与点击错误关联）
         String dimId = client.world.getRegistryKey().getValue().toString();
-        pendingMessages.clear();
-        pendingClicks.clear();
-        pendingClicks.offer(new PendingClick(dimId, pos.getX(), pos.getY(), pos.getZ(),
-                System.currentTimeMillis()));
+        synchronized (pendingMessages) {
+            pendingMessages.clear();
+            pendingClicks.clear();
+            pendingClicks.offer(new PendingClick(dimId, pos.getX(), pos.getY(), pos.getZ(),
+                    System.currentTimeMillis()));
+        }
 
         LOGGER.info("QShop sign clicked at ({}, {}, {}) in {}", pos.getX(), pos.getY(), pos.getZ(), dimId);
     }
@@ -183,12 +187,14 @@ public final class QShopChatListener {
 
         totalDetected.incrementAndGet();
 
-        // 缓存到队列
-        pendingMessages.offer(new PendingMessage(item, System.currentTimeMillis()));
+        // 缓存到队列（与 detectSignClick 中的 clear 操作同步，防止竞态）
+        synchronized (pendingMessages) {
+            pendingMessages.offer(new PendingMessage(item, System.currentTimeMillis()));
 
-        // 限制队列大小，防止内存泄漏
-        while (pendingMessages.size() > 200) {
-            pendingMessages.poll();
+            // 限制队列大小，防止内存泄漏
+            while (pendingMessages.size() > 200) {
+                pendingMessages.poll();
+            }
         }
 
         LOGGER.debug("Detected QShop item: registryId={}, enchants={}, nbtHash={}",
@@ -325,12 +331,13 @@ public final class QShopChatListener {
                 return false;
             }
 
-            // 将物品注册名和详情 NBT 写入字符串池（通过主数据库 intern，子数据库共享字符串池）
+            // 将物品注册名和显示名写入主数据库字符串池（因为会更新主记录中的对应字段）
             int registryIdPoolId = db.intern(item.registryId());
-            int detailNbtPoolId = item.fullNbtString() != null
-                    ? db.intern(item.fullNbtString()) : 0;
             int displayNamePoolId = item.displayName() != null
                     ? db.intern(item.displayName()) : 0;
+            // 详情 NBT 写入子数据库字符串池（增强数据存储在子数据库中）
+            int detailNbtPoolId = item.fullNbtString() != null
+                    ? subDb.intern(item.fullNbtString()) : 0;
 
             // 构建增强数据并写入子数据库（先写子数据库，再更新主数据库标志位，
             // 避免崩溃导致主数据库 FLAG_ENHANCED_DATA 已置位但子数据库无增强数据）
