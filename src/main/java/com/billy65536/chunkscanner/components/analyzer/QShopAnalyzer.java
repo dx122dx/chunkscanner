@@ -68,6 +68,8 @@ public class QShopAnalyzer implements ChunkAnalyzer {
     private static final int KEY_SIZE = KEY_PREFIX.length + 4 + 4 + 4 + 8 + 8; // 34
     private static final int CHUNK_PREFIX_LEN = KEY_PREFIX.length + 4 + 4 + 4; // 18
 
+    /** 特殊值：物品注册名通过译名映射表恢复（R）。 */
+    public static final int FLAG_ID_RECOVERED = 0x01;
     /** 特殊值：此记录包含增强数据（详情 NBT、附魔数量等），value 至少 60 字节。 */
     public static final int FLAG_ENHANCED_DATA = 0x02;
     /** 特殊值：潜影盒已展开（S），内容物作为商品。 */
@@ -197,17 +199,18 @@ public class QShopAnalyzer implements ChunkAnalyzer {
             int itemNameId = db.intern(parsed.itemName());
             int priceId = db.intern(parsed.price());
 
-            // 通过译名映射表尝试恢复物品注册名（不再设置 FLAG_ID_RECOVERED）
+            // 通过译名映射表尝试恢复物品注册名
             int itemIdPoolId;
+            int flags = 0;
             String registryId = ItemTranslator.lookup(parsed.itemName());
             if (registryId != null) {
                 itemIdPoolId = db.intern(registryId);
+                flags |= FLAG_ID_RECOVERED;
             } else {
                 itemIdPoolId = 0; // StringPoolId 0 = null/空串
             }
 
             // 构造 60 字节的值（基础 48 + 增强 12，增强初始为 0）
-            int flags = 0;
             ByteBuffer vb = ByteBuffer.allocate(ENHANCED_RECORD_SIZE).order(ByteOrder.LITTLE_ENDIAN);
             vb.putLong(keyHi);
             vb.putLong(keyLo);

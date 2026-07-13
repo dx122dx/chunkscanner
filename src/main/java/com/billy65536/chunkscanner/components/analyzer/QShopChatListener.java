@@ -396,9 +396,14 @@ public final class QShopChatListener {
             vb.get(head);
             newBuf.put(head);
 
-            // 跳过旧 itemNameId (bytes 24-27)，写入新的 displayNamePoolId
-            vb.position(28);
-            newBuf.putInt(displayNamePoolId);
+            // bytes 24-27: 处理 itemNameId
+            // 成书保留原始商品名（标题即为告示牌第三行所示），其余情况用聊天提取的显示名覆盖
+            int origItemNameId = vb.getInt();
+            if (item.isBook()) {
+                newBuf.putInt(origItemNameId);
+            } else {
+                newBuf.putInt(displayNamePoolId);
+            }
 
             // 复制 bytes 28-39: price(4) + timestamp(8)
             byte[] middle = new byte[12];

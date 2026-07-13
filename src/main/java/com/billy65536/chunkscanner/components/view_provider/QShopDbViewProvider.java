@@ -291,6 +291,9 @@ public class QShopDbViewProvider implements DbViewProvider {
     public static String formatFlagsShort(int flags) {
         if (flags == 0) return "";
         StringBuilder sb = new StringBuilder();
+        if ((flags & QShopAnalyzer.FLAG_ID_RECOVERED) != 0) {
+            sb.append("R");
+        }
         if ((flags & QShopAnalyzer.FLAG_ENHANCED_DATA) != 0) {
             sb.append("E");
         }
@@ -310,6 +313,9 @@ public class QShopDbViewProvider implements DbViewProvider {
     public static List<Text> formatFlagsTooltip(int flags) {
         if (flags == 0) return null;
         List<Text> lines = new ArrayList<>();
+        if ((flags & QShopAnalyzer.FLAG_ID_RECOVERED) != 0) {
+            lines.add(Text.translatable("chunkscanner.qshop.flag.id_recovered"));
+        }
         if ((flags & QShopAnalyzer.FLAG_ENHANCED_DATA) != 0) {
             lines.add(Text.translatable("chunkscanner.qshop.flag.enhanced"));
         }
@@ -412,7 +418,7 @@ public class QShopDbViewProvider implements DbViewProvider {
             }
 
             int totalCount = SHULKER_SLOTS * maxStack;
-            double unitPrice = (double) priceNum / totalCount;
+            double unitPrice = (double) priceNum / totalCount / 100.0;
 
             return List.of(Text.translatable("chunkscanner.qshop.shulker_unit_price",
                             String.format("%.2f", unitPrice))
