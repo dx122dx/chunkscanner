@@ -161,9 +161,9 @@
     "chunkscanner.filter.placeholder.owner": "所有者...",
     "chunkscanner.filter.placeholder.item": "商品...",
 
-    "chunkscanner.qshop.flag.id_recovered": "R - 物品ID通过译名映射表恢复",
-    "chunkscanner.qshop.flag.enhanced": "E - 包含增强数据（通过聊天提取）",
-    "chunkscanner.qshop.flag.shulker_expanded": "S - 潜影盒已展开，内容物作为商品",
+    "chunkscanner.qshop.flag.id_recovered": "R - 通过译名映射表恢复的物品ID",
+    "chunkscanner.qshop.flag.enhanced": "E - 通过聊天提取的增强数据",
+    "chunkscanner.qshop.flag.shulker_expanded": "S - 已展开的潜影盒",
     "chunkscanner.qshop.flag.book": "B - 成书",
     "chunkscanner.qshop.shulker_unit_price": "单价约 %s",
 

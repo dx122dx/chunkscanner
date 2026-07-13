@@ -8,7 +8,6 @@ import net.minecraft.util.Identifier;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -16,7 +15,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -26,28 +24,25 @@ import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 import com.billy65536.chunkscanner.core.ChunkDb;
 import com.billy65536.chunkscanner.core.DbViewProvider;
 import com.billy65536.chunkscanner.core.LocatedPosition;
-import com.billy65536.chunkscanner.core.CoreUtil;
 /**
  * QShop 分析器特化的 DbViewProvider。
  *
  * 解析 qshop 分析器生成的二进制 KV 数据，将原始字节转换为可读的商店信息。
  *
- * 键格式（34 字节）：
- *   "qshop:" (6B) | dimPoolId:u32 (4B) | cx:i32 (4B) | cz:i32 (4B) | keyHi:u64 (8B) | keyLo:u64 (8B)
+ * 键格式（28 字节）：
+ *   dimPoolId:u32 (4B) | cx:i32 (4B) | cz:i32 (4B) | keyHi:u64 (8B) | keyLo:u64 (8B)
  *
- * 值格式（48/60 字节）：
- *   基础（48 字节）：
- *     keyHi:u64 (8B) | keyLo:u64 (8B) | owner:u32 (4B) | mode+quantity packed:u32 (4B) |
- *     itemName:u32 (4B) | price:u32 (4B) | timestamp:u64 (8B) | itemId:u32 (4B) | flags:u32 (4B)
- *   增强（+12 字节，仅当 FLAG_ENHANCED_DATA 置位时存在）：
- *     detailNbtPoolId:u32 (4B) | nbtHash:u32 (4B) | enchantsCount:u16 (2B) | reserved:u16 (2B)
+ * 值格式（48 字节）：
+ *   keyHi:u64 (8B) | keyLo:u64 (8B) | owner:u32 (4B) | mode+quantity packed:u32 (4B) |
+ *   itemName:u32 (4B) | price:u32 (4B) | timestamp:u64 (8B) | itemId:u32 (4B) | flags:u32 (4B)
  *
  *   mode+quantity 打包：byte0 = mode (0=出售,1=收购), bytes1-3 = quantity (24-bit unsigned)
+ *   price：整数，真实价格 = price / 100.0
  */
 public class QShopDbViewProvider implements DbViewProvider {
 
-    private static final byte[] KEY_PREFIX = "qshop:".getBytes(StandardCharsets.UTF_8);
-    private static final int BASE_RECORD_SIZE = 48;
+    private static final int KEY_SIZE = 28;
+    private static final int RECORD_SIZE = 60;
 
     private final BinaryChunkDb delegate;
 
@@ -265,7 +260,7 @@ public class QShopDbViewProvider implements DbViewProvider {
                     modeStr,
                     quantityStr,
                     r.itemName(),
-                    r.price(),
+                    formatPrice(r.price()),
                     r.itemId(),
                     detailStr,
                     formatFlagsShort(r.flags())
@@ -399,9 +394,7 @@ public class QShopDbViewProvider implements DbViewProvider {
      */
     private static List<Text> buildShulkerUnitPriceTooltip(QShopRecord record) {
         try {
-            // 解析数字价格
-            int priceNum = parseNumericPrice(record.price());
-            if (priceNum < 0) return null;
+            int priceCents = record.price();
 
             // 获取物品堆叠上限
             int maxStack;
@@ -418,7 +411,7 @@ public class QShopDbViewProvider implements DbViewProvider {
             }
 
             int totalCount = SHULKER_SLOTS * maxStack;
-            double unitPrice = (double) priceNum / totalCount / 100.0;
+            double unitPrice = (double) priceCents / totalCount / 100.0;
 
             return List.of(Text.translatable("chunkscanner.qshop.shulker_unit_price",
                             String.format("%.2f", unitPrice))
@@ -470,9 +463,8 @@ public class QShopDbViewProvider implements DbViewProvider {
      */
     private Comparator<QShopRecord> getSortComparator() {
         return switch (sortMode) {
-            case SORT_PRICE_ASC -> Comparator.comparingInt(r -> parseNumericPrice(r.price()));
-            case SORT_PRICE_DESC -> (a, b) -> Integer.compare(
-                    parseNumericPrice(b.price()), parseNumericPrice(a.price()));
+            case SORT_PRICE_ASC -> Comparator.comparingInt(QShopRecord::price);
+            case SORT_PRICE_DESC -> (a, b) -> Integer.compare(b.price(), a.price());
             case SORT_QTY_ASC -> Comparator.comparingInt(QShopRecord::quantity);
             case SORT_QTY_DESC -> (a, b) -> Integer.compare(b.quantity(), a.quantity());
             default -> (a, b) -> 0;
@@ -494,10 +486,9 @@ public class QShopDbViewProvider implements DbViewProvider {
 
         // 价格范围筛选
         if (priceMinFilter != null || priceMaxFilter != null) {
-            int priceNum = parseNumericPrice(r.price());
-            // 无法解析价格的不纳入范围筛选结果
-            if (priceMinFilter != null && priceNum < priceMinFilter) return false;
-            if (priceMaxFilter != null && priceNum > priceMaxFilter) return false;
+            int priceCents = r.price();
+            if (priceMinFilter != null && priceCents < priceMinFilter) return false;
+            if (priceMaxFilter != null && priceCents > priceMaxFilter) return false;
         }
 
         // 数量范围筛选
@@ -528,29 +519,9 @@ public class QShopDbViewProvider implements DbViewProvider {
         };
     }
 
-    /** 提取价格字符串中首个数字的整数表示（乘以 100，两位小数精度）。无法解析则返回 -1。 */
-    private static final Pattern PRICE_NUM_PATTERN = Pattern.compile("(\\d+)(?:\\.(\\d{1,2}))?");
-    static int parseNumericPrice(String price) {
-        if (price == null) return -1;
-        Matcher m = PRICE_NUM_PATTERN.matcher(price.trim());
-        if (m.find()) {
-            try {
-                int integerPart = Integer.parseInt(m.group(1));
-                String fracStr = m.group(2);
-                int fractionalPart;
-                if (fracStr == null) {
-                    fractionalPart = 0;
-                } else if (fracStr.length() == 1) {
-                    fractionalPart = Integer.parseInt(fracStr) * 10;
-                } else {
-                    fractionalPart = Integer.parseInt(fracStr);
-                }
-                return integerPart * 100 + fractionalPart;
-            } catch (NumberFormatException ignored) {
-                // fall through
-            }
-        }
-        return -1;
+    /** 将价格整型（最小货币单位）格式化为显示字符串，如 50 → "0.50"。 */
+    private static String formatPrice(int cents) {
+        return String.format("%d.%02d", cents / 100, cents % 100);
     }
 
     // ==================== QShop 特化展示 ====================
@@ -560,9 +531,8 @@ public class QShopDbViewProvider implements DbViewProvider {
      *
      * 反序列化流程：
      * 1. 从 delegate 获取所有原始 KV 条目
-     * 2. 过滤出 key 以 "qshop:" 为前缀的条目
-     * 3. 解析值中的 dimPoolId → 通过字符串池 lookup 还原维度 ID
-     * 4. 解析坐标、所有者、模式、数量、商品名、价格
+     * 2. 解析值中的 dimPoolId → 通过字符串池 lookup 还原维度 ID
+     * 3. 解析坐标、所有者、模式、数量、商品名、价格
      *
      * 结果会被缓存（cacheValid），数据不变时不会重复解析。
      */
@@ -585,12 +555,8 @@ public class QShopDbViewProvider implements DbViewProvider {
         for (ChunkDb.Entry entry : entries) {
             try {
                 byte[] key = entry.key();
-                // 跳过非 qshop 前缀的条目
-                if (key.length < KEY_PREFIX.length) continue;
-                if (!CoreUtil.startsWith(key, KEY_PREFIX)) continue;
-
                 byte[] val = entry.value();
-                if (val.length < BASE_RECORD_SIZE) continue;
+                if (key.length != KEY_SIZE || val.length < RECORD_SIZE) continue;
 
                 ByteBuffer vb = ByteBuffer.wrap(val).order(ByteOrder.LITTLE_ENDIAN);
                 long keyHi = vb.getLong();
@@ -607,7 +573,7 @@ public class QShopDbViewProvider implements DbViewProvider {
                 int ownerId = vb.getInt();
                 int modePacked = vb.getInt();   // [quantity(24bit) | mode(8bit)]
                 int itemNameId = vb.getInt();
-                int priceId = vb.getInt();
+                int price = vb.getInt();        // 整型价格（最小货币单位）
                 long ts = vb.getLong();
 
                 byte mode = (byte) (modePacked & 0xFF);
@@ -616,15 +582,13 @@ public class QShopDbViewProvider implements DbViewProvider {
                 // 通过字符串池还原可读文本
                 String owner = delegate.lookup(ownerId);
                 String itemName = delegate.lookup(itemNameId);
-                String price = delegate.lookup(priceId);
 
-                // 读取新增字段：itemId 和 flags
+                // 读取 itemId 和 flags
                 int itemIdPoolId = vb.getInt();
                 int flags = vb.getInt();
                 String itemId = itemIdPoolId != 0 ? delegate.lookup(itemIdPoolId) : "";
 
-                // 读取增强字段
-                // 优先从子数据库（id=1）中获取增强数据，fallback 到主记录内嵌的增强数据
+                // 读取增强字段（从子数据库 id=1 获取）
                 int enchantsCount = 0;
                 int nbtHash = 0;
                 String detailNbtString = null;
@@ -634,23 +598,14 @@ public class QShopDbViewProvider implements DbViewProvider {
                         ChunkScannerMod.LOGGER.warn("QShopDbViewProvider: getSubDb(1) returned null, cannot read enhanced data");
                         continue;
                     }
-                    byte[] enhancedVal = subDb.get(key);
-                    if (enhancedVal != null && enhancedVal.length >= QShopAnalyzer.ENHANCED_RECORD_SIZE) {
-                        // 从子数据库读取增强数据
+                    byte[] enhancedVal = subDb.get(entry.key());
+                    if (enhancedVal != null && enhancedVal.length >= RECORD_SIZE) {
                         ByteBuffer evb = ByteBuffer.wrap(enhancedVal).order(ByteOrder.LITTLE_ENDIAN);
-                        // 跳过基础字段（48 字节）
                         evb.position(48);
                         int detailNbtPoolId = evb.getInt();
                         nbtHash = evb.getInt();
                         enchantsCount = evb.getShort() & 0xFFFF;
                         detailNbtString = detailNbtPoolId != 0 ? subDb.lookup(detailNbtPoolId) : null;
-                    } else if (val.length >= QShopAnalyzer.ENHANCED_RECORD_SIZE) {
-                        // fallback: 从主记录的增强区域读取（旧版数据）
-                        vb.position(48);
-                        int detailNbtPoolId = vb.getInt();
-                        nbtHash = vb.getInt();
-                        enchantsCount = vb.getShort() & 0xFFFF;
-                        detailNbtString = detailNbtPoolId != 0 ? delegate.lookup(detailNbtPoolId) : null;
                     }
                 }
 
@@ -676,7 +631,7 @@ public class QShopDbViewProvider implements DbViewProvider {
      * @param mode     0=出售, 1=收购
      * @param quantity 剩余数量（出售 mode quantity=0 表示缺货，收购 mode quantity=0 表示空间不足）
      * @param itemName 商品名称（告示牌原文，增强后为物品显示名/成书标题）
-     * @param price    单价文本（含货币符号）
+     * @param price    单价（最小货币单位整数，真实价格 = price / 100.0）
      * @param timestamp 扫描时间戳
      * @param itemId   商品注册名（如 "minecraft:diamond"），恢复失败为空串
      * @param flags    特殊值标志位（参见 {@link QShopAnalyzer#FLAG_ENHANCED_DATA} 等）
@@ -686,19 +641,10 @@ public class QShopDbViewProvider implements DbViewProvider {
      */
     public record QShopRecord(String dimId, int x, int y, int z,
                                String owner, byte mode, int quantity,
-                               String itemName, String price, long timestamp,
+                               String itemName, int price, long timestamp,
                                String itemId, int flags,
                                int enchantsCount, int nbtHash,
-                               String detailNbtString) {
-        /** 兼容旧版（无增强字段）的构造器。 */
-        public QShopRecord(String dimId, int x, int y, int z,
-                           String owner, byte mode, int quantity,
-                           String itemName, String price, long timestamp,
-                           String itemId, int flags) {
-            this(dimId, x, y, z, owner, mode, quantity, itemName, price, timestamp,
-                    itemId, flags, 0, 0, null);
-        }
-    }
+                               String detailNbtString) {}
 
     // ==================== DbViewProvider.Type ====================
 

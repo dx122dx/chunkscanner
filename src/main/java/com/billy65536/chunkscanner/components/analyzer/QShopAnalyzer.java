@@ -12,7 +12,6 @@ import net.minecraft.world.chunk.WorldChunk;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -38,44 +37,41 @@ import com.billy65536.chunkscanner.core.ChunkDb;
  * </pre>
  *
  * 系统商店：数量为"无限"，用 quantity=0xFFFFFF 表示。
+ * 价格以最小货币单位存储（整数，乘以 100）。
  *
- * 键格式（34 字节）：
- *   "qshop:" (6B) | dimPoolId:u32 (4B) | cx:i32 (4B) | cz:i32 (4B) | keyHi:u64 (8B) | keyLo:u64 (8B)
+ * 键格式（28 字节）：
+ *   dimPoolId:u32 (4B) | cx:i32 (4B) | cz:i32 (4B) | keyHi:u64 (8B) | keyLo:u64 (8B)
  *
- * 值格式（48/60 字节）：
- *   基础（48 字节）：
- *     keyHi:u64 (8B) | keyLo:u64 (8B) | owner:u32 (4B) | mode+quantity packed:u32 (4B) |
- *     itemName:u32 (4B) | price:u32 (4B) | timestamp:u64 (8B) | itemId:u32 (4B) | flags:u32 (4B)
- *   增强（+12 字节，仅当 FLAG_ENHANCED_DATA 置位时存在）：
- *     detailNbtPoolId:u32 (4B) | nbtHash:u32 (4B) | enchantsCount:u16 (2B) | reserved:u16 (2B)
+ * 值格式（48 字节）：
+ *   keyHi:u64 (8B) | keyLo:u64 (8B) | owner:u32 (4B) | mode+quantity packed:u32 (4B) |
+ *   itemName:u32 (4B) | price:u32 (4B) | timestamp:u64 (8B) | itemId:u32 (4B) | flags:u32 (4B)
  *
  *   mode+quantity 打包：byte0 = mode (0=出售,1=收购), bytes1-3 = quantity (24-bit unsigned)
+ *   price：整数，真实价格 = price / 100.0（如 50 = 0.50）
  *
  *   特殊值 flag bits:
- *     FLAG_ENHANCED_DATA     (0x02) — 此记录包含增强数据（value 至少 60 字节）
- *     FLAG_SHULKER_EXPANDED  (0x08) — 潜影盒已展开（S），内容物作为商品
- *     FLAG_BOOK              (0x10) — 成书（B），商品名已替换为标题
+ *     FLAG_ID_RECOVERED     (0x01) — 物品注册名通过译名映射表恢复（R）
+ *     FLAG_ENHANCED_DATA     (0x02) — 此记录包含增强数据
+ *     FLAG_SHULKER_EXPANDED  (0x04) — 潜影盒已展开（S），内容物作为商品
+ *     FLAG_BOOK              (0x08) — 成书（B），商品名已替换为标题
  */
 public class QShopAnalyzer implements ChunkAnalyzer {
 
-    /** 基础记录大小（文档常量），实际序列化使用 {@link #ENHANCED_RECORD_SIZE}。 */
-    @SuppressWarnings("unused")
-    private static final int BASE_RECORD_SIZE = 48; // 基础 8+8+4+4+4+4+8+4+4
-    /** 增强记录大小（基础 + detailNbtPoolId(4) + nbtHash(4) + enchantsCount(2) + reserved(2)）。 */
-    public static final int ENHANCED_RECORD_SIZE = 60;
-    private static final byte[] KEY_PREFIX = "qshop:".getBytes(StandardCharsets.UTF_8);
-    // "qshop:"(6) + dimPoolId(4) + cx(4) + cz(4) + keyHi(8) + keyLo(8)
-    private static final int KEY_SIZE = KEY_PREFIX.length + 4 + 4 + 4 + 8 + 8; // 34
-    private static final int CHUNK_PREFIX_LEN = KEY_PREFIX.length + 4 + 4 + 4; // 18
+    /** 值记录大小（48 字节）。 */
+    public static final int RECORD_SIZE = 48;
+    /** 键大小：dimPoolId(4) + cx(4) + cz(4) + keyHi(8) + keyLo(8) = 28 */
+    private static final int KEY_SIZE = 4 + 4 + 4 + 8 + 8; // 28
+    /** chunk 级删除前缀大小：dimPoolId(4) + cx(4) + cz(4) = 12 */
+    private static final int CHUNK_PREFIX_LEN = 4 + 4 + 4; // 12
 
     /** 特殊值：物品注册名通过译名映射表恢复（R）。 */
     public static final int FLAG_ID_RECOVERED = 0x01;
-    /** 特殊值：此记录包含增强数据（详情 NBT、附魔数量等），value 至少 60 字节。 */
+    /** 特殊值：此记录包含增强数据存储在子数据库 1。 */
     public static final int FLAG_ENHANCED_DATA = 0x02;
     /** 特殊值：潜影盒已展开（S），内容物作为商品。 */
-    public static final int FLAG_SHULKER_EXPANDED = 0x08;
+    public static final int FLAG_SHULKER_EXPANDED = 0x04;
     /** 特殊值：成书（B），商品名已替换为标题。 */
-    public static final int FLAG_BOOK = 0x10;
+    public static final int FLAG_BOOK = 0x08;
 
     /** quantity 的最大值 (24-bit)，用作"无限"的哨兵值 */
     public static final int INFINITE_QUANTITY = 0xFFFFFF;
@@ -197,21 +193,18 @@ public class QShopAnalyzer implements ChunkAnalyzer {
             // 字符串池化（避免每条记录重复存储相同字符串）
             int ownerId = db.intern(parsed.owner());
             int itemNameId = db.intern(parsed.itemName());
-            int priceId = db.intern(parsed.price());
 
             // 通过译名映射表尝试恢复物品注册名
-            int itemIdPoolId;
+            int itemIdPoolId = 0; // StringPoolId 0 = null/空串
             int flags = 0;
             String registryId = ItemTranslator.lookup(parsed.itemName());
             if (registryId != null) {
                 itemIdPoolId = db.intern(registryId);
                 flags |= FLAG_ID_RECOVERED;
-            } else {
-                itemIdPoolId = 0; // StringPoolId 0 = null/空串
             }
 
-            // 构造 60 字节的值（基础 48 + 增强 12，增强初始为 0）
-            ByteBuffer vb = ByteBuffer.allocate(ENHANCED_RECORD_SIZE).order(ByteOrder.LITTLE_ENDIAN);
+            // 构造 60 字节的值
+            ByteBuffer vb = ByteBuffer.allocate(RECORD_SIZE).order(ByteOrder.LITTLE_ENDIAN);
             vb.putLong(keyHi);
             vb.putLong(keyLo);
             vb.putInt(ownerId);
@@ -219,15 +212,10 @@ public class QShopAnalyzer implements ChunkAnalyzer {
             int modePacked = (parsed.mode() & 0xFF) | ((parsed.quantity() & 0xFFFFFF) << 8);
             vb.putInt(modePacked);
             vb.putInt(itemNameId);
-            vb.putInt(priceId);
+            vb.putInt(parsed.price()); // 价格：整型，最小货币单位
             vb.putLong(now); // 扫描时间戳
             vb.putInt(itemIdPoolId);
             vb.putInt(flags);
-            // 增强字段初始化为 0（detailNbtPoolId=0, nbtHash=0, enchantsCount=0, reserved=0）
-            vb.putInt(0);
-            vb.putInt(0);
-            vb.putShort((short) 0);
-            vb.putShort((short) 0);
 
             byte[] key = makeKey(keyHi, keyLo, dimPoolId, cx, cz);
             records.add(key);
@@ -341,25 +329,27 @@ public class QShopAnalyzer implements ChunkAnalyzer {
         String itemName = lines[2];
         if (itemName == null || itemName.trim().isEmpty()) return null;
 
-        // 第四行：单价（根据语言环境提取价格部分）
+        // 第四行：单价（解析数字部分，转换为最小货币单位整数）
         String line4 = lines[3];
         if (line4 == null || line4.trim().isEmpty()) return null;
 
         Matcher priceMatcher = patterns.pricePattern().matcher(line4.trim());
-        String price;
+        String priceText;
         if (priceMatcher.matches()) {
-            price = priceMatcher.group(1).trim();
+            priceText = priceMatcher.group(1).trim();
         } else {
-            price = line4.trim();
+            priceText = line4.trim();
         }
+
+        int price = parsePrice(priceText);
+        if (price < 0) return null;
 
         return new QShopParsed(owner, mode, quantity, itemName, price);
     }
 
-    /** 构造完整键（34 字节）。 */
+    /** 构造完整键（28 字节）。 */
     private static byte[] makeKey(long keyHi, long keyLo, int dimPoolId, int cx, int cz) {
         ByteBuffer bb = ByteBuffer.allocate(KEY_SIZE).order(ByteOrder.LITTLE_ENDIAN);
-        bb.put(KEY_PREFIX);
         bb.putInt(dimPoolId);
         bb.putInt(cx);
         bb.putInt(cz);
@@ -368,14 +358,45 @@ public class QShopAnalyzer implements ChunkAnalyzer {
         return bb.array();
     }
 
-    /** 构造 chunk 级删除前缀（18 字节）。 */
+    /** 构造 chunk 级删除前缀（12 字节）。 */
     private static byte[] makeChunkPrefix(int dimPoolId, int cx, int cz) {
         ByteBuffer bb = ByteBuffer.allocate(CHUNK_PREFIX_LEN).order(ByteOrder.LITTLE_ENDIAN);
-        bb.put(KEY_PREFIX);
         bb.putInt(dimPoolId);
         bb.putInt(cx);
         bb.putInt(cz);
         return bb.array();
+    }
+
+    /**
+     * 从价格文本中提取数字并转换为最小货币单位整数（乘以 100）。
+     * 支持 "0.50 ₦"、"100"、"1,234.56" 等格式。
+     *
+     * @param priceText 价格文本（可能含货币符号）
+     * @return 最小货币单位整数，无法解析则返回 -1
+     */
+    private static final Pattern PRICE_NUM_PATTERN = Pattern.compile("(\\d+(?:,\\d{3})*)(?:\\.(\\d{1,2}))?");
+    static int parsePrice(String priceText) {
+        if (priceText == null) return -1;
+        Matcher m = PRICE_NUM_PATTERN.matcher(priceText.trim());
+        if (m.matches()) {
+            try {
+                String intPart = m.group(1).replace(",", "");
+                String fracPart = m.group(2);
+                int integerPart = Integer.parseInt(intPart);
+                int fractionalPart = 0;
+                if (fracPart != null) {
+                    if (fracPart.length() == 1) {
+                        fractionalPart = Integer.parseInt(fracPart) * 10;
+                    } else {
+                        fractionalPart = Integer.parseInt(fracPart);
+                    }
+                }
+                return integerPart * 100 + fractionalPart;
+            } catch (NumberFormatException ignored) {
+                // fall through
+            }
+        }
+        return -1;
     }
 
     // ==================== 内部数据记录 ====================
@@ -387,9 +408,9 @@ public class QShopAnalyzer implements ChunkAnalyzer {
      * @param mode     0=出售, 1=收购
      * @param quantity 剩余数量（出售模式 quantity=0 表示缺货，收购模式 quantity=0 表示空间不足）
      * @param itemName 商品名称
-     * @param price    单价文本（含货币符号）
+     * @param price    单价（最小货币单位，整数；真实价格 = price / 100.0）
      */
-    record QShopParsed(String owner, byte mode, int quantity, String itemName, String price) {}
+    record QShopParsed(String owner, byte mode, int quantity, String itemName, int price) {}
 
     // ==================== 公开工具方法 ====================
 

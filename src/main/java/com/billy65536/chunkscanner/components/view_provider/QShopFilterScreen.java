@@ -391,11 +391,9 @@ public class QShopFilterScreen extends Screen {
     /** 将内部价格表示（乘以 100 的整数）转换为用户可读的显示字符串。 */
     private static String priceToDisplayString(Integer priceInt) {
         if (priceInt == null) return "";
-        double d = priceInt / 100.0;
-        String s = String.valueOf(d);
-        // 去掉尾随的 ".0"（整数情况）
-        if (s.endsWith(".0")) return s.substring(0, s.length() - 2);
-        return s;
+        int cents = priceInt;
+        if (cents % 100 == 0) return String.valueOf(cents / 100);
+        return String.format("%d.%02d", cents / 100, cents % 100);
     }
 
     /** 解析价格字符串为内部表示（乘以 100），或返回 null。 */
@@ -404,7 +402,7 @@ public class QShopFilterScreen extends Screen {
         String t = s.trim();
         if (t.isEmpty()) return null;
         try {
-            return (int) (Double.parseDouble(t) * 100.0);
+            return (int) Math.round(Double.parseDouble(t) * 100.0);
         } catch (NumberFormatException e) {
             return null;
         }

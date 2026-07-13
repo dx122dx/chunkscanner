@@ -161,8 +161,8 @@
     "chunkscanner.filter.placeholder.item": "Item...",
 
     "chunkscanner.qshop.flag.id_recovered": "R - Item ID recovered via translation mapping",
-    "chunkscanner.qshop.flag.enhanced": "E - Contains enhanced data (extracted from chat)",
-    "chunkscanner.qshop.flag.shulker_expanded": "S - Shulker box expanded, contents as item",
+    "chunkscanner.qshop.flag.enhanced": "E - Enhanced data extracted from chat",
+    "chunkscanner.qshop.flag.shulker_expanded": "S - Shulker box expanded",
     "chunkscanner.qshop.flag.book": "B - Written book",
     "chunkscanner.qshop.shulker_unit_price": "Unit price ~ %s",
 
