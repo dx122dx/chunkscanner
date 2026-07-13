@@ -1,6 +1,5 @@
 package com.billy65536.chunkscanner.core;
 
-import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;

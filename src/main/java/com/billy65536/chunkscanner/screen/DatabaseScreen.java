@@ -22,10 +22,10 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
-import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 import com.billy65536.chunkscanner.components.db.DbFileUtil;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.TaskConfig;
+import com.billy65536.chunkscanner.core.AnalyzerRegistry;
 import com.billy65536.chunkscanner.core.ChunkAnalyzer;
 import com.billy65536.chunkscanner.core.ChunkDb;
 import com.billy65536.chunkscanner.core.ChunkScanner;
@@ -63,7 +63,7 @@ public class DatabaseScreen extends Screen {
 
     // ==================== KV 视图页 ====================
 
-    private BinaryChunkDb openedDb;
+    private DbViewProvider openedDb;
     private DbViewProvider currentView;
     private boolean showingKvView = false;
 
@@ -150,8 +150,9 @@ public class DatabaseScreen extends Screen {
         }
         ChunkScannerMod.LOGGER.debug("Opening database: scanId={} analyzer={}", meta.scanId(), meta.analyzerName());
         Path fileDir = meta.filePath() != null ? meta.filePath().getParent() : null;
-        BinaryChunkDb db = new BinaryChunkDb(meta.scanId(), meta.analyzerName(), true, fileDir);
-        openedDb = db;
+        ChunkDb.Factory dbFactory = ChunkDb.FactoryRegistry.getDefault();
+        ChunkDb db = dbFactory.createMetadataOnly(meta.scanId(), meta.analyzerName(), fileDir);
+        openedDb = (DbViewProvider) db;
         try {
             openedDb.open();
         } catch (Exception e) {
@@ -162,7 +163,7 @@ public class DatabaseScreen extends Screen {
         }
 
         // 读取 DB 中存储的任务配置，用于路径点命名等
-        cachedTaskConfig = openedDb.getTaskConfig();
+        cachedTaskConfig = ((ChunkDb) openedDb).getTaskConfig();
         if (cachedTaskConfig != null) {
             ChunkScannerMod.LOGGER.debug("Loaded TaskConfig from DB for '{}': {}", meta.scanId(), cachedTaskConfig.toDisplayString());
         }
@@ -204,7 +205,7 @@ public class DatabaseScreen extends Screen {
             DbViewProvider.Type selectedType = viewTypes.get(selectedViewTypeIdx);
             if (forceRecreate || currentView == null) {
                 try {
-                    currentView = selectedType.create(openedDb);
+                    currentView = selectedType.create((ChunkDb) openedDb);
                 } catch (Exception e) {
                     ChunkScannerMod.LOGGER.warn("Failed to create view provider '{}': {}", selectedType.getId(), e.getMessage());
                     currentView = null;
@@ -396,7 +397,7 @@ public class DatabaseScreen extends Screen {
     }
 
     private void openFolder() {
-        Path dir = BinaryChunkDb.getDbRoot();
+        Path dir = ChunkScannerMod.getDbRoot();
         try {
             if (!Files.exists(dir)) {
                 Files.createDirectories(dir);
@@ -409,7 +410,7 @@ public class DatabaseScreen extends Screen {
 
     private void saveAs() {
         if (openedDb == null) return;
-        Path dir = BinaryChunkDb.getDbRoot();
+        Path dir = ChunkScannerMod.getDbRoot();
 
         // 在后台线程通过 EDT 调度 JFileChooser，避免 AWT 模态对话框阻塞 GL 渲染线程
         new Thread(() -> {
@@ -918,11 +919,12 @@ public class DatabaseScreen extends Screen {
         ChunkScanner scanner = ChunkScannerMod.getScanner();
         if (scanner == null || client.player == null || client.world == null) return;
 
-        ChunkAnalyzer analyzer = scanner.getAnalyzer(meta.analyzerName());
+        ChunkAnalyzer analyzer = AnalyzerRegistry.get(meta.analyzerName());
         if (analyzer == null) return;
 
         Path fileDir = meta.filePath() != null ? meta.filePath().getParent() : null;
-        BinaryChunkDb existingDb = new BinaryChunkDb(meta.scanId(), meta.analyzerName(), false, fileDir);
+        ChunkDb.Factory dbFactory = ChunkDb.FactoryRegistry.getDefault();
+        ChunkDb existingDb = dbFactory.create(meta.scanId(), meta.analyzerName(), fileDir);
         TaskConfig storedConfig = existingDb.getTaskConfig();
         if (storedConfig != null) {
             ChunkScannerMod.LOGGER.info("Restored TaskConfig from DB for '{}': {}", meta.scanId(), storedConfig.toDisplayString());

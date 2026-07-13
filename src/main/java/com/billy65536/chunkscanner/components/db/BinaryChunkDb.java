@@ -1,8 +1,5 @@
 package com.billy65536.chunkscanner.components.db;
 
-import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.MinecraftClient;
-
 import net.minecraft.text.Text;
 
 import java.io.*;
@@ -53,8 +50,6 @@ import com.billy65536.chunkscanner.config.TaskConfig;
  * └──────────────────────────────────────────────┘
  */
 public class BinaryChunkDb implements ChunkDb, DbViewProvider {
-    /** 数据库文件存放子目录名（位于 gameDir 下按上下文分类的子目录中）。 */
-    private static final String DB_DIR = "chunkscanner";
     /** 文件魔数："CHNKSCAN"（little-endian uint64）。package-private 供 DbFileUtil 引用。 */
     static final long MAGIC = 0x4E4143534B4E4843L; // "CHNKSCAN" (little-endian)
     /** 任务配置元数据键（存储在 KV store 中，JSON 序列化）。 */
@@ -108,7 +103,7 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
      * @param metadataOnly 若为 true，只存储元数据不加载文件内容，用于文件列表浏览。
      */
     public BinaryChunkDb(String scanId, String analyzerName, boolean metadataOnly) {
-        this(scanId, analyzerName, metadataOnly, getDbDir());
+        this(scanId, analyzerName, metadataOnly, ChunkScannerMod.getDbDir());
     }
 
     /**
@@ -121,7 +116,7 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
     public BinaryChunkDb(String scanId, String analyzerName, boolean metadataOnly, Path dbDir) {
         this.scanId = scanId;
         this.analyzerName = analyzerName;
-        this.dbDir = dbDir != null ? dbDir : getDbDir();
+        this.dbDir = dbDir != null ? dbDir : ChunkScannerMod.getDbDir();
         this.safeFileName = safeFileName(scanId);
         this.stringPool = new ConcurrentHashMap<>();
         this.stringPoolReverse = new ConcurrentHashMap<>();
@@ -877,47 +872,22 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
         }
     }
 
-    // ==================== 上下文感知路径 ====================
+    // ==================== ChunkDb.Factory ====================
 
-    /**
-     * 返回所有 DB 文件的根目录（不区分服务器/世界上下文）。
-     * DB 浏览器应使用此方法获取根目录。
-     */
-    public static Path getDbRoot() {
-        return FabricLoader.getInstance().getGameDir().resolve(DB_DIR);
-    }
+    /** BinaryChunkDb 的工厂实现，注册为默认数据库引擎。 */
+    public static class Factory implements ChunkDb.Factory {
+        @Override
+        public String getId() { return "binary"; }
 
-    /**
-     * 根据当前游戏上下文返回数据库存储目录。
-     *
-     * 路径结构：
-     *   gameDir/chunkscanner/{contextType}/{contextName}/
-     *
-     * contextType 判定逻辑：
-     * - local：本地单机世界 → 使用世界名称
-     * - server：多人服务器 → 使用服务器地址
-     * - other：无法确定上下文（如主菜单） → "unknown"
-     *
-     * 路径中的特殊字符会被替换为下划线。
-     */
-    public static Path getDbDir() {
-        MinecraftClient client = MinecraftClient.getInstance();
-        String context, type;
-        if (client != null && client.isIntegratedServerRunning() && client.getServer() != null) {
-            type = "local";
-            context = client.getServer().getSaveProperties().getLevelName();
-        } else if (client != null && client.getCurrentServerEntry() != null) {
-            type = "server";
-            context = client.getCurrentServerEntry().address;
-        } else {
-            type = "other";
-            context = "unknown";
+        @Override
+        public ChunkDb create(String scanId, String analyzerName, Path dbDir) {
+            return new BinaryChunkDb(scanId, analyzerName, false, dbDir);
         }
-        return getDbRoot().resolve(type).resolve(sanitizePath(context));
-    }
 
-    private static String sanitizePath(String name) {
-        return name.replaceAll("[<>:\"/\\\\|?*]", "_");
+        @Override
+        public ChunkDb createMetadataOnly(String scanId, String analyzerName, Path dbDir) {
+            return new BinaryChunkDb(scanId, analyzerName, true, dbDir);
+        }
     }
 
     // ==================== 工具 ====================

@@ -11,7 +11,9 @@ import com.billy65536.chunkscanner.components.view_provider.SignDbViewProvider;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.ConfigLoader;
 import com.billy65536.chunkscanner.config.TaskConfig;
+import com.billy65536.chunkscanner.core.AnalyzerRegistry;
 import com.billy65536.chunkscanner.core.ChunkAnalyzer;
+import com.billy65536.chunkscanner.core.ChunkDb;
 import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.DbViewProvider;
 import com.billy65536.chunkscanner.screen.ChunkScannerScreen;
@@ -24,6 +26,7 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallba
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
@@ -43,7 +46,7 @@ public class ChunkScannerMod implements ClientModInitializer {
     private static final SuggestionProvider<FabricClientCommandSource> ANALYZER_SUGGESTIONS =
             (ctx, builder) -> {
                 String remaining = builder.getRemaining().toLowerCase();
-                for (ChunkAnalyzer a : getScanner().getAnalyzers()) {
+                for (ChunkAnalyzer a : AnalyzerRegistry.getAll()) {
                     if (a.getId().toLowerCase().startsWith(remaining)) {
                         builder.suggest(a.getId());
                     }
@@ -82,6 +85,52 @@ public class ChunkScannerMod implements ClientModInitializer {
         return instance != null ? instance.scanner : null;
     }
 
+    // ==================== 数据库路径管理 ====================
+
+    /** 数据库文件存放子目录名。 */
+    private static final String DB_DIR = "chunkscanner";
+
+    /**
+     * 返回所有 DB 文件的根目录（不区分服务器/世界上下文）。
+     * DB 浏览器应使用此方法获取根目录。
+     */
+    public static Path getDbRoot() {
+        return FabricLoader.getInstance().getGameDir().resolve(DB_DIR);
+    }
+
+    /**
+     * 根据当前游戏上下文返回数据库存储目录。
+     *
+     * 路径结构：
+     *   gameDir/chunkscanner/{contextType}/{contextName}/
+     *
+     * contextType 判定逻辑：
+     * - local：本地单机世界 → 使用世界名称
+     * - server：多人服务器 → 使用服务器地址
+     * - other：无法确定上下文（如主菜单） → "unknown"
+     *
+     * 路径中的特殊字符会被替换为下划线。
+     */
+    public static Path getDbDir() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        String context, type;
+        if (client != null && client.isIntegratedServerRunning() && client.getServer() != null) {
+            type = "local";
+            context = client.getServer().getSaveProperties().getLevelName();
+        } else if (client != null && client.getCurrentServerEntry() != null) {
+            type = "server";
+            context = client.getCurrentServerEntry().address;
+        } else {
+            type = "other";
+            context = "unknown";
+        }
+        return getDbRoot().resolve(type).resolve(sanitizePath(context));
+    }
+
+    private static String sanitizePath(String name) {
+        return name.replaceAll("[<>:\"/\\\\|?*]", "_");
+    }
+
     @Override
     public void onInitializeClient() {
         instance = this;
@@ -90,8 +139,13 @@ public class ChunkScannerMod implements ClientModInitializer {
         // 加载全局配置（优先 Cloth Config，fallback 到 JSON 文件）
         ConfigLoader.load(CONFIG);
         scanner = new ChunkScanner(CONFIG);
-        scanner.registerAnalyzer(new SignAnalyzer());
-        scanner.registerAnalyzer(new QShopAnalyzer());
+
+        // 注册数据库工厂（必须最先注册，ScanSession 依赖它创建数据库）
+        ChunkDb.FactoryRegistry.register(new BinaryChunkDb.Factory());
+
+        // 注册分析器
+        AnalyzerRegistry.register(new SignAnalyzer());
+        AnalyzerRegistry.register(new QShopAnalyzer());
 
         // 注册 DbViewProvider 类型（提供数据库浏览的不同视图）
         DbViewProvider.Registry.register(new BinaryChunkDb.DbViewProviderType());
@@ -363,10 +417,11 @@ public class ChunkScannerMod implements ClientModInitializer {
             return;
         }
 
-        BinaryChunkDb existingDb;
+        ChunkDb existingDb;
         try {
             Path fileDir = file.getParent();
-            existingDb = new BinaryChunkDb(meta.scanId(), meta.analyzerName(), false, fileDir);
+            ChunkDb.Factory dbFactory = ChunkDb.FactoryRegistry.getDefault();
+            existingDb = dbFactory.create(meta.scanId(), meta.analyzerName(), fileDir);
         } catch (Exception e) {
             sendMsg(client, Text.translatable("chunkscanner.msg.db_file_corrupt")
                     .formatted(Formatting.RED));

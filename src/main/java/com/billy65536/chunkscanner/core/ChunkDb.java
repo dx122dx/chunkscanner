@@ -1,7 +1,12 @@
 package com.billy65536.chunkscanner.core;
 
+import com.billy65536.chunkscanner.config.TaskConfig;
+
+import java.nio.file.Path;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 通用区块数据库接口。
@@ -99,6 +104,20 @@ public interface ChunkDb {
         throw new UnsupportedOperationException("Sub-database not supported");
     }
 
+    // ==================== 任务配置持久化 ====================
+
+    /**
+     * 获取存储在数据库中的任务配置。
+     * @return 任务配置，如果未存储则返回 null
+     */
+    default TaskConfig getTaskConfig() { return null; }
+
+    /**
+     * 将任务配置序列化并存储到数据库。
+     * @param config 任务配置，null 表示清除已有配置
+     */
+    default void setTaskConfig(TaskConfig config) {}
+
     // ==================== 辅助类型 ====================
 
     /** 键值对条目。 */
@@ -110,4 +129,59 @@ public interface ChunkDb {
 
     /** Chunk 扫描记录。 */
     record ChunkMeta(String dimensionId, int cx, int cz, long scanTime) {}
+
+    // ==================== 数据库工厂 ====================
+
+    /**
+     * 数据库工厂接口。
+     *
+     * <p>每个数据库实现通过 Factory 注册到 {@link FactoryRegistry}，
+     * 允许模组扩展替换底层存储引擎。</p>
+     */
+    interface Factory {
+        /** 工厂唯一标识符。 */
+        String getId();
+
+        /**
+         * 创建数据库实例（完整模式，构造时立即加载数据）。
+         *
+         * @param scanId        扫描任务 ID
+         * @param analyzerName  分析器名称
+         * @param dbDir         数据库文件存储目录
+         * @return 新的 ChunkDb 实例
+         */
+        ChunkDb create(String scanId, String analyzerName, Path dbDir);
+
+        /**
+         * 创建数据库实例（元数据模式，延迟加载）。
+         *
+         * @param scanId        扫描任务 ID
+         * @param analyzerName  分析器名称
+         * @param dbDir         数据库文件存储目录
+         * @return 新的 ChunkDb 实例（未加载数据，需调用 open()）
+         */
+        ChunkDb createMetadataOnly(String scanId, String analyzerName, Path dbDir);
+    }
+
+    /** 数据库工厂全局注册表。 */
+    final class FactoryRegistry {
+        private static final Map<String, Factory> factories = new LinkedHashMap<>();
+
+        private FactoryRegistry() {}
+
+        /** 注册一个数据库工厂。 */
+        public static void register(Factory factory) {
+            factories.put(factory.getId(), factory);
+        }
+
+        /** 通过 ID 获取工厂。 */
+        public static Factory get(String id) {
+            return factories.get(id);
+        }
+
+        /** 获取默认工厂（注册表中的第一个）。 */
+        public static Factory getDefault() {
+            return factories.isEmpty() ? null : factories.values().iterator().next();
+        }
+    }
 }

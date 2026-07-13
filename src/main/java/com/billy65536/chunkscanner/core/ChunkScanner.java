@@ -13,7 +13,6 @@ import java.util.*;
 import java.util.concurrent.*;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
-import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.TaskConfig;
 
@@ -39,31 +38,32 @@ import com.billy65536.chunkscanner.config.TaskConfig;
 public class ChunkScanner {
     final ChunkScannerConfig config;
 
-    /** 所有已注册的分析器（全局）。 */
-    private final Map<String, ChunkAnalyzer> analyzerRegistry;
-
     /** 所有活跃的扫描任务，key = scanId。 */
     private final ConcurrentHashMap<String, ScanSession> sessions;
 
     public ChunkScanner(ChunkScannerConfig config) {
         this.config = config;
-        this.analyzerRegistry = new LinkedHashMap<>();
         this.sessions = new ConcurrentHashMap<>();
     }
 
-    // ==================== 分析器注册 ====================
+    // ==================== 分析器注册（委托给全局 AnalyzerRegistry） ====================
 
+    /** @deprecated 使用 {@link AnalyzerRegistry#register(ChunkAnalyzer)} */
+    @Deprecated
     public void registerAnalyzer(ChunkAnalyzer analyzer) {
-        analyzerRegistry.put(analyzer.getId(), analyzer);
-        ChunkScannerMod.LOGGER.debug("Registered analyzer: {}", analyzer.getId());
+        AnalyzerRegistry.register(analyzer);
     }
 
+    /** @deprecated 使用 {@link AnalyzerRegistry#getAll()} */
+    @Deprecated
     public Collection<ChunkAnalyzer> getAnalyzers() {
-        return Collections.unmodifiableCollection(analyzerRegistry.values());
+        return AnalyzerRegistry.getAll();
     }
 
+    /** @deprecated 使用 {@link AnalyzerRegistry#get(String)} */
+    @Deprecated
     public ChunkAnalyzer getAnalyzer(String id) {
-        return analyzerRegistry.get(id);
+        return AnalyzerRegistry.get(id);
     }
 
     /** 获取全局配置引用（只读）。 */
@@ -139,7 +139,7 @@ public class ChunkScanner {
             return;
         }
 
-        ChunkAnalyzer analyzer = analyzerRegistry.get(analyzerName);
+        ChunkAnalyzer analyzer = AnalyzerRegistry.get(analyzerName);
         if (analyzer == null) {
             CoreUtil.sendMsg(client, Text.translatable(KEY_UNKNOWN_ANALYZER, analyzerName).formatted(Formatting.RED));
             return;
@@ -252,21 +252,21 @@ public class ChunkScanner {
      * 从已有数据库文件恢复扫描任务（使用全局默认配置）。
      * 适用于 /cs db reboot 命令。
      */
-    public void startWithDb(MinecraftClient client, String scanId, String analyzerId, BinaryChunkDb existingDb) {
+    public void startWithDb(MinecraftClient client, String scanId, String analyzerId, ChunkDb existingDb) {
         startWithDb(client, scanId, analyzerId, null, existingDb);
     }
 
     /**
      * 从已有数据库文件恢复扫描任务。
-     * 与 start() 的区别：不创建新的 BinaryChunkDb，而是复用已有的数据库实例。
+     * 与 start() 的区别：不创建新的数据库实例，而是复用已有的数据库实例。
      * 这会保留之前扫描的所有数据，继续在已有基础上扫描。
      */
-    public void startWithDb(MinecraftClient client, String scanId, String analyzerId, TaskConfig taskConfig, BinaryChunkDb existingDb) {
+    public void startWithDb(MinecraftClient client, String scanId, String analyzerId, TaskConfig taskConfig, ChunkDb existingDb) {
         if (client.player == null || client.world == null) {
             CoreUtil.sendMsg(client, Text.translatable(KEY_NOT_IN_WORLD).formatted(Formatting.RED));
             return;
         }
-        ChunkAnalyzer analyzer = analyzerRegistry.get(analyzerId);
+        ChunkAnalyzer analyzer = AnalyzerRegistry.get(analyzerId);
         if (analyzer == null) {
             CoreUtil.sendMsg(client, Text.translatable(KEY_UNKNOWN_ANALYZER, analyzerId).formatted(Formatting.RED));
             return;
@@ -384,7 +384,7 @@ public class ChunkScanner {
         CoreUtil.sendMsg(client, Text.translatable(KEY_LIST_TITLE)
                 .formatted(Formatting.GOLD, Formatting.BOLD));
 
-        for (ChunkAnalyzer a : analyzerRegistry.values()) {
+        for (ChunkAnalyzer a : AnalyzerRegistry.getAll()) {
             CoreUtil.sendMsg(client, Text.literal("  ")
                     .append(Text.literal(a.getId()).formatted(Formatting.YELLOW, Formatting.BOLD))
                     .append(Text.literal(" — ").formatted(Formatting.GRAY))
@@ -484,7 +484,7 @@ public class ChunkScanner {
         // 用新配置重启（保留原有 TaskConfig）
         int restarted = 0;
         for (SessionInfo si : toRestart) {
-            ChunkAnalyzer analyzer = analyzerRegistry.get(si.analyzerId);
+            ChunkAnalyzer analyzer = AnalyzerRegistry.get(si.analyzerId);
             if (analyzer == null) continue;
             ScanSession session = new ScanSession(this, si.scanId, analyzer, si.taskConfig);
             sessions.put(si.scanId, session);

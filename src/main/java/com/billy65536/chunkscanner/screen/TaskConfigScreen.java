@@ -4,6 +4,7 @@ import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.TaskConfig;
 import com.billy65536.chunkscanner.core.ChunkAnalyzer;
+import com.billy65536.chunkscanner.core.ChunkAnalyzerRegistry;
 import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.ScanSession;
 import com.billy65536.chunkscanner.gui.PlaceholderTextField;
@@ -126,7 +127,7 @@ public class TaskConfigScreen extends Screen {
         this.globalConfig = scanner.getConfig();
 
         // 分析器列表及初始选中
-        this.analyzerList = new ArrayList<>(scanner.getAnalyzers());
+        this.analyzerList = new ArrayList<>(AnalyzerRegistry.getAllAnalyzers());
         this.selectedAnalyzerIdx = 0;
         if (initialAnalyzerId != null) {
             for (int i = 0; i < analyzerList.size(); i++) {

@@ -268,7 +268,6 @@ public final class ChatItemExtractor {
         if (items.size() != SHULKER_SLOTS) return null;
 
         // 检查所有槽位是否非空且物品相同
-        ItemStack firstStack = null;
         String firstId = null;
         String firstItemNbt = null;
         boolean firstUnbreakable = false;

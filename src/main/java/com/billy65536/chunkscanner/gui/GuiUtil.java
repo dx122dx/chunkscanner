@@ -41,7 +41,7 @@ public final class GuiUtil {
         if (analyzerId == null || analyzerId.isEmpty()) return "";
         ChunkScanner scanner = ChunkScannerMod.getScanner();
         if (scanner != null) {
-            ChunkAnalyzer a = scanner.getAnalyzer(analyzerId);
+            ChunkAnalyzer a = AnalyzerRegistry.get(analyzerId);
             if (a != null) return a.getName().getString();
         }
         return analyzerId;

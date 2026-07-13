@@ -3,6 +3,7 @@ package com.billy65536.chunkscanner.screen;
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.config.TaskConfig;
 import com.billy65536.chunkscanner.core.ChunkAnalyzer;
+import com.billy65536.chunkscanner.core.ChunkAnalyzerRegistry;
 import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.ScanSession;
 import com.billy65536.chunkscanner.gui.GuiUtil;
@@ -77,7 +78,7 @@ public class ChunkScannerScreen extends Screen {
         int topY = 28;
 
         // 分析器列表
-        analyzerList = new ArrayList<>(scanner.getAnalyzers());
+        analyzerList = new ArrayList<>(AnalyzerRegistry.getAll());
 
         // 左上角：数据库按钮（与 DatabaseScreen 的 "任务视图" 按钮对齐：y=8）
         databaseButton = ButtonWidget.builder(

@@ -12,7 +12,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
-import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.TaskConfig;
 import com.billy65536.chunkscanner.core.ChunkScanner.ChunkStatusBreakdown;
@@ -42,7 +41,7 @@ public class ScanSession {
     private final ChunkScanner chunkScanner;
     public final String scanId;
     public final ChunkAnalyzer analyzer;
-    public final BinaryChunkDb db;
+    public final ChunkDb db;
     /** 此任务独立的配置副本（合并了全局默认值和任务级配置覆盖）。 */
     ChunkScannerConfig sessionConfig;
     /** 原始任务配置引用（用于显示、数据库持久化和任务恢复）。 */
@@ -88,19 +87,30 @@ public class ScanSession {
     private volatile ChunkStatusBreakdown cachedBreakdown;
     private volatile long lastBreakdownTime = 0;
 
-    /** 新建会话（自动创建 BinaryChunkDb）。 */
+    /** 新建会话（通过 FactoryRegistry 创建数据库）。 */
     ScanSession(ChunkScanner chunkScanner, String scanId, ChunkAnalyzer analyzer) {
-        this(chunkScanner, scanId, analyzer, null, new BinaryChunkDb(scanId, analyzer.getId()));
+        this(chunkScanner, scanId, analyzer, null, createDb(scanId, analyzer.getId()));
     }
 
     /** 从已有数据库恢复会话。 */
-    ScanSession(ChunkScanner chunkScanner, String scanId, ChunkAnalyzer analyzer, BinaryChunkDb existingDb) {
+    ScanSession(ChunkScanner chunkScanner, String scanId, ChunkAnalyzer analyzer, ChunkDb existingDb) {
         this(chunkScanner, scanId, analyzer, null, existingDb);
     }
 
     /** 新建会话并应用任务级配置。 */
     ScanSession(ChunkScanner chunkScanner, String scanId, ChunkAnalyzer analyzer, TaskConfig taskConfig) {
-        this(chunkScanner, scanId, analyzer, taskConfig, new BinaryChunkDb(scanId, analyzer.getId()));
+        this(chunkScanner, scanId, analyzer, taskConfig, createDb(scanId, analyzer.getId()));
+    }
+
+    /**
+     * 通过 FactoryRegistry 创建数据库实例。
+     */
+    private static ChunkDb createDb(String scanId, String analyzerId) {
+        ChunkDb.Factory factory = ChunkDb.FactoryRegistry.getDefault();
+        if (factory == null) {
+            throw new IllegalStateException("No ChunkDb factory registered");
+        }
+        return factory.create(scanId, analyzerId, ChunkScannerMod.getDbDir());
     }
 
     /**
@@ -110,7 +120,7 @@ public class ScanSession {
      * @param taskConfig 任务级配置覆盖（可为 null，使用全局默认）
      * @param existingDb 已有数据库实例（用于恢复扫描）
      */
-    ScanSession(ChunkScanner chunkScanner, String scanId, ChunkAnalyzer analyzer, TaskConfig taskConfig, BinaryChunkDb existingDb) {
+    ScanSession(ChunkScanner chunkScanner, String scanId, ChunkAnalyzer analyzer, TaskConfig taskConfig, ChunkDb existingDb) {
         this.chunkScanner = chunkScanner;
         this.scanId = scanId;
         this.analyzer = analyzer;

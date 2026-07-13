@@ -89,7 +89,7 @@ public final class DbFileUtil {
      */
     public static List<FileMeta> listAllDbFiles() {
         List<FileMeta> result = new ArrayList<>();
-        Path root = BinaryChunkDb.getDbRoot();
+        Path root = ChunkScannerMod.getDbRoot();
         if (!Files.exists(root)) return result;
 
         try (Stream<Path> files = Files.walk(root, 4)) {
@@ -130,7 +130,7 @@ public final class DbFileUtil {
             }
         }
         // fallback：使用当前上下文构造路径
-        return BinaryChunkDb.getDbDir().resolve(BinaryChunkDb.safeFileName(scanId));
+        return ChunkScannerMod.getDbDir().resolve(BinaryChunkDb.safeFileName(scanId));
     }
 
     // ==================== 文件操作 ====================
