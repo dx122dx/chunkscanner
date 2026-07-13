@@ -13,8 +13,14 @@ base {
 // Fabric Loom 镜像配置（为无法直连 Mojang 服务器的环境使用 BMCLAPI 镜像）
 ext {
     loom_version_manifests = 'https://bmclapi2.bangbang93.com/mc/game/version_manifest_v2.json'
-    loom_libraries_base = 'https://bmclapi2.bangbang93.com/maven/'
+    loom_libraries_base = 'https://bmclapi2.bangbang93.com/libraries/'
     loom_resources_base = 'https://bmclapi2.bangbang93.com/assets/'
+}
+
+loom {
+    // 使用 BMCLAPI 直接下载版本 JSON，绕过 version manifest
+    // 注意：SHA1 前缀可能随 BMCLAPI 更新而变化，若构建失败请检查此 URL
+    customMinecraftManifest = 'https://bmclapi2.bangbang93.com/v1/packages/a540b5c5ded34de717f3acc10c9d3704b66670d8/1.20.1.json'
 }
 
 repositories {
