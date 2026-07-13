@@ -286,7 +286,7 @@ public final class QShopChatListener {
      * <p>直接使用点击坐标构造数据库键，通过 {@link ChunkDb#get(byte[])} 精确查找。
      * 即使多个商店出售相同物品，也能准确匹配到被点击的那个。</p>
      *
-     * <p>增强数据写入子数据库（id=1），与主数据库的基础数据分离。
+     * <p>增强数据仅写入子数据库（id=1），不修改主数据库，避免触发主数据库全量刷写。
      * 重访区块时主数据库记录会被清除重建，但子数据库的增强数据不受影响。</p>
      *
      * @param scanner 扫描器实例
@@ -327,32 +327,19 @@ public final class QShopChatListener {
                 return false;
             }
 
-            // 将物品注册名和显示名写入主数据库字符串池（因为会更新主记录中的对应字段）
-            int registryIdPoolId = db.intern(item.registryId());
-            int displayNamePoolId = item.displayName() != null
-                    ? db.intern(item.displayName()) : 0;
-            // 详情 NBT 写入子数据库字符串池（增强数据存储在子数据库中）
+            // 物品 ID 和 NBT 写入子数据库字符串池
+            int itemIdPoolId = item.registryId() != null && !item.registryId().isEmpty()
+                    ? subDb.intern(item.registryId()) : 0;
             int detailNbtPoolId = item.fullNbtString() != null
                     ? subDb.intern(item.fullNbtString()) : 0;
 
-            // 构建增强数据并写入子数据库（先写子数据库，再更新主数据库标志位，
-            // 避免崩溃导致主数据库 FLAG_ENHANCED_DATA 已置位但子数据库无增强数据）
-            byte[] enhancedValue = buildEnhancedValue(value, item, registryIdPoolId,
-                    detailNbtPoolId, displayNamePoolId);
-            if (enhancedValue != null) {
-                // 先写入子数据库，确保增强数据先落盘
-                subDb.put(key, enhancedValue);
-                // 再更新主数据库中的 itemId、flags 等字段
-                byte[] updatedBaseValue = buildUpdatedBaseValue(value, item, registryIdPoolId,
-                        displayNamePoolId);
-                if (updatedBaseValue != null) {
-                    db.put(key, updatedBaseValue);
-                }
-                LOGGER.info("Enhanced QShop record: {} at ({}, {}, {}) enchants={} flags={}",
-                        item.registryId(), click.x(), click.y(), click.z(),
-                        item.enchants().size(), item.flags());
-                return true;
-            }
+            // 构建精简增强数据（20 字节）写入子数据库
+            byte[] enhancedValue = buildEnhancedValue(item, itemIdPoolId, detailNbtPoolId);
+            subDb.put(key, enhancedValue);
+            LOGGER.info("Enhanced QShop record: {} at ({}, {}, {}) enchants={} flags={}",
+                    item.registryId(), click.x(), click.y(), click.z(),
+                    item.enchants().size(), item.flags());
+            return true;
         }
 
         return false;
@@ -373,29 +360,22 @@ public final class QShopChatListener {
 
     // ==================== 增强值构建 ====================
 
+    /** 子数据库增强记录大小（20 字节）。 */
+    static final int ENHANCED_RECORD_SIZE = 20;
+
     /**
-     * 构建新的 60 字节值的前 48 字节（基础部分），返回已定位到偏移 48 的 ByteBuffer。
+     * 构建精简增强数据（20 字节）。
      *
-     * <p>原始值布局(48B): keyHi(8)|keyLo(8)|owner(4)|modePacked(4)|itemNameId(4)|price(4)|timestamp(8)|itemId(4)|flags(4)
-     * 新值布局(60B):   keyHi(8)|keyLo(8)|owner(4)|modePacked(4)|displayName(4)|price(4)|timestamp(8)|registryId(4)|flags(4)|detailNbt(4)|nbtHash(4)|enchCount(2)|reserved(2)</p>
+     * <p>布局：itemIdPoolId(4) | detailNbtPoolId(4) | flags(4) | updateTime(8)</p>
      *
-     * @param originalValue     原始数据库值（48 字节）
-     * @param item              从聊天消息提取的物品数据
-     * @param registryIdPoolId  物品注册名在字符串池中的 ID
-     * @param displayNamePoolId 物品显示名在字符串池中的 ID
-     * @return 包含前 48 字节的 ByteBuffer（position=48），或 null
+     * @param item            从聊天消息提取的物品数据
+     * @param itemIdPoolId    物品注册名在子数据库字符串池中的 ID
+     * @param detailNbtPoolId 完整 NBT 字符串在子数据库字符串池中的 ID
+     * @return 增强后的值（20 字节）
      */
-    private static ByteBuffer buildBaseRecord(byte[] originalValue, ChatItemExtractor.ExtractedItem item,
-                                              int registryIdPoolId, int displayNamePoolId) {
-        ByteBuffer vb = ByteBuffer.wrap(originalValue).order(ByteOrder.LITTLE_ENDIAN);
-        if (vb.remaining() < 48) return null;
-
-        // 读取当前 flags（偏移 44）
-        int flagsPos = 44;
-        int flags = vb.getInt(flagsPos);
-
-        // 设置标志位
-        flags |= QShopAnalyzer.FLAG_ENHANCED_DATA;
+    private static byte[] buildEnhancedValue(ChatItemExtractor.ExtractedItem item,
+                                             int itemIdPoolId, int detailNbtPoolId) {
+        int flags = QShopAnalyzer.FLAG_ENHANCED_DATA;
         if (item.isShulkerExpanded()) {
             flags |= QShopAnalyzer.FLAG_SHULKER_EXPANDED;
         }
@@ -403,110 +383,12 @@ public final class QShopChatListener {
             flags |= QShopAnalyzer.FLAG_BOOK;
         }
 
-        // 构建新的 60 字节值的前 48 字节
-        ByteBuffer newBuf = ByteBuffer.allocate(QShopAnalyzer.RECORD_SIZE).order(ByteOrder.LITTLE_ENDIAN);
-
-        // 复制 bytes 0-23: keyHi(8) + keyLo(8) + owner(4) + modePacked(4)
-        vb.position(0);
-        byte[] head = new byte[24];
-        vb.get(head);
-        newBuf.put(head);
-
-        // bytes 24-27: 处理 itemNameId
-        // 成书保留原始商品名（标题即为告示牌第三行所示），其余情况用聊天提取的显示名覆盖
-        int origItemNameId = vb.getInt();
-        if (item.isBook()) {
-            newBuf.putInt(origItemNameId);
-        } else {
-            newBuf.putInt(displayNamePoolId);
-        }
-
-        // 复制 bytes 28-39: price(4) + timestamp(8)
-        byte[] middle = new byte[12];
-        vb.get(middle);
-        newBuf.put(middle);
-
-        // 跳过旧 itemId (bytes 40-43)，写入新的 registryIdPoolId
-        vb.position(44);
-        newBuf.putInt(registryIdPoolId);
-
-        // 写入更新后的 flags
-        newBuf.putInt(flags);
-
-        return newBuf;
-    }
-
-    /**
-     * 在现有 value 基础上追加增强数据，同时更新物品注册名 ID 和显示名。
-     *
-     * <p>增强后的值（60 字节）：基础 48 + detailNbtPoolId(4) + nbtHash(4) + enchantsCount(2) + reserved(2)。</p>
-     *
-     * @param originalValue     原始数据库值
-     * @param item              从聊天消息提取的物品数据
-     * @param registryIdPoolId  物品注册名在字符串池中的 ID
-     * @param detailNbtPoolId   完整 NBT 字符串在字符串池中的 ID
-     * @param displayNamePoolId 物品显示名在字符串池中的 ID（潜影盒展开后为内容物名，成书为标题）
-     * @return 增强后的值，如果已增强过则返回 null
-     */
-    private static byte[] buildEnhancedValue(byte[] originalValue, ChatItemExtractor.ExtractedItem item,
-                                             int registryIdPoolId, int detailNbtPoolId,
-                                             int displayNamePoolId) {
-        try {
-            // 先检查是否已增强过
-            ByteBuffer vb = ByteBuffer.wrap(originalValue).order(ByteOrder.LITTLE_ENDIAN);
-            if (vb.remaining() < 48) return null;
-            int flags = vb.getInt(44);
-            if ((flags & QShopAnalyzer.FLAG_ENHANCED_DATA) != 0) return null;
-
-            // 构建前 48 字节基础记录
-            ByteBuffer newBuf = buildBaseRecord(originalValue, item, registryIdPoolId, displayNamePoolId);
-            if (newBuf == null) return null;
-
-            // 写入增强数据：detailNbtPoolId(4) + nbtHash(4) + enchantsCount(2) + reserved(2)
-            newBuf.putInt(detailNbtPoolId);
-            newBuf.putInt(item.nbtHash());
-            int enchCount = item.hasEnchants() ? item.enchants().size() : 0;
-            newBuf.putShort((short) Math.min(enchCount, 65535));
-            newBuf.putShort((short) 0); // reserved
-
-            return newBuf.array();
-        } catch (Exception e) {
-            LOGGER.warn("Failed to build enhanced value: {}", e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * 更新主数据库中的基础记录，反映增强状态（itemId、flags、displayName）。
-     *
-     * <p>与 {@link #buildEnhancedValue} 不同，此方法生成的值中增强数据区域
-     * （detailNbtPoolId、nbtHash、enchantsCount）保持为 0，
-     * 实际的增强详情存储在子数据库中。</p>
-     *
-     * @param originalValue     原始数据库值
-     * @param item              从聊天消息提取的物品数据
-     * @param registryIdPoolId  物品注册名在字符串池中的 ID
-     * @param displayNamePoolId 物品显示名在字符串池中的 ID
-     * @return 更新后的基础值
-     */
-    private static byte[] buildUpdatedBaseValue(byte[] originalValue, ChatItemExtractor.ExtractedItem item,
-                                                int registryIdPoolId, int displayNamePoolId) {
-        try {
-            // 构建前 48 字节基础记录
-            ByteBuffer newBuf = buildBaseRecord(originalValue, item, registryIdPoolId, displayNamePoolId);
-            if (newBuf == null) return null;
-
-            // 增强数据区域保持为 0（实际数据在子数据库中）
-            newBuf.putInt(0);  // detailNbtPoolId
-            newBuf.putInt(0);  // nbtHash
-            newBuf.putShort((short) 0); // enchantsCount
-            newBuf.putShort((short) 0); // reserved
-
-            return newBuf.array();
-        } catch (Exception e) {
-            LOGGER.warn("Failed to build updated base value: {}", e.getMessage());
-            return null;
-        }
+        ByteBuffer buf = ByteBuffer.allocate(ENHANCED_RECORD_SIZE).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putInt(itemIdPoolId);       // 物品注册名（子数据库字符串池）
+        buf.putInt(detailNbtPoolId);    // 完整 NBT（子数据库字符串池）
+        buf.putInt(flags);              // 标志位（ENHANCED | SHULKER | BOOK）
+        buf.putLong(System.currentTimeMillis()); // 更新时间
+        return buf.array();
     }
 
     // ==================== 统计信息 ====================

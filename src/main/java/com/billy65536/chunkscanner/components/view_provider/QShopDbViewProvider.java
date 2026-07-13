@@ -42,7 +42,9 @@ import com.billy65536.chunkscanner.core.LocatedPosition;
 public class QShopDbViewProvider implements DbViewProvider {
 
     private static final int KEY_SIZE = 28;
-    private static final int RECORD_SIZE = 60;
+    private static final int RECORD_SIZE = 48;
+    /** 子数据库增强记录大小（20 字节）：itemId(4) | detailNbtPoolId(4) | flags(4) | updateTime(8) */
+    private static final int ENHANCED_RECORD_SIZE = 20;
 
     private final BinaryChunkDb delegate;
 
@@ -588,29 +590,28 @@ public class QShopDbViewProvider implements DbViewProvider {
                 int flags = vb.getInt();
                 String itemId = itemIdPoolId != 0 ? delegate.lookup(itemIdPoolId) : "";
 
-                // 读取增强字段（从子数据库 id=1 获取）
-                int enchantsCount = 0;
-                int nbtHash = 0;
+                // 读取增强字段（始终检查子数据库 id=1）
                 String detailNbtString = null;
-                if ((flags & QShopAnalyzer.FLAG_ENHANCED_DATA) != 0) {
-                    ChunkDb subDb = delegate.getSubDb(1);
-                    if (subDb == null) {
-                        ChunkScannerMod.LOGGER.warn("QShopDbViewProvider: getSubDb(1) returned null, cannot read enhanced data");
-                        continue;
-                    }
+                ChunkDb subDb = delegate.getSubDb(1);
+                if (subDb != null) {
                     byte[] enhancedVal = subDb.get(entry.key());
-                    if (enhancedVal != null && enhancedVal.length >= RECORD_SIZE) {
+                    if (enhancedVal != null && enhancedVal.length >= ENHANCED_RECORD_SIZE) {
                         ByteBuffer evb = ByteBuffer.wrap(enhancedVal).order(ByteOrder.LITTLE_ENDIAN);
-                        evb.position(48);
-                        int detailNbtPoolId = evb.getInt();
-                        nbtHash = evb.getInt();
-                        enchantsCount = evb.getShort() & 0xFFFF;
+                        int enhancedItemIdPoolId = evb.getInt();  // 物品注册名（子数据库字符串池）
+                        int detailNbtPoolId = evb.getInt();       // 完整 NBT（子数据库字符串池）
+                        int enhancedFlags = evb.getInt();         // 标志位
+                        /* long enhancedTime = */ evb.getLong();  // 更新时间（暂未使用）
+
+                        // 用增强数据覆盖主数据库字段
+                        itemIdPoolId = enhancedItemIdPoolId;
+                        itemId = itemIdPoolId != 0 ? subDb.lookup(itemIdPoolId) : "";
+                        flags |= enhancedFlags;  // 合并标志位（保留主数据库 FLAG_ID_RECOVERED 等）
                         detailNbtString = detailNbtPoolId != 0 ? subDb.lookup(detailNbtPoolId) : null;
                     }
                 }
 
                 records.add(new QShopRecord(dimId, x, y, z, owner, mode, quantity, itemName, price, ts,
-                        itemId, flags, enchantsCount, nbtHash, detailNbtString));
+                        itemId, flags, detailNbtString));
             } catch (Exception e) {
                 ChunkScannerMod.LOGGER.warn("QShopDbViewProvider: failed to parse entry: {}", e.getMessage());
             }
@@ -630,20 +631,17 @@ public class QShopDbViewProvider implements DbViewProvider {
      * @param owner    商店所有者名称
      * @param mode     0=出售, 1=收购
      * @param quantity 剩余数量（出售 mode quantity=0 表示缺货，收购 mode quantity=0 表示空间不足）
-     * @param itemName 商品名称（告示牌原文，增强后为物品显示名/成书标题）
+     * @param itemName 商品名称（告示牌原文）
      * @param price    单价（最小货币单位整数，真实价格 = price / 100.0）
      * @param timestamp 扫描时间戳
      * @param itemId   商品注册名（如 "minecraft:diamond"），恢复失败为空串
      * @param flags    特殊值标志位（参见 {@link QShopAnalyzer#FLAG_ENHANCED_DATA} 等）
-     * @param enchantsCount 附魔数量（0=无附魔或未增强）
-     * @param nbtHash  物品 NBT 的 CRC32 哈希（0=无 NBT 或未增强）
-     * @param detailNbtString 物品完整 NBT 的 JSON 字符串（用于 Detail 列悬停展示）
+     * @param detailNbtString 物品完整 NBT 的 JSON 字符串（用于 Detail 列悬停展示，null 表示未增强）
      */
     public record QShopRecord(String dimId, int x, int y, int z,
                                String owner, byte mode, int quantity,
                                String itemName, int price, long timestamp,
                                String itemId, int flags,
-                               int enchantsCount, int nbtHash,
                                String detailNbtString) {}
 
     // ==================== DbViewProvider.Type ====================

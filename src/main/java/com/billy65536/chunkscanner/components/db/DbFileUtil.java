@@ -141,12 +141,37 @@ public final class DbFileUtil {
     // ==================== 文件操作 ====================
 
     /**
-     * 通过 scanId 删除数据库文件。
-     * @return true 表示删除成功，false 表示文件不存在
+     * 通过 scanId 删除数据库文件及其所有子数据库文件。
+     * @return true 表示至少删除了一个文件，false 表示无文件可删
      */
     public static boolean deleteDbFile(String scanId) throws IOException {
         Path file = resolveFilePath(scanId);
-        return Files.deleteIfExists(file);
+        boolean deleted = Files.deleteIfExists(file);
+
+        // 同时删除所有关联的子数据库文件
+        // 主文件命名：chunkscanner_{hash}.{analyzerId}.{dbExt}
+        // 子文件命名：chunkscanner_{hash}.{analyzerId}.sub_{subId}.{dbExt}
+        String fileName = file.getFileName().toString();
+        int extIdx = fileName.lastIndexOf('.');
+        if (extIdx > 0) {
+            String stem = fileName.substring(0, extIdx);
+            String ext = fileName.substring(extIdx + 1);
+            String glob = stem + ".sub_*." + ext;
+            Path parent = file.getParent();
+            if (parent != null) {
+                try (java.nio.file.DirectoryStream<Path> stream =
+                             Files.newDirectoryStream(parent, glob)) {
+                    for (Path subFile : stream) {
+                        if (Files.deleteIfExists(subFile)) {
+                            deleted = true;
+                            ChunkScannerMod.LOGGER.info("Deleted sub-db file: {}", subFile.getFileName());
+                        }
+                    }
+                }
+            }
+        }
+
+        return deleted;
     }
 
     // ==================== 聊天消息 ====================
