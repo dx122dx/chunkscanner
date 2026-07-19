@@ -96,7 +96,11 @@ public final class QShopDbAdapter {
     // ==================== 公开方法 ====================
 
     /**
-     * 删除一个 chunk 内的所有 QShop 记录。
+     * 删除一个 chunk 内的所有 QShop 主记录。
+     *
+     * <p>仅清除主数据库（id=0）中的记录，<b>不删除子数据库（id=1）中的增强数据</b>。
+     * 增强数据在重新扫描后仍可通过同一 Key 被 {@link #parseRecordValue} 合并，
+     * 确保聊天捕获的物品 NBT、注册 ID 等信息不会因区块重访而丢失。</p>
      *
      * @param dimId 维度标识
      * @param cx    chunk X 坐标
@@ -106,7 +110,6 @@ public final class QShopDbAdapter {
     public boolean deleteChunk(String dimId, int cx, int cz) {
         byte[] prefix = makeChunkPrefix(dimId, cx, cz);
         int count = db.removeAllWithPrefix(prefix);
-        subDb.removeAllWithPrefix(prefix);
         return count > 0;
     }
 
