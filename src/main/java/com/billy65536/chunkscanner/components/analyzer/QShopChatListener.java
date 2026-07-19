@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -57,8 +58,11 @@ public final class QShopChatListener {
     /** 点击有效期限（毫秒），超过此时间的点击将被丢弃。 */
     private static final long MAX_CLICK_AGE_MS = 15_000;
 
-    /** 完整键长度：dimPoolId(4) + cx(4) + cz(4) + keyHi(8) + keyLo(8) = 28 */
-    private static final int KEY_SIZE = 28;
+    /** 数据库键前缀。 */
+    private static final byte[] KEY_PREFIX = "qshop:".getBytes(StandardCharsets.UTF_8);
+
+    /** 完整键长度："qshop:"(6) + dimPoolId(4) + cx(4) + cz(4) + keyHi(8) + keyLo(8) = 34 */
+    private static final int KEY_SIZE = 34;
 
     /** 待处理的消息队列。 */
     private static final ConcurrentLinkedQueue<PendingMessage> pendingMessages = new ConcurrentLinkedQueue<>();
@@ -346,10 +350,11 @@ public final class QShopChatListener {
     }
 
     /**
-     * 构造完整数据库键（28 字节）。
+     * 构造完整数据库键（34 字节）。
      */
     private static byte[] buildKey(int dimPoolId, int cx, int cz, long keyHi, long keyLo) {
         ByteBuffer bb = ByteBuffer.allocate(KEY_SIZE).order(ByteOrder.LITTLE_ENDIAN);
+        bb.put(KEY_PREFIX);
         bb.putInt(dimPoolId);
         bb.putInt(cx);
         bb.putInt(cz);

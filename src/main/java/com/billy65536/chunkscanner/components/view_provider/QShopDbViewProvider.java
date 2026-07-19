@@ -11,6 +11,7 @@ import net.minecraft.util.Identifier;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -25,6 +26,7 @@ import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.components.analyzer.QShopAnalyzer;
 import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 import com.billy65536.chunkscanner.core.ChunkDb;
+import com.billy65536.chunkscanner.core.CoreUtil;
 import com.billy65536.chunkscanner.core.DbViewProvider;
 import com.billy65536.chunkscanner.core.LocatedPosition;
 /**
@@ -32,8 +34,8 @@ import com.billy65536.chunkscanner.core.LocatedPosition;
  *
  * 解析 qshop 分析器生成的二进制 KV 数据，将原始字节转换为可读的商店信息。
  *
- * 键格式（28 字节）：
- *   dimPoolId:u32 (4B) | cx:i32 (4B) | cz:i32 (4B) | keyHi:u64 (8B) | keyLo:u64 (8B)
+ * 键格式（34 字节）：
+ *   "qshop:" (6B) | dimPoolId:u32 (4B) | cx:i32 (4B) | cz:i32 (4B) | keyHi:u64 (8B) | keyLo:u64 (8B)
  *
  * 值格式（48 字节）：
  *   keyHi:u64 (8B) | keyLo:u64 (8B) | owner:u32 (4B) | mode+quantity packed:u32 (4B) |
@@ -44,8 +46,9 @@ import com.billy65536.chunkscanner.core.LocatedPosition;
  */
 public class QShopDbViewProvider implements DbViewProvider {
 
-    private static final int KEY_SIZE = 28;
-    private static final int RECORD_SIZE = 48;
+    private static final byte[] KEY_PREFIX = "qshop:".getBytes(StandardCharsets.UTF_8);
+    private static final int KEY_SIZE = 34;
+    private static final int RECORD_SIZE = 60;
     /** 子数据库增强记录大小（20 字节）：itemId(4) | detailNbtPoolId(4) | flags(4) | updateTime(8) */
     private static final int ENHANCED_RECORD_SIZE = 20;
 
@@ -609,7 +612,9 @@ public class QShopDbViewProvider implements DbViewProvider {
             try {
                 byte[] key = entry.key();
                 byte[] val = entry.value();
-                if (key.length != KEY_SIZE || val.length < RECORD_SIZE) continue;
+                if (key.length < KEY_PREFIX.length) continue;
+                if (!CoreUtil.startsWith(key, KEY_PREFIX)) continue;
+                if (val.length < RECORD_SIZE) continue;
 
                 ByteBuffer vb = ByteBuffer.wrap(val).order(ByteOrder.LITTLE_ENDIAN);
                 long keyHi = vb.getLong();
