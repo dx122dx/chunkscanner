@@ -1,6 +1,9 @@
 package com.billy65536.chunkscanner.components.view_provider;
 
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.StringNbtReader;
 import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
@@ -52,6 +55,8 @@ public class QShopDbViewProvider implements DbViewProvider {
     private List<QShopRecord> cachedRecords;
     /** 缓存筛选并排序后的记录。仅渲染线程访问，无需同步。 */
     private List<QShopRecord> cachedFilteredSorted;
+    /** 缓存的单元格物品图标映射。仅渲染线程访问，无需同步。 */
+    private Map<Integer, Map<String, ItemStack>> cachedCellItems;
     private boolean cacheValid = false;
     private boolean filteredCacheValid = false;
 
@@ -200,6 +205,7 @@ public class QShopDbViewProvider implements DbViewProvider {
     public void invalidateCache() {
         cacheValid = false;
         filteredCacheValid = false;
+        cachedCellItems = null;
         compiledDimPattern = compileIfNeeded(dimFilter, dimFilterMode);
         compiledOwnerPattern = compileIfNeeded(ownerFilter, ownerFilterMode);
         compiledItemPattern = compileIfNeeded(itemFilter, itemFilterMode);
@@ -224,51 +230,60 @@ public class QShopDbViewProvider implements DbViewProvider {
     @Override
     public List<String[]> getSpecializedRows() {
         List<QShopRecord> matched = getFilteredSortedRecords();
-
         List<String[]> rows = new ArrayList<>(matched.size());
         for (QShopRecord r : matched) {
-            String modeStr;
-            String quantityStr;
-            if (r.mode() == QShopAnalyzer.MODE_SELL) {
-                modeStr = Text.translatable("chunkscanner.filter.mode.sell").getString();
-                if (r.quantity() == QShopAnalyzer.INFINITE_QUANTITY) {
-                    quantityStr = Text.translatable("chunkscanner.qshop.infinite").getString();
-                } else if (r.quantity() == 0) {
-                    quantityStr = Text.translatable("chunkscanner.qshop.out_of_stock").getString();
-                } else {
-                    quantityStr = String.valueOf(r.quantity());
-                }
-            } else {
-                modeStr = Text.translatable("chunkscanner.filter.mode.buy").getString();
-                if (r.quantity() == QShopAnalyzer.INFINITE_QUANTITY) {
-                    quantityStr = Text.translatable("chunkscanner.qshop.infinite").getString();
-                } else if (r.quantity() == 0) {
-                    quantityStr = Text.translatable("chunkscanner.qshop.out_of_space").getString();
-                } else {
-                    quantityStr = String.valueOf(r.quantity());
-                }
-            }
-
-            String posStr = new LocatedPosition(r.dimId(), r.x(), r.y(), r.z()).toString();
-
-            String detailStr = "";
-            if ((r.flags() & QShopAnalyzer.FLAG_ENHANCED_DATA) != 0) {
-                detailStr = "ⓘ";
-            }
-
-            rows.add(new String[] {
-                    posStr,
-                    r.owner(),
-                    modeStr,
-                    quantityStr,
-                    r.itemName(),
-                    formatPrice(r.price()),
-                    r.itemId(),
-                    detailStr,
-                    formatFlagsShort(r.flags())
-            });
+            rows.add(buildRowData(r));
         }
         return rows;
+    }
+
+    /** 将一条 QShopRecord 转换为展示用的字符串数组。 */
+    private String[] buildRowData(QShopRecord r) {
+        String modeStr;
+        String quantityStr;
+        if (r.mode() == QShopAnalyzer.MODE_SELL) {
+            modeStr = Text.translatable("chunkscanner.filter.mode.sell").getString();
+            if (r.quantity() == QShopAnalyzer.INFINITE_QUANTITY) {
+                quantityStr = Text.translatable("chunkscanner.qshop.infinite").getString();
+            } else if (r.quantity() == 0) {
+                quantityStr = Text.translatable("chunkscanner.qshop.out_of_stock").getString();
+            } else {
+                quantityStr = String.valueOf(r.quantity());
+            }
+        } else {
+            modeStr = Text.translatable("chunkscanner.filter.mode.buy").getString();
+            if (r.quantity() == QShopAnalyzer.INFINITE_QUANTITY) {
+                quantityStr = Text.translatable("chunkscanner.qshop.infinite").getString();
+            } else if (r.quantity() == 0) {
+                quantityStr = Text.translatable("chunkscanner.qshop.out_of_space").getString();
+            } else {
+                quantityStr = String.valueOf(r.quantity());
+            }
+        }
+
+        String posStr = new LocatedPosition(r.dimId(), r.x(), r.y(), r.z()).toString();
+        // Detail 列：有增强数据时显示 "ⓘ"（导出可识别），GUI 中图标由 getCellItems() 提供
+        String detailStr = (r.detailNbtString() != null && !r.detailNbtString().isEmpty()) ? "ⓘ" : "";
+
+        return new String[] {
+                posStr,
+                r.owner(),
+                modeStr,
+                quantityStr,
+                r.itemName(),
+                formatPrice(r.price()),
+                r.itemId(),
+                detailStr,
+                formatFlagsShort(r.flags())
+        };
+    }
+
+    @Override
+    public String[] getRowAt(int rowIndex) {
+        List<QShopRecord> matched = getFilteredSortedRecords();
+        if (rowIndex < 0 || rowIndex >= matched.size()) return null;
+        QShopRecord r = matched.get(rowIndex);
+        return buildRowData(r);
     }
 
     @Override
@@ -364,27 +379,38 @@ public class QShopDbViewProvider implements DbViewProvider {
     }
 
     /**
+     * 从 detailNbtString 解析 ItemStack，解析失败返回 null。
+     * 供 buildDetailTooltip 和 getCellItems 复用。
+     */
+    private static ItemStack parseDetailItemStack(QShopRecord record) {
+        if (record.detailNbtString() == null || record.detailNbtString().isEmpty()) return null;
+        try {
+            NbtCompound nbt = StringNbtReader.parse(record.detailNbtString());
+            ItemStack stack = ItemStack.fromNbt(nbt);
+            return (stack != null && !stack.isEmpty()) ? stack : null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    /**
      * 构建 Detail 列物品悬停 tooltip。
      *
      * <p>从 detailNbtString（完整 ItemStack NBT JSON）重建 ItemStack，
      * 调用原版 {@code getTooltip()} 获取物品描述文本。</p>
      */
     private static List<Text> buildDetailTooltip(QShopRecord record) {
-        if (record.detailNbtString() == null || record.detailNbtString().isEmpty()) return null;
-        try {
-            net.minecraft.nbt.NbtCompound nbt =
-                    net.minecraft.nbt.StringNbtReader.parse(record.detailNbtString());
-            net.minecraft.item.ItemStack stack =
-                    net.minecraft.item.ItemStack.fromNbt(nbt);
-            if (stack == null || stack.isEmpty()) return null;
+        ItemStack stack = parseDetailItemStack(record);
+        if (stack == null) return null;
 
-            net.minecraft.client.MinecraftClient client =
-                    net.minecraft.client.MinecraftClient.getInstance();
-            if (client.player == null) return null;
+        net.minecraft.client.MinecraftClient client =
+                net.minecraft.client.MinecraftClient.getInstance();
+        if (client.player == null) return null;
+        try {
             return stack.getTooltip(client.player,
                     net.minecraft.client.item.TooltipContext.Default.BASIC);
         } catch (Exception e) {
-            return List.of(net.minecraft.text.Text.literal(record.itemId()));
+            return List.of(Text.literal(record.itemId()));
         }
     }
 
@@ -437,6 +463,31 @@ public class QShopDbViewProvider implements DbViewProvider {
                 result.put(i, rowColors);
             }
         }
+        return result;
+    }
+
+    /**
+     * 获取 Detail 列的物品图标映射，用于在表格中渲染 JEI 风格物品图标。
+     *
+     * <p>返回 Map&lt;行索引, Map&lt;"Detail", ItemStack&gt;&gt;。仅对有增强数据
+     * （detailNbtString 非空）的记录提供图标。结果会被缓存。</p>
+     *
+     * @return 物品图标映射
+     */
+    public Map<Integer, Map<String, ItemStack>> getCellItems() {
+        if (cachedCellItems != null) return cachedCellItems;
+        List<QShopRecord> matched = getFilteredSortedRecords();
+        Map<Integer, Map<String, ItemStack>> result = new HashMap<>();
+        for (int i = 0; i < matched.size(); i++) {
+            QShopRecord r = matched.get(i);
+            ItemStack stack = parseDetailItemStack(r);
+            if (stack != null) {
+                Map<String, ItemStack> rowItems = new HashMap<>();
+                rowItems.put("Detail", stack);
+                result.put(i, rowItems);
+            }
+        }
+        cachedCellItems = result;
         return result;
     }
 

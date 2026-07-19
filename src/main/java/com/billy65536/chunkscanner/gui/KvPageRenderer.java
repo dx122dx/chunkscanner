@@ -2,13 +2,16 @@ package com.billy65536.chunkscanner.gui;
 
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import com.billy65536.chunkscanner.core.ChunkDb;
 
@@ -185,7 +188,7 @@ public abstract class KvPageRenderer {
         private final List<String[]> rows;
         private final String[] headers;
         private final int metaCount;
-        private final int[] colWidths;
+        private int[] colWidths;
 
         /** 上次渲染时检测到的悬停列索引，-1 表示无悬停列。 */
         private int hoveredCol = -1;
@@ -195,6 +198,9 @@ public abstract class KvPageRenderer {
 
         /** 单元格级颜色：行索引 → 列标题 → ARGB 颜色值。 */
         private Map<Integer, Map<String, Integer>> cellColors = Collections.emptyMap();
+
+        /** 单元格级物品图标：行索引 → 列标题 → ItemStack。 */
+        private Map<Integer, Map<String, ItemStack>> cellItems = Collections.emptyMap();
 
         public Specialized(TextRenderer tr, List<String[]> rows, String[] headers, int metaCount) {
             super(tr);
@@ -229,6 +235,12 @@ public abstract class KvPageRenderer {
             this.cellColors = colors != null ? colors : Collections.emptyMap();
         }
 
+        /** 设置单元格级物品图标数据。调用后重新计算列宽以适配图标尺寸。 */
+        public void setCellItems(Map<Integer, Map<String, ItemStack>> items) {
+            this.cellItems = items != null ? items : Collections.emptyMap();
+            this.colWidths = calcColWidths(); // 重新计算列宽
+        }
+
         /**
          * 获取指定行、指定列的单元格 tooltip。
          * @return tooltip 文本列表，无 tooltip 时返回 null
@@ -259,6 +271,19 @@ public abstract class KvPageRenderer {
                 for (int c = 0; c < row.length && c < cols; c++) {
                     int w = textRenderer.getWidth(row[c] != null ? row[c] : "");
                     if (w > widths[c]) widths[c] = w;
+                }
+            }
+            // 对存在物品图标的列设置最小宽度（16px 图标 + 2px margin）
+            if (cellItems != null && !cellItems.isEmpty()) {
+                // 先收集所有出现过 cellItems 的列名（只需遍历一次）
+                Set<String> iconCols = new HashSet<>();
+                for (Map<String, ItemStack> rowItems : cellItems.values()) {
+                    iconCols.addAll(rowItems.keySet());
+                }
+                for (int c = 0; c < cols; c++) {
+                    if (iconCols.contains(headers[c])) {
+                        widths[c] = Math.max(widths[c], 18);
+                    }
                 }
             }
             return widths;
@@ -293,7 +318,6 @@ public abstract class KvPageRenderer {
             int rx = margin - hScrollOffset;
             boolean rowHovered = false;
             for (int c = 0; c < row.length && c < headers.length; c++) {
-                String cell = row[c] != null ? row[c] : "";
                 boolean isPositionCol = isPositionColumn(c);
 
                 // 检测该列的鼠标悬停（只在完整行范围内检测）
@@ -304,17 +328,24 @@ public abstract class KvPageRenderer {
                     rowHovered = true;
                 }
 
-                // 确定文字颜色：优先使用单元格级自定义颜色
-                int color = OTHER_COL_COLOR;
-                if (isPositionCol) {
-                    color = colHovered ? POSITION_HOVER_COLOR : POSITION_COL_COLOR;
+                // 检查是否有物品图标需要渲染
+                ItemStack icon = getCellItem(actualIdx, c);
+                if (icon != null && !icon.isEmpty()) {
+                    ctx.drawItem(icon, rx, rowY + 2);
                 } else {
-                    Integer customColor = getCellColor(actualIdx, c);
-                    if (customColor != null) {
-                        color = customColor;
+                    String cell = row[c] != null ? row[c] : "";
+                    // 确定文字颜色：优先使用单元格级自定义颜色
+                    int color = OTHER_COL_COLOR;
+                    if (isPositionCol) {
+                        color = colHovered ? POSITION_HOVER_COLOR : POSITION_COL_COLOR;
+                    } else {
+                        Integer customColor = getCellColor(actualIdx, c);
+                        if (customColor != null) {
+                            color = customColor;
+                        }
                     }
+                    ctx.drawTextWithShadow(textRenderer, Text.literal(cell), rx, rowY, color);
                 }
-                ctx.drawTextWithShadow(textRenderer, Text.literal(cell), rx, rowY, color);
                 rx += colWidths[c] + 8;
             }
             return rowHovered ? actualIdx : -1;
@@ -326,6 +357,14 @@ public abstract class KvPageRenderer {
             Map<String, Integer> rowColors = cellColors.get(rowIdx);
             if (rowColors == null) return null;
             return rowColors.get(headers[colIdx]);
+        }
+
+        /** 获取指定行列的物品图标，无图标则返回 null。 */
+        private ItemStack getCellItem(int rowIdx, int colIdx) {
+            if (cellItems.isEmpty() || colIdx < 0 || colIdx >= headers.length) return null;
+            Map<String, ItemStack> rowItems = cellItems.get(rowIdx);
+            if (rowItems == null) return null;
+            return rowItems.get(headers[colIdx]);
         }
 
         @Override

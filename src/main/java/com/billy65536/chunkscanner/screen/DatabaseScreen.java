@@ -255,6 +255,10 @@ public class DatabaseScreen extends Screen {
             } catch (Exception e) {
                 ChunkScannerMod.LOGGER.debug("Failed to set cell tooltips: {}", e.getMessage());
             }
+            // 连接物品图标数据（仅 QShopDbViewProvider 提供）
+            if (currentView instanceof com.billy65536.chunkscanner.components.view_provider.QShopDbViewProvider qsp) {
+                specRenderer.setCellItems(qsp.getCellItems());
+            }
             pageRenderer = specRenderer;
         } else {
             List<ChunkDb.Entry> entries;
@@ -812,6 +816,7 @@ public class DatabaseScreen extends Screen {
                         : ChunkScannerMod.CONFIG;
                 String[] headers = currentView.getSpecializedHeaders();
                 String[] row = currentView.getRowAt(hoveredKvIdx);
+                if (headers == null || row == null) return true;
                 String wpName = CoreUtil.replacePlaceholders(cfg.waypointName, headers, row);
                 String wpInit = CoreUtil.replacePlaceholders(cfg.waypointInitials, headers, row);
                 String wpGroup = CoreUtil.replacePlaceholders(cfg.waypointGroup, headers, row);
