@@ -12,6 +12,7 @@ import net.minecraft.world.chunk.WorldChunk;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -39,8 +40,8 @@ import com.billy65536.chunkscanner.core.ChunkDb;
  * 系统商店：数量为"无限"，用 quantity=0xFFFFFF 表示。
  * 价格以最小货币单位存储（整数，乘以 100）。
  *
- * 键格式（28 字节）：
- *   dimPoolId:u32 (4B) | cx:i32 (4B) | cz:i32 (4B) | keyHi:u64 (8B) | keyLo:u64 (8B)
+ * 键格式（34 字节）：
+ *   "qshop:" (6B) | dimPoolId:u32 (4B) | cx:i32 (4B) | cz:i32 (4B) | keyHi:u64 (8B) | keyLo:u64 (8B)
  *
  * 值格式（48 字节）：
  *   keyHi:u64 (8B) | keyLo:u64 (8B) | owner:u32 (4B) | mode+quantity packed:u32 (4B) |
@@ -59,10 +60,10 @@ public class QShopAnalyzer implements ChunkAnalyzer {
 
     /** 值记录大小（48 字节）。 */
     public static final int RECORD_SIZE = 48;
-    /** 键大小：dimPoolId(4) + cx(4) + cz(4) + keyHi(8) + keyLo(8) = 28 */
-    private static final int KEY_SIZE = 4 + 4 + 4 + 8 + 8; // 28
-    /** chunk 级删除前缀大小：dimPoolId(4) + cx(4) + cz(4) = 12 */
-    private static final int CHUNK_PREFIX_LEN = 4 + 4 + 4; // 12
+    private static final byte[] KEY_PREFIX = "qshop:".getBytes(StandardCharsets.UTF_8);
+    // "qshop:"(6) + dimPoolId(4) + cx(4) + cz(4) + keyHi(8) + keyLo(8)
+    private static final int KEY_SIZE = KEY_PREFIX.length + 4 + 4 + 4 + 8 + 8; // 34
+    private static final int CHUNK_PREFIX_LEN = KEY_PREFIX.length + 4 + 4 + 4; // 18
 
     /** 特殊值：物品注册名通过译名映射表恢复（R）。 */
     public static final int FLAG_ID_RECOVERED = 0x01;
@@ -347,9 +348,10 @@ public class QShopAnalyzer implements ChunkAnalyzer {
         return new QShopParsed(owner, mode, quantity, itemName, price);
     }
 
-    /** 构造完整键（28 字节）。 */
+    /** 构造完整键（34 字节）。 */
     private static byte[] makeKey(long keyHi, long keyLo, int dimPoolId, int cx, int cz) {
         ByteBuffer bb = ByteBuffer.allocate(KEY_SIZE).order(ByteOrder.LITTLE_ENDIAN);
+        bb.put(KEY_PREFIX);
         bb.putInt(dimPoolId);
         bb.putInt(cx);
         bb.putInt(cz);
@@ -358,9 +360,10 @@ public class QShopAnalyzer implements ChunkAnalyzer {
         return bb.array();
     }
 
-    /** 构造 chunk 级删除前缀（12 字节）。 */
+    /** 构造 chunk 级删除前缀（18 字节）。 */
     private static byte[] makeChunkPrefix(int dimPoolId, int cx, int cz) {
         ByteBuffer bb = ByteBuffer.allocate(CHUNK_PREFIX_LEN).order(ByteOrder.LITTLE_ENDIAN);
+        bb.put(KEY_PREFIX);
         bb.putInt(dimPoolId);
         bb.putInt(cx);
         bb.putInt(cz);
