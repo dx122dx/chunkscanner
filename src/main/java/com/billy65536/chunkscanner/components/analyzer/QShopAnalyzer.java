@@ -295,7 +295,7 @@ public class QShopAnalyzer implements ChunkAnalyzer {
     static int parsePrice(String priceText) {
         if (priceText == null) return -1;
         Matcher m = PRICE_NUM_PATTERN.matcher(priceText.trim());
-        if (m.matches()) {
+        if (m.find()) {
             try {
                 String intPart = m.group(1).replace(",", "");
                 String fracPart = m.group(2);
