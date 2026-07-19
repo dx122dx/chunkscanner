@@ -400,8 +400,10 @@ public class QShopDbViewProvider implements DbViewProvider {
                 net.minecraft.client.MinecraftClient.getInstance();
         if (client.player == null) return null;
         try {
-            return stack.getTooltip(client.player,
-                    net.minecraft.client.item.TooltipContext.Default.BASIC);
+            // 使用 Screen.getTooltipFromItem 保持与物品栏一致的 tooltip 行为：
+            // 自动根据 F3+H 切换 BASIC/ADVANCED，且通过 Fabric Mixin 触发
+            // ItemTooltipCallback.EVENT，mod 追加的 tooltip 行也会包含在内
+            return net.minecraft.client.gui.screen.Screen.getTooltipFromItem(client, stack);
         } catch (Exception e) {
             return List.of(Text.literal(record.itemId()));
         }

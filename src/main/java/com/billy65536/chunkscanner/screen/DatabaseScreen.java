@@ -18,6 +18,7 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ConfirmScreen;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
@@ -516,6 +517,23 @@ public class DatabaseScreen extends Screen {
                     mouseX, mouseY);
         }
 
+        // KV 视图悬停 — JEI 风格物品图标 tooltip（优先于文字 tooltip）
+        if (showingKvView && pageRenderer instanceof KvPageRenderer.Specialized spec) {
+            ItemStack hoveredStack = spec.getHoveredItemStack();
+            if (hoveredStack != null && !hoveredStack.isEmpty()) {
+                MinecraftClient client = MinecraftClient.getInstance();
+                if (client.player != null) {
+                    // 使用 Screen.getTooltipFromItem 获取与物品栏完全一致的 tooltip：
+                    // - 自动根据 F3+H（advancedItemTooltips）切换 BASIC/ADVANCED
+                    // - ItemStack.getTooltip() 内部通过 Fabric Mixin 触发 ItemTooltipCallback.EVENT
+                    //   所有注册了该事件的 mod（JEI、WTHIT 等）都会追加自定义 tooltip 行
+                    List<Text> itemTooltip = Screen.getTooltipFromItem(client, hoveredStack);
+                    context.drawTooltip(textRenderer, itemTooltip,
+                            hoveredStack.getTooltipData(), mouseX, mouseY);
+                }
+            }
+        }
+
         // KV 视图悬停 — 位置列 tooltip
         if (showingKvView && hoveredKvIdx >= 0 && hoveredKvCol >= 0
                 && pageRenderer instanceof KvPageRenderer.Specialized spec) {
@@ -527,10 +545,13 @@ public class DatabaseScreen extends Screen {
                         Text.translatable(key).formatted(Formatting.AQUA),
                         mouseX, mouseY);
             } else {
-                // 非位置列的单元格 tooltip
-                List<Text> cellTooltip = spec.getCellTooltip(hoveredKvIdx, hoveredKvCol);
-                if (cellTooltip != null && !cellTooltip.isEmpty()) {
-                    context.drawTooltip(textRenderer, cellTooltip, mouseX, mouseY);
+                // 非位置列的单元格 tooltip（仅当没有物品图标悬停时显示）
+                ItemStack hoveredStack = spec.getHoveredItemStack();
+                if (hoveredStack == null || hoveredStack.isEmpty()) {
+                    List<Text> cellTooltip = spec.getCellTooltip(hoveredKvIdx, hoveredKvCol);
+                    if (cellTooltip != null && !cellTooltip.isEmpty()) {
+                        context.drawTooltip(textRenderer, cellTooltip, mouseX, mouseY);
+                    }
                 }
             }
         }
@@ -675,6 +696,11 @@ public class DatabaseScreen extends Screen {
                     Text.translatable("chunkscanner.gui.database.no_kv").formatted(Formatting.GRAY),
                     centerX, listTop + 10, 0xFFFFFF);
             return;
+        }
+
+        // 每帧渲染前重置特化视图的悬停状态（避免上一帧状态残留）
+        if (pageRenderer instanceof KvPageRenderer.Specialized spec) {
+            spec.beginFrame();
         }
 
         // 委托渲染器逐行渲染

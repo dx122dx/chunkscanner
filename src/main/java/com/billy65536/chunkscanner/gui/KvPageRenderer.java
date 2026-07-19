@@ -184,6 +184,7 @@ public abstract class KvPageRenderer {
         private static final int POSITION_COL_COLOR = 0xFF55FFFF;   // 位置列（青色，可点击）
         private static final int POSITION_HOVER_COLOR = 0xFFFFFF55; // 位置列悬停（亮黄）
         private static final int OTHER_COL_COLOR = 0xFFFFFFFF;
+        private static final int ITEM_ICON_SIZE = 16;               // 物品图标尺寸
 
         private final List<String[]> rows;
         private final String[] headers;
@@ -192,6 +193,14 @@ public abstract class KvPageRenderer {
 
         /** 上次渲染时检测到的悬停列索引，-1 表示无悬停列。 */
         private int hoveredCol = -1;
+
+        /**
+         * 上次渲染时检测到的悬停物品图标 ItemStack。
+         * 用于 JEI 风格物品 tooltip：鼠标悬停在物品图标上时，显示完整的原版 ItemStack tooltip
+         * （含附魔颜色、Lore 样式等），与物品栏中的 tooltip 完全一致。
+         * null 表示无物品图标被悬停。
+         */
+        private ItemStack hoveredItemStack = null;
 
         /** 单元格级 tooltip：行索引 → 列标题 → tooltip 文本列表。 */
         private Map<Integer, Map<String, List<Text>>> cellTooltips = Collections.emptyMap();
@@ -222,8 +231,23 @@ public abstract class KvPageRenderer {
 
         public String[] getHeaders() { return headers; }
 
+        /**
+         * 每帧渲染前调用，重置帧级悬停状态。
+         * 必须在 renderRow 循环之前调用，否则上一帧的悬停状态可能残留。
+         */
+        public void beginFrame() {
+            hoveredCol = -1;
+            hoveredItemStack = null;
+        }
+
         /** 获取上次渲染时检测到的悬停列索引。 */
         public int getHoveredCol() { return hoveredCol; }
+
+        /**
+         * 获取上次渲染时检测到的悬停物品图标 ItemStack。
+         * 返回 null 表示无物品图标被悬停。
+         */
+        public ItemStack getHoveredItemStack() { return hoveredItemStack; }
 
         /** 设置单元格级 tooltip 数据。 */
         public void setCellTooltips(Map<Integer, Map<String, List<Text>>> tooltips) {
@@ -311,9 +335,6 @@ public abstract class KvPageRenderer {
         @Override
         public int renderRow(DrawContext ctx, int actualIdx, int rowY,
                               int margin, int hScrollOffset, int mouseX, int mouseY) {
-            if (actualIdx == 0) {
-                hoveredCol = -1; // 每帧首行重置悬停列，避免无行悬停时返回陈旧值
-            }
             String[] row = rows.get(actualIdx);
             int rx = margin - hScrollOffset;
             boolean rowHovered = false;
@@ -332,6 +353,11 @@ public abstract class KvPageRenderer {
                 ItemStack icon = getCellItem(actualIdx, c);
                 if (icon != null && !icon.isEmpty()) {
                     ctx.drawItem(icon, rx, rowY + 2);
+                    // JEI 风格：检测鼠标是否悬停在物品图标上（16x16 区域）
+                    if (mouseX >= rx && mouseX < rx + ITEM_ICON_SIZE
+                            && mouseY >= rowY + 2 && mouseY < rowY + 2 + ITEM_ICON_SIZE) {
+                        hoveredItemStack = icon;
+                    }
                 } else {
                     String cell = row[c] != null ? row[c] : "";
                     // 确定文字颜色：优先使用单元格级自定义颜色
