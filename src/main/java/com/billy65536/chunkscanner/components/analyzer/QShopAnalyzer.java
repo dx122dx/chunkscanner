@@ -10,11 +10,6 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.world.World;
 import net.minecraft.world.chunk.WorldChunk;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -40,15 +35,6 @@ import com.billy65536.chunkscanner.core.ChunkDb;
  * 系统商店：数量为"无限"，用 quantity=0xFFFFFF 表示。
  * 价格以最小货币单位存储（整数，乘以 100）。
  *
- * 键格式（34 字节）：
- *   "qshop:" (6B) | dimPoolId:u32 (4B) | cx:i32 (4B) | cz:i32 (4B) | keyHi:u64 (8B) | keyLo:u64 (8B)
- *
- * 值格式（48 字节）：
- *   keyHi:u64 (8B) | keyLo:u64 (8B) | owner:u32 (4B) | mode+quantity packed:u32 (4B) |
- *   itemName:u32 (4B) | price:u32 (4B) | timestamp:u64 (8B) | itemId:u32 (4B) | flags:u32 (4B)
- *
- *   mode+quantity 打包：byte0 = mode (0=出售,1=收购), bytes1-3 = quantity (24-bit unsigned)
- *   price：整数，真实价格 = price / 100.0（如 50 = 0.50）
  *
  *   特殊值 flag bits:
  *     FLAG_ID_RECOVERED     (0x01) — 物品注册名通过译名映射表恢复（R）
@@ -57,13 +43,6 @@ import com.billy65536.chunkscanner.core.ChunkDb;
  *     FLAG_BOOK              (0x08) — 成书（B），商品名已替换为标题
  */
 public class QShopAnalyzer implements ChunkAnalyzer {
-
-    /** 值记录大小（48 字节）。 */
-    public static final int RECORD_SIZE = 48;
-    private static final byte[] KEY_PREFIX = "qshop:".getBytes(StandardCharsets.UTF_8);
-    // "qshop:"(6) + dimPoolId(4) + cx(4) + cz(4) + keyHi(8) + keyLo(8)
-    private static final int KEY_SIZE = KEY_PREFIX.length + 4 + 4 + 4 + 8 + 8; // 34
-    private static final int CHUNK_PREFIX_LEN = KEY_PREFIX.length + 4 + 4 + 4; // 18
 
     /** 特殊值：物品注册名通过译名映射表恢复（R）。 */
     public static final int FLAG_ID_RECOVERED = 0x01;
@@ -153,13 +132,13 @@ public class QShopAnalyzer implements ChunkAnalyzer {
 
     @Override
     public AnalyzeResult analyze(WorldChunk chunk, int cx, int cz, String dimId, ChunkDb db, long now, World world) {
-        int dimPoolId = db.intern(dimId);
-
         // 从全局配置读取 QShop 正则模式（缓存编译结果）
         LocalePatterns patterns = getPatterns();
 
-        List<byte[]> records = new ArrayList<>();
+        QShopDbAdapter adapter = new QShopDbAdapter(db);
+        adapter.deleteChunk(dimId, cx, cz);
 
+        int count = 0;
         for (BlockEntity be : chunk.getBlockEntities().values()) {
             if (!(be instanceof SignBlockEntity sign)) continue;
 
@@ -187,60 +166,17 @@ public class QShopAnalyzer implements ChunkAnalyzer {
             QShopParsed parsed = parseQShop(lines, patterns);
             if (parsed == null) continue;
 
-            // keyHi: [dimPoolId(32bit) | x(32bit)]，keyLo: [z(32bit) | y(32bit)]
-            long keyHi = ((long) dimPoolId << 32) | (signPos.getX() & 0xFFFFFFFFL);
-            long keyLo = ((long) signPos.getZ() << 32) | (signPos.getY() & 0xFFFFFFFFL);
-
-            // 字符串池化（避免每条记录重复存储相同字符串）
-            int ownerId = db.intern(parsed.owner());
-            int itemNameId = db.intern(parsed.itemName());
-
             // 通过译名映射表尝试恢复物品注册名
-            int itemIdPoolId = 0; // StringPoolId 0 = null/空串
-            int flags = 0;
             String registryId = ItemTranslator.lookup(parsed.itemName());
-            if (registryId != null) {
-                itemIdPoolId = db.intern(registryId);
-                flags |= FLAG_ID_RECOVERED;
-            }
 
-            // 构造 60 字节的值
-            ByteBuffer vb = ByteBuffer.allocate(RECORD_SIZE).order(ByteOrder.LITTLE_ENDIAN);
-            vb.putLong(keyHi);
-            vb.putLong(keyLo);
-            vb.putInt(ownerId);
-            // mode(低 8 位) + quantity(高 24 位) 打包为一个 u32
-            int modePacked = (parsed.mode() & 0xFF) | ((parsed.quantity() & 0xFFFFFF) << 8);
-            vb.putInt(modePacked);
-            vb.putInt(itemNameId);
-            vb.putInt(parsed.price()); // 价格：整型，最小货币单位
-            vb.putLong(now); // 扫描时间戳
-            vb.putInt(itemIdPoolId);
-            vb.putInt(flags);
-
-            byte[] key = makeKey(keyHi, keyLo, dimPoolId, cx, cz);
-            records.add(key);
-            records.add(vb.array());
+            adapter.addRecord(dimId, cx, cz, signPos.getX(), signPos.getY(), signPos.getZ(),
+                    parsed.owner(), parsed.mode(), parsed.quantity(),
+                    parsed.itemName(), parsed.price(),
+                    registryId, now);
+            count++;
         }
 
-        // 先删除该 chunk 旧记录，再写入新记录
-        // 注意：若 putAll 写入失败存在数据丢失风险，但 removeAllWithPrefix
-        // 是前缀匹配，先写后删会把刚写入的数据也删掉，故只能先删后写。
-        byte[] chunkPrefix = makeChunkPrefix(dimPoolId, cx, cz);
-        db.removeAllWithPrefix(chunkPrefix);
-
-        if (records.isEmpty()) {
-            return AnalyzeResult.skipped();
-        }
-
-        // 批量写入数据库
-        List<ChunkDb.Entry> entries = new ArrayList<>(records.size() / 2);
-        for (int i = 0; i < records.size(); i += 2) {
-            entries.add(ChunkDb.Entry.of(records.get(i), records.get(i + 1)));
-        }
-        db.putAll(entries);
-
-        return AnalyzeResult.found("qshops=" + entries.size());
+        return count > 0 ? AnalyzeResult.found("qshops=" + count) : AnalyzeResult.skipped();
     }
 
     /**
@@ -346,28 +282,6 @@ public class QShopAnalyzer implements ChunkAnalyzer {
         if (price < 0) return null;
 
         return new QShopParsed(owner, mode, quantity, itemName, price);
-    }
-
-    /** 构造完整键（34 字节）。 */
-    private static byte[] makeKey(long keyHi, long keyLo, int dimPoolId, int cx, int cz) {
-        ByteBuffer bb = ByteBuffer.allocate(KEY_SIZE).order(ByteOrder.LITTLE_ENDIAN);
-        bb.put(KEY_PREFIX);
-        bb.putInt(dimPoolId);
-        bb.putInt(cx);
-        bb.putInt(cz);
-        bb.putLong(keyHi);
-        bb.putLong(keyLo);
-        return bb.array();
-    }
-
-    /** 构造 chunk 级删除前缀（18 字节）。 */
-    private static byte[] makeChunkPrefix(int dimPoolId, int cx, int cz) {
-        ByteBuffer bb = ByteBuffer.allocate(CHUNK_PREFIX_LEN).order(ByteOrder.LITTLE_ENDIAN);
-        bb.put(KEY_PREFIX);
-        bb.putInt(dimPoolId);
-        bb.putInt(cx);
-        bb.putInt(cz);
-        return bb.array();
     }
 
     /**

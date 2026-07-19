@@ -11,9 +11,6 @@ import net.minecraft.util.math.BlockPos;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -57,12 +54,6 @@ public final class QShopChatListener {
 
     /** 点击有效期限（毫秒），超过此时间的点击将被丢弃。 */
     private static final long MAX_CLICK_AGE_MS = 15_000;
-
-    /** 数据库键前缀。 */
-    private static final byte[] KEY_PREFIX = "qshop:".getBytes(StandardCharsets.UTF_8);
-
-    /** 完整键长度："qshop:"(6) + dimPoolId(4) + cx(4) + cz(4) + keyHi(8) + keyLo(8) = 34 */
-    private static final int KEY_SIZE = 34;
 
     /** 待处理的消息队列。 */
     private static final ConcurrentLinkedQueue<PendingMessage> pendingMessages = new ConcurrentLinkedQueue<>();
@@ -306,40 +297,27 @@ public final class QShopChatListener {
             ChunkDb db = session.db;
             if (db == null) continue;
 
-            // 构造精确键
-            int dimPoolId = db.intern(click.dimId());
+            QShopDbAdapter adapter = new QShopDbAdapter(db);
             int cx = click.x() >> 4;
             int cz = click.z() >> 4;
-            long keyHi = ((long) dimPoolId << 32) | (click.x() & 0xFFFFFFFFL);
-            long keyLo = ((long) click.z() << 32) | (click.y() & 0xFFFFFFFFL);
 
-            byte[] key = buildKey(dimPoolId, cx, cz, keyHi, keyLo);
-            byte[] value = db.get(key);
-            if (value == null) {
+            if (!adapter.hasRecord(click.dimId(), cx, cz, click.x(), click.y(), click.z())) {
                 LOGGER.debug("No DB record at ({}, {}, {}), may not be scanned yet",
                         click.x(), click.y(), click.z());
                 continue;
             }
 
-            // 获取子数据库（id=1），用于存储增强数据
-            ChunkDb subDb = db.getSubDb(1);
-
-            // 检查子数据库中是否已有增强记录
-            if (subDb.get(key) != null) {
+            if (adapter.hasEnhanced(click.dimId(), cx, cz, click.x(), click.y(), click.z())) {
                 LOGGER.debug("Enhanced data already exists for ({}, {}, {}), skipping",
                         click.x(), click.y(), click.z());
                 return false;
             }
 
-            // 物品 ID 和 NBT 写入子数据库字符串池
-            int itemIdPoolId = item.registryId() != null && !item.registryId().isEmpty()
-                    ? subDb.intern(item.registryId()) : 0;
-            int detailNbtPoolId = item.fullNbtString() != null
-                    ? subDb.intern(item.fullNbtString()) : 0;
+            adapter.enhanceRecord(click.dimId(), cx, cz, click.x(), click.y(), click.z(),
+                    item.registryId(), item.displayName(),
+                    item.isBook(), item.isShulkerExpanded(),
+                    item.fullNbtString(), item.nbtHash(), item.enchants().size());
 
-            // 构建精简增强数据（20 字节）写入子数据库
-            byte[] enhancedValue = buildEnhancedValue(item, itemIdPoolId, detailNbtPoolId);
-            subDb.put(key, enhancedValue);
             LOGGER.info("Enhanced QShop record: {} at ({}, {}, {}) enchants={} flags={}",
                     item.registryId(), click.x(), click.y(), click.z(),
                     item.enchants().size(), item.flags());
@@ -347,53 +325,6 @@ public final class QShopChatListener {
         }
 
         return false;
-    }
-
-    /**
-     * 构造完整数据库键（34 字节）。
-     */
-    private static byte[] buildKey(int dimPoolId, int cx, int cz, long keyHi, long keyLo) {
-        ByteBuffer bb = ByteBuffer.allocate(KEY_SIZE).order(ByteOrder.LITTLE_ENDIAN);
-        bb.put(KEY_PREFIX);
-        bb.putInt(dimPoolId);
-        bb.putInt(cx);
-        bb.putInt(cz);
-        bb.putLong(keyHi);
-        bb.putLong(keyLo);
-        return bb.array();
-    }
-
-    // ==================== 增强值构建 ====================
-
-    /** 子数据库增强记录大小（20 字节）。 */
-    static final int ENHANCED_RECORD_SIZE = 20;
-
-    /**
-     * 构建精简增强数据（20 字节）。
-     *
-     * <p>布局：itemIdPoolId(4) | detailNbtPoolId(4) | flags(4) | updateTime(8)</p>
-     *
-     * @param item            从聊天消息提取的物品数据
-     * @param itemIdPoolId    物品注册名在子数据库字符串池中的 ID
-     * @param detailNbtPoolId 完整 NBT 字符串在子数据库字符串池中的 ID
-     * @return 增强后的值（20 字节）
-     */
-    private static byte[] buildEnhancedValue(ChatItemExtractor.ExtractedItem item,
-                                             int itemIdPoolId, int detailNbtPoolId) {
-        int flags = QShopAnalyzer.FLAG_ENHANCED_DATA;
-        if (item.isShulkerExpanded()) {
-            flags |= QShopAnalyzer.FLAG_SHULKER_EXPANDED;
-        }
-        if (item.isBook()) {
-            flags |= QShopAnalyzer.FLAG_BOOK;
-        }
-
-        ByteBuffer buf = ByteBuffer.allocate(ENHANCED_RECORD_SIZE).order(ByteOrder.LITTLE_ENDIAN);
-        buf.putInt(itemIdPoolId);       // 物品注册名（子数据库字符串池）
-        buf.putInt(detailNbtPoolId);    // 完整 NBT（子数据库字符串池）
-        buf.putInt(flags);              // 标志位（ENHANCED | SHULKER | BOOK）
-        buf.putLong(System.currentTimeMillis()); // 更新时间
-        return buf.array();
     }
 
     // ==================== 统计信息 ====================

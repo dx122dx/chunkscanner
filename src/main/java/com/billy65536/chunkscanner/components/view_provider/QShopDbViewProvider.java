@@ -9,9 +9,6 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -22,11 +19,10 @@ import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
-import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.components.analyzer.QShopAnalyzer;
+import com.billy65536.chunkscanner.components.analyzer.QShopDbAdapter;
 import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 import com.billy65536.chunkscanner.core.ChunkDb;
-import com.billy65536.chunkscanner.core.CoreUtil;
 import com.billy65536.chunkscanner.core.DbViewProvider;
 import com.billy65536.chunkscanner.core.LocatedPosition;
 /**
@@ -45,12 +41,6 @@ import com.billy65536.chunkscanner.core.LocatedPosition;
  *   price：整数，真实价格 = price / 100.0
  */
 public class QShopDbViewProvider implements DbViewProvider {
-
-    private static final byte[] KEY_PREFIX = "qshop:".getBytes(StandardCharsets.UTF_8);
-    private static final int KEY_SIZE = 34;
-    private static final int RECORD_SIZE = 60;
-    /** 子数据库增强记录大小（20 字节）：itemId(4) | detailNbtPoolId(4) | flags(4) | updateTime(8) */
-    private static final int ENHANCED_RECORD_SIZE = 20;
 
     private final BinaryChunkDb delegate;
 
@@ -597,80 +587,15 @@ public class QShopDbViewProvider implements DbViewProvider {
             return cachedRecords;
         }
 
-        List<QShopRecord> records = new ArrayList<>();
-        List<ChunkDb.Entry> entries;
-        try {
-            entries = delegate.getAllEntries();
-        } catch (Exception e) {
-            ChunkScannerMod.LOGGER.warn("QShopDbViewProvider: failed to get entries: {}", e.getMessage());
-            cachedRecords = records;
-            cacheValid = true;
-            return records;
-        }
+        QShopDbAdapter adapter = new QShopDbAdapter(delegate);
+        List<QShopDbAdapter.Record> adapterRecords = adapter.getAllRecords();
 
-        for (ChunkDb.Entry entry : entries) {
-            try {
-                byte[] key = entry.key();
-                byte[] val = entry.value();
-                if (key.length < KEY_PREFIX.length) continue;
-                if (!CoreUtil.startsWith(key, KEY_PREFIX)) continue;
-                if (val.length < RECORD_SIZE) continue;
-
-                ByteBuffer vb = ByteBuffer.wrap(val).order(ByteOrder.LITTLE_ENDIAN);
-                long keyHi = vb.getLong();
-                long keyLo = vb.getLong();
-
-                // 从 keyHi 提取 dimPoolId 并通过字符串池还原维度名
-                int dimPoolId = (int) (keyHi >> 32);
-                String dimId = delegate.lookup(dimPoolId);
-                // keyHi 低 32 位 = X 坐标，keyLo 高 32 位 = Z，低 32 位 = Y
-                int x = (int) (keyHi & 0xFFFFFFFFL);
-                int z = (int) (keyLo >> 32);
-                int y = (int) (keyLo & 0xFFFFFFFFL);
-
-                int ownerId = vb.getInt();
-                int modePacked = vb.getInt();   // [quantity(24bit) | mode(8bit)]
-                int itemNameId = vb.getInt();
-                int price = vb.getInt();        // 整型价格（最小货币单位）
-                long ts = vb.getLong();
-
-                byte mode = (byte) (modePacked & 0xFF);
-                int quantity = (modePacked >> 8) & 0xFFFFFF;
-
-                // 通过字符串池还原可读文本
-                String owner = delegate.lookup(ownerId);
-                String itemName = delegate.lookup(itemNameId);
-
-                // 读取 itemId 和 flags
-                int itemIdPoolId = vb.getInt();
-                int flags = vb.getInt();
-                String itemId = itemIdPoolId != 0 ? delegate.lookup(itemIdPoolId) : "";
-
-                // 读取增强字段（始终检查子数据库 id=1）
-                String detailNbtString = null;
-                ChunkDb subDb = delegate.getSubDb(1);
-                if (subDb != null) {
-                    byte[] enhancedVal = subDb.get(entry.key());
-                    if (enhancedVal != null && enhancedVal.length >= ENHANCED_RECORD_SIZE) {
-                        ByteBuffer evb = ByteBuffer.wrap(enhancedVal).order(ByteOrder.LITTLE_ENDIAN);
-                        int enhancedItemIdPoolId = evb.getInt();  // 物品注册名（子数据库字符串池）
-                        int detailNbtPoolId = evb.getInt();       // 完整 NBT（子数据库字符串池）
-                        int enhancedFlags = evb.getInt();         // 标志位
-                        /* long enhancedTime = */ evb.getLong();  // 更新时间（暂未使用）
-
-                        // 用增强数据覆盖主数据库字段
-                        itemIdPoolId = enhancedItemIdPoolId;
-                        itemId = itemIdPoolId != 0 ? subDb.lookup(itemIdPoolId) : "";
-                        flags |= enhancedFlags;  // 合并标志位（保留主数据库 FLAG_ID_RECOVERED 等）
-                        detailNbtString = detailNbtPoolId != 0 ? subDb.lookup(detailNbtPoolId) : null;
-                    }
-                }
-
-                records.add(new QShopRecord(dimId, x, y, z, owner, mode, quantity, itemName, price, ts,
-                        itemId, flags, detailNbtString));
-            } catch (Exception e) {
-                ChunkScannerMod.LOGGER.warn("QShopDbViewProvider: failed to parse entry: {}", e.getMessage());
-            }
+        List<QShopRecord> records = new ArrayList<>(adapterRecords.size());
+        for (QShopDbAdapter.Record r : adapterRecords) {
+            records.add(new QShopRecord(r.dimId(), r.x(), r.y(), r.z(),
+                    r.owner(), r.mode(), r.quantity(),
+                    r.itemName(), r.price(), r.timestamp(),
+                    r.itemId(), r.flags(), r.detailNbtString()));
         }
 
         cachedRecords = records;
