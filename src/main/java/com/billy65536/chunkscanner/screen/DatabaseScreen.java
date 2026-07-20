@@ -319,12 +319,12 @@ public class DatabaseScreen extends Screen {
 
                 // 视图选择器左移，给筛选按钮留空间
                 providerButton = ButtonWidget.builder(
-                        Text.literal(vt.getName()).formatted(getProviderColor()),
+                        vt.getName().copy().formatted(getProviderColor()),
                         btn -> cycleViewType())
                         .dimensions(btnRight - 88, 8, 68, 16).build();
             } else {
                 providerButton = ButtonWidget.builder(
-                        Text.literal(vt.getName()).formatted(getProviderColor()),
+                        vt.getName().copy().formatted(getProviderColor()),
                         btn -> cycleViewType())
                         .dimensions(btnRight - 84, 8, 70, 16).build();
             }
@@ -453,7 +453,7 @@ public class DatabaseScreen extends Screen {
                 && !viewTypes.isEmpty()) {
             DbViewProviderRegistry.Type vt = viewTypes.get(selectedViewTypeIdx);
             context.drawTooltip(textRenderer,
-                    Text.literal(vt.getDescription()).formatted(getProviderColor()),
+                    vt.getDescription().copy().formatted(getProviderColor()),
                     mouseX, mouseY);
         }
 
@@ -615,8 +615,8 @@ public class DatabaseScreen extends Screen {
 
         int kvSize = layout != null ? layout.getItemCount() : 0;
         int metaSize = layout != null ? layout.getMetaCount() : 0;
-        String aName = rawChunkDb != null ? GuiUtil.getAnalyzerDisplayName(rawChunkDb.getAnalyzerName()) : "";
-        String vName = viewTypes.isEmpty() ? "" : viewTypes.get(selectedViewTypeIdx).getName();
+        Text aName = rawChunkDb != null ? GuiUtil.getAnalyzerDisplayName(rawChunkDb.getAnalyzerName()) : Text.empty();
+        Text vName = viewTypes.isEmpty() ? Text.empty() : viewTypes.get(selectedViewTypeIdx).getName();
 
         context.drawTextWithShadow(textRenderer,
                 Text.translatable("chunkscanner.gui.database.records", kvSize, metaSize, aName, vName)

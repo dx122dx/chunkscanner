@@ -69,13 +69,13 @@ public class RawDbProvider implements DbViewProvider {
         public String getId() { return "raw"; }
 
         @Override
-        public String getName() {
-            return Text.translatable("chunkscanner.dbview.raw.name").getString();
+        public Text getName() {
+            return Text.translatable("chunkscanner.dbview.raw.name");
         }
 
         @Override
-        public String getDescription() {
-            return Text.translatable("chunkscanner.dbview.raw.desc").getString();
+        public Text getDescription() {
+            return Text.translatable("chunkscanner.dbview.raw.desc");
         }
 
         @Override

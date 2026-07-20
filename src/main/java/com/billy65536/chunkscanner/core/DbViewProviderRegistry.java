@@ -5,6 +5,8 @@ import java.util.Set;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
 
+import net.minecraft.text.Text;
+
 import java.util.LinkedHashMap;
 import java.util.Collections;
 
@@ -42,10 +44,10 @@ public final class DbViewProviderRegistry {
         String getId();
 
         /** 显示名称（本地化）。 */
-        String getName();
+        Text getName();
 
         /** 描述文本（本地化），用于悬停提示。 */
-        String getDescription();
+        Text getDescription();
 
         /** 适用的分析器 id 集合。空集表示适用于所有。 */
         Set<String> applicableAnalyzers();

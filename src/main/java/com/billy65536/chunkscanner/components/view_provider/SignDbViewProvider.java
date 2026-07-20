@@ -168,13 +168,13 @@ public class SignDbViewProvider implements DbViewProvider {
         public String getId() { return "sign_view"; }
 
         @Override
-        public String getName() {
-            return Text.translatable("chunkscanner.dbview.sign.name").getString();
+        public Text getName() {
+            return Text.translatable("chunkscanner.dbview.sign.name");
         }
 
         @Override
-        public String getDescription() {
-            return Text.translatable("chunkscanner.dbview.sign.desc").getString();
+        public Text getDescription() {
+            return Text.translatable("chunkscanner.dbview.sign.desc");
         }
 
         @Override

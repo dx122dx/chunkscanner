@@ -266,8 +266,8 @@ public class QShopDbViewProvider implements DbViewProvider {
             row.text(updateTime);
 
             if(r.enhancementTimestamp() > 0) {
-                row.withTooltip(new String[] {
-                    Text.translatable("chunkscanner.qshop.enhancement_update_time", formatTimestamp(r.enhancementTimestamp())).getString()
+                row.withTooltip(new Text[] {
+                    Text.translatable("chunkscanner.qshop.enhancement_update_time", formatTimestamp(r.enhancementTimestamp()))
                 });
             }
 
@@ -502,13 +502,13 @@ public class QShopDbViewProvider implements DbViewProvider {
         public String getId() { return "qshop_view"; }
 
         @Override
-        public String getName() {
-            return Text.translatable("chunkscanner.dbview.qshop.name").getString();
+        public Text getName() {
+            return Text.translatable("chunkscanner.dbview.qshop.name");
         }
 
         @Override
-        public String getDescription() {
-            return Text.translatable("chunkscanner.dbview.qshop.desc").getString();
+        public Text getDescription() {
+            return Text.translatable("chunkscanner.dbview.qshop.desc");
         }
 
         @Override

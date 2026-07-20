@@ -75,7 +75,7 @@ public final class ChatItemExtractor {
      * @param flags         特殊物品标志（参见 {@link #FLAG_SHULKER_EXPANDED} 等）
      * @param displayName   物品显示名（潜影盒展开后为内容物名称，成书为标题）
      */
-    public record ExtractedItem(String registryId, int nbtHash, String fullNbtString, int flags, String displayName) {
+    public record ExtractedItem(String registryId, int nbtHash, String fullNbtString, int flags, Text displayName) {
 
         /** 是否为潜影盒展开（S 标志）。 */
         public boolean isShulkerExpanded() {
@@ -195,14 +195,14 @@ public final class ChatItemExtractor {
         String fullNbtString = serializeFullNbt(stack);
 
         int flags = FLAG_NONE;
-        String displayName = stack.getName().getString();
+        Text displayName = stack.getName();
 
         // 特殊处理：潜影盒展开
         ShulkerExpansion shulker = tryExpandShulker(stack, registryId);
         if (shulker != null) {
             stack = shulker.contentStack();
             registryId = shulker.contentId();
-            displayName = stack.getName().getString();
+            displayName = stack.getName();
             flags |= FLAG_SHULKER_EXPANDED;
             LOGGER.debug("Shulker box expanded: {} -> {}", id, registryId);
         }
@@ -211,7 +211,7 @@ public final class ChatItemExtractor {
         if ("minecraft:written_book".equals(registryId)) {
             String title = extractBookTitle(stack);
             if (title != null && !title.isEmpty()) {
-                displayName = title;
+                displayName = Text.literal(title);
                 flags |= FLAG_BOOK;
                 LOGGER.debug("Written book title extracted: '{}'", title);
             }

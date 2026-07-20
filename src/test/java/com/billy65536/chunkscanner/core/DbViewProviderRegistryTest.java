@@ -4,6 +4,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import net.minecraft.text.Text;
+
 import java.util.Collection;
 import java.util.Set;
 
@@ -21,8 +23,8 @@ class DbViewProviderRegistryTest {
     private static DbViewProviderRegistry.Type createType(String id, String name) {
         return new DbViewProviderRegistry.Type() {
             @Override public String getId() { return id; }
-            @Override public String getName() { return name; }
-            @Override public String getDescription() { return "desc: " + name; }
+            @Override public Text getName() { return Text.literal(name); }
+            @Override public Text getDescription() { return Text.literal("desc: " + name); }
             @Override public Set<String> applicableAnalyzers() { return Set.of(); }
             @Override public DbViewProvider create(ChunkDb db) { return null; }
         };

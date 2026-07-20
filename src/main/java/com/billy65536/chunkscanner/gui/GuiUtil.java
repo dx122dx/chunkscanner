@@ -5,6 +5,8 @@ import com.billy65536.chunkscanner.core.AnalyzerRegistry;
 import com.billy65536.chunkscanner.core.ChunkAnalyzer;
 import com.billy65536.chunkscanner.core.ChunkScanner;
 
+import net.minecraft.text.Text;
+
 /**
  * 跨 GUI 共用的工具方法。
  *
@@ -38,14 +40,14 @@ public final class GuiUtil {
     }
 
     /** 分析器 ID → 显示名称。 */
-    public static String getAnalyzerDisplayName(String analyzerId) {
-        if (analyzerId == null || analyzerId.isEmpty()) return "";
+    public static Text getAnalyzerDisplayName(String analyzerId) {
+        if (analyzerId == null || analyzerId.isEmpty()) return Text.empty();
         ChunkScanner scanner = ChunkScannerMod.getScanner();
         if (scanner != null) {
             ChunkAnalyzer a = AnalyzerRegistry.get(analyzerId);
-            if (a != null) return a.getName().getString();
+            if (a != null) return a.getName();
         }
-        return analyzerId;
+        return Text.literal(analyzerId);
     }
 
     /* ==================== 字节 → 十六进制 ==================== */

@@ -60,10 +60,10 @@ public class ErrorDisplayLayout implements ILayout {
 
     private void buildRows(Throwable e) {
         addRow("====================", COLOR_GOLD);
-        addRow(Text.translatable("chunkscanner.dbview.error.title").getString(), COLOR_GOLD);
+        addRow(Text.translatable("chunkscanner.dbview.error.title"), COLOR_GOLD);
         addRow("====================", COLOR_GOLD);
         addBlank();
-        addRow(Text.translatable("chunkscanner.dbview.error.msg").getString(), COLOR_RED);
+        addRow(Text.translatable("chunkscanner.dbview.error.msg"), COLOR_RED);
         addBlank();
 
         // ---- Section 1: 基础描述信息 ----
@@ -185,20 +185,24 @@ public class ErrorDisplayLayout implements ILayout {
 
     // ---- 行构建辅助 ----
 
-    private void addSection(String text) {
-        rows.add(new ErrorRow(text, COLOR_GOLD));
+    private void addSection(String string) {
+        rows.add(ErrorRow.of(string, COLOR_GOLD));
     }
 
-    private void addRow(String text, int color) {
+    private void addRow(Text text, int color) {
         rows.add(new ErrorRow(text, color));
     }
 
+    private void addRow(String string, int color) {
+        rows.add(ErrorRow.of(string, color));
+    }
+
     private void addLabeled(String label, String value, int labelColor, int valueColor) {
-        rows.add(new ErrorRow("  " + label + " " + value, valueColor));
+        rows.add(ErrorRow.of("  " + label + " " + value, valueColor));
     }
 
     private void addBlank() {
-        rows.add(new ErrorRow("", COLOR_WHITE));
+        rows.add(ErrorRow.of("", COLOR_WHITE));
     }
 
     // ==================== ILayout 实现 ====================
@@ -232,10 +236,10 @@ public class ErrorDisplayLayout implements ILayout {
     public int renderRow(DrawContext ctx, int idx, int rowY,
                           int margin, int hScrollOffset, int mouseX, int mouseY) {
         ErrorRow row = rows.get(idx);
-        if (row.text.isEmpty()) return -1;
+        if (row.text.getString().isEmpty()) return -1;
 
         int rx = margin - hScrollOffset;
-        ctx.drawTextWithShadow(textRenderer, Text.literal(row.text), rx, rowY, row.color);
+        ctx.drawTextWithShadow(textRenderer, row.text, rx, rowY, row.color);
 
         boolean hovered = mouseY >= rowY && mouseY < rowY + ROW_HEIGHT
                 && mouseX >= rx && mouseX < rx + textRenderer.getWidth(row.text);
@@ -257,5 +261,7 @@ public class ErrorDisplayLayout implements ILayout {
      * @param text  展示文本
      * @param color ARGB 颜色值
      */
-    private record ErrorRow(String text, int color) {}
+    private record ErrorRow(Text text, int color) {
+        static ErrorRow of(String string, int color) { return new ErrorRow(Text.literal(string), color); }
+    }
 }
