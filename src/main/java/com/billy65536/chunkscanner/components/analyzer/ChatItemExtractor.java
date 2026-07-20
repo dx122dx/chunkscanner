@@ -261,8 +261,9 @@ public final class ChatItemExtractor {
         if (nbt == null) return null;
 
         // BlockEntityTag.Items
+        if (!nbt.contains("BlockEntityTag", NbtElement.COMPOUND_TYPE)) return null;
         NbtCompound blockEntityTag = nbt.getCompound("BlockEntityTag");
-        if (blockEntityTag == null || !blockEntityTag.contains("Items", NbtElement.LIST_TYPE)) return null;
+        if (!blockEntityTag.contains("Items", NbtElement.LIST_TYPE)) return null;
 
         NbtList items = blockEntityTag.getList("Items", NbtElement.COMPOUND_TYPE);
         if (items.size() != SHULKER_SLOTS) return null;
@@ -322,8 +323,9 @@ public final class ChatItemExtractor {
      * 提取物品 NBT 用于比较（排除 slot、Count、Unbreakable）。
      */
     private static String extractItemNbtForCompare(NbtCompound slot) {
+        if (!slot.contains("tag", NbtElement.COMPOUND_TYPE)) return "";
         NbtCompound tag = slot.getCompound("tag");
-        if (tag == null || tag.isEmpty()) return "";
+        if (tag.isEmpty()) return "";
         NbtCompound copy = tag.copy();
         copy.remove("Unbreakable");
         copy.remove("display"); // display 可能因物品不同有细微差异
@@ -406,8 +408,10 @@ public final class ChatItemExtractor {
         filtered.remove("Damage");
         filtered.remove("RepairCost");
 
-        // 对潜影盒展开后的内容物，还需移除 BlockEntityTag（因为原潜影盒的该字段已在展开时处理）
-        filtered.remove("BlockEntityTag");
+        // 仅当 NBT 中包含 BlockEntityTag 时才移除（避免误删非潜影盒物品的合法数据）
+        if (filtered.contains("BlockEntityTag")) {
+            filtered.remove("BlockEntityTag");
+        }
 
         if (filtered.isEmpty()) return 0;
 

@@ -265,6 +265,7 @@ public class QShopAnalyzer implements ChunkAnalyzer {
         // 第三行：商品名称
         String itemName = lines[2];
         if (itemName == null || itemName.trim().isEmpty()) return null;
+        itemName = itemName.trim();
 
         // 第四行：单价（解析数字部分，转换为最小货币单位整数）
         String line4 = lines[3];

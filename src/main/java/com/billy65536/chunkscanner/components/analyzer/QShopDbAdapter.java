@@ -175,7 +175,10 @@ public final class QShopDbAdapter {
             if (!isQShopKey(key)) continue;
             if (val.length < BASE_RECORD_SIZE) continue;
             try {
-                records.add(parseRecordValue(key, val));
+                Record rec = parseRecordValue(key, val);
+                if (rec != null) {
+                    records.add(rec);
+                }
             } catch (Exception e) {
                 LOGGER.warn("QShopDbAdapter: failed to parse entry: {}", e.getMessage());
             }
@@ -198,17 +201,14 @@ public final class QShopDbAdapter {
      * 若主记录不存在则静默跳过，已有增强数据会直接覆盖。
      *
      * @param registryId       物品注册 ID
-     * @param displayName      展示名称（保留参数，当前未序列化）
      * @param isBook           是否为书类物品
      * @param isShulkerExpanded 是否已展开潜影盒
      * @param fullNbtString    完整 NBT 字符串（可序列化，支持潜影盒等复杂物品）
-     * @param nbtHash          NBT 哈希（保留参数，当前未序列化）
-     * @param enchantsCount    附魔数量（保留参数，当前未序列化）
      */
     public void enhanceRecord(String dimId, int cx, int cz, int x, int y, int z,
-                              String registryId, String displayName,
+                              String registryId,
                               boolean isBook, boolean isShulkerExpanded,
-                              String fullNbtString, int nbtHash, int enchantsCount) {
+                              String fullNbtString) {
         byte[] key = makeKey(dimId, cx, cz, x, y, z);
 
         if (db.get(key) == null) {
@@ -256,7 +256,10 @@ public final class QShopDbAdapter {
             byte[] val = entry.value();
             if (val.length < ENHANCED_RECORD_SIZE) continue;
             try {
-                results.add(parseEnhancementValue(entry.key(), val));
+                Enhancement enh = parseEnhancementValue(entry.key(), val);
+                if (enh != null) {
+                    results.add(enh);
+                }
             } catch (Exception e) {
                 LOGGER.warn("QShopDbAdapter: failed to parse enhancement: {}", e.getMessage());
             }
@@ -421,6 +424,7 @@ public final class QShopDbAdapter {
      */
     private Record parseRecordValue(byte[] key, byte[] value) {
         KeyHeader kh = parseKeyHeader(key);
+        if (kh == null) return null;
         String dimId = db.lookup(kh.dimPoolId);
 
         ByteBuffer vb = ByteBuffer.wrap(value).order(ByteOrder.LITTLE_ENDIAN);
@@ -498,6 +502,7 @@ public final class QShopDbAdapter {
      */
     private Enhancement parseEnhancementValue(byte[] key, byte[] value) {
         KeyHeader kh = parseKeyHeader(key);
+        if (kh == null) return null;
         String dimId = db.lookup(kh.dimPoolId);
 
         ByteBuffer vb = ByteBuffer.wrap(value).order(ByteOrder.LITTLE_ENDIAN);

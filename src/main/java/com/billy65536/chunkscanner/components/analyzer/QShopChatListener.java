@@ -314,9 +314,9 @@ public final class QShopChatListener {
             }
 
             adapter.enhanceRecord(click.dimId(), cx, cz, click.x(), click.y(), click.z(),
-                    item.registryId(), item.displayName(),
+                    item.registryId(),
                     item.isBook(), item.isShulkerExpanded(),
-                    item.fullNbtString(), item.nbtHash(), item.enchants().size());
+                    item.fullNbtString());
 
             LOGGER.info("Enhanced QShop record: {} at ({}, {}, {}) enchants={} flags={}",
                     item.registryId(), click.x(), click.y(), click.z(),
