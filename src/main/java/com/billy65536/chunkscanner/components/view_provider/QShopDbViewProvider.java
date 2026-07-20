@@ -243,6 +243,8 @@ public class QShopDbViewProvider implements DbViewProvider {
             ItemStack icon = parseDetailItemStack(r);
             if (icon != null) {
                 row.item(icon);
+            } else {
+                row.blank();
             }
             List<Text> detailTips = buildDetailTooltip(r);
             if (detailTips != null) {

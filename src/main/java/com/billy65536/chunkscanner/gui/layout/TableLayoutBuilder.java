@@ -80,6 +80,13 @@ public class TableLayoutBuilder {
         }
 
         /**
+         * 填充一个空白列。
+         */
+        public RowBuilder blank() {
+            return text(null);
+        }
+
+        /**
          * 为此行设置世界位置，并在当前位置添加一个 {@link PositionCell}。
          * 位置列对应的文本显示由 {@link PositionCell} 自动处理。
          */
