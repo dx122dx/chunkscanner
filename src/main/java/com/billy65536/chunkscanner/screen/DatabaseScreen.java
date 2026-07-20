@@ -23,7 +23,9 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
+import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 import com.billy65536.chunkscanner.components.db.DbFileUtil;
+import com.billy65536.chunkscanner.components.view_provider.RawDbProvider;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.TaskConfig;
 import com.billy65536.chunkscanner.core.AnalyzerRegistry;
@@ -32,6 +34,7 @@ import com.billy65536.chunkscanner.core.ChunkDb;
 import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.CoreUtil;
 import com.billy65536.chunkscanner.core.DbViewProvider;
+import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.core.LocatedPosition;
 import com.billy65536.chunkscanner.gui.GuiUtil;
 import com.billy65536.chunkscanner.gui.KvPageRenderer;
@@ -65,6 +68,7 @@ public class DatabaseScreen extends Screen {
     // ==================== KV 视图页 ====================
 
     private DbViewProvider openedDb;
+    private ChunkDb rawChunkDb;
     private DbViewProvider currentView;
     private boolean showingKvView = false;
 
@@ -82,7 +86,7 @@ public class DatabaseScreen extends Screen {
 
     // ==================== 视图类型选择 ====================
 
-    private List<DbViewProvider.Type> viewTypes;
+    private List<DbViewProviderRegistry.Type> viewTypes;
     private int selectedViewTypeIdx = 0;
     private ButtonWidget providerButton;
     private ButtonWidget filterButton;
@@ -113,13 +117,14 @@ public class DatabaseScreen extends Screen {
 
         showingKvView = false;
         openedDb = null;
+        rawChunkDb = null;
         currentView = null;
         pageRenderer = null;
         fileListPanel.endDrag();
         kvPanel.endDrag();
         kvHScroll.endDrag();
 
-        viewTypes = new ArrayList<>(DbViewProvider.Registry.getAll());
+        viewTypes = new ArrayList<>(DbViewProviderRegistry.getAll());
         selectedViewTypeIdx = 0;
 
         scanDbFiles();
@@ -153,18 +158,27 @@ public class DatabaseScreen extends Screen {
         Path fileDir = meta.filePath() != null ? meta.filePath().getParent() : null;
         ChunkDb.Factory dbFactory = ChunkDb.FactoryRegistry.getDefault();
         ChunkDb db = dbFactory.createMetadataOnly(meta.scanId(), meta.analyzerName(), fileDir);
-        openedDb = (DbViewProvider) db;
+        if (!(db instanceof BinaryChunkDb bdb)) {
+            ChunkScannerMod.LOGGER.warn("Unsupported database type for '{}'", meta.scanId());
+            openedDb = null;
+            rawChunkDb = null;
+            cachedTaskConfig = null;
+            return;
+        }
+        rawChunkDb = bdb;
+        openedDb = new RawDbProvider(bdb);
         try {
             openedDb.open();
         } catch (Exception e) {
             ChunkScannerMod.LOGGER.warn("Failed to open database: {}", e.getMessage());
             openedDb = null;
+            rawChunkDb = null;
             cachedTaskConfig = null;
             return;
         }
 
         // 读取 DB 中存储的任务配置，用于路径点命名等
-        cachedTaskConfig = ((ChunkDb) openedDb).getTaskConfig();
+        cachedTaskConfig = bdb.getTaskConfig();
         if (cachedTaskConfig != null) {
             ChunkScannerMod.LOGGER.debug("Loaded TaskConfig from DB for '{}': {}", meta.scanId(), cachedTaskConfig.toDisplayString());
         }
@@ -180,6 +194,7 @@ public class DatabaseScreen extends Screen {
         if (openedDb != null) {
             openedDb.close();
             openedDb = null;
+            rawChunkDb = null;
             currentView = null;
             cachedTaskConfig = null;
         }
@@ -203,10 +218,10 @@ public class DatabaseScreen extends Screen {
         if (viewTypes.isEmpty()) {
             currentView = openedDb;
         } else {
-            DbViewProvider.Type selectedType = viewTypes.get(selectedViewTypeIdx);
+            DbViewProviderRegistry.Type selectedType = viewTypes.get(selectedViewTypeIdx);
             if (forceRecreate || currentView == null) {
                 try {
-                    currentView = selectedType.create((ChunkDb) openedDb);
+                    currentView = selectedType.create(rawChunkDb);
                 } catch (Exception e) {
                     ChunkScannerMod.LOGGER.warn("Failed to create view provider '{}': {}", selectedType.getId(), e.getMessage());
                     currentView = null;
@@ -296,7 +311,7 @@ public class DatabaseScreen extends Screen {
 
     private boolean isCurrentTypeApplicable() {
         if (openedDb == null || viewTypes.isEmpty()) return true;
-        DbViewProvider.Type selectedType = viewTypes.get(selectedViewTypeIdx);
+        DbViewProviderRegistry.Type selectedType = viewTypes.get(selectedViewTypeIdx);
         Set<String> applicable = selectedType.applicableAnalyzers();
         if (applicable.isEmpty()) return true;
         return applicable.contains(openedDb.analyzerName());
@@ -349,7 +364,7 @@ public class DatabaseScreen extends Screen {
         filterButton = null;
 
         if (!viewTypes.isEmpty()) {
-            DbViewProvider.Type vt = viewTypes.get(selectedViewTypeIdx);
+            DbViewProviderRegistry.Type vt = viewTypes.get(selectedViewTypeIdx);
             // 筛选按钮 "..."（在视图选择器右侧）
             if (currentView != null && currentView.supportsFilter()) {
                 filterButton = ButtonWidget.builder(
@@ -389,7 +404,7 @@ public class DatabaseScreen extends Screen {
         fileListPanel.endDrag();
         kvPanel.endDrag();
         kvHScroll.endDrag();
-        viewTypes = new ArrayList<>(DbViewProvider.Registry.getAll());
+        viewTypes = new ArrayList<>(DbViewProviderRegistry.getAll());
         selectedViewTypeIdx = 0;
         clearChildren();
         rebuildFileListButtons();
@@ -493,7 +508,7 @@ public class DatabaseScreen extends Screen {
         // provider 按钮 tooltip
         if (showingKvView && providerButton != null && providerButton.isMouseOver(mouseX, mouseY)
                 && !viewTypes.isEmpty()) {
-            DbViewProvider.Type vt = viewTypes.get(selectedViewTypeIdx);
+            DbViewProviderRegistry.Type vt = viewTypes.get(selectedViewTypeIdx);
             context.drawTooltip(textRenderer,
                     Text.literal(vt.getDescription()).formatted(getProviderColor()),
                     mouseX, mouseY);

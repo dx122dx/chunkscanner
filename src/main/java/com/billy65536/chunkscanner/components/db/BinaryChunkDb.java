@@ -1,7 +1,5 @@
 package com.billy65536.chunkscanner.components.db;
 
-import net.minecraft.text.Text;
-
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -17,11 +15,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.ChunkDb;
 import com.billy65536.chunkscanner.core.CoreUtil;
-import com.billy65536.chunkscanner.core.DbViewProvider;
 import com.billy65536.chunkscanner.config.TaskConfig;
 
 /**
- * 紧凑二进制 ChunkDb 实现，同时实现 DbViewProvider 用于 GUI 展示。
+ * 紧凑二进制 ChunkDb 实现。
  *
  * 文件命名：chunkscanner_{id_hash}.{analyzer_id}.{db_id}
  * 子数据库命名：chunkscanner_{id_hash}.{analyzer_id}.sub_{id}.{db_id}
@@ -52,7 +49,7 @@ import com.billy65536.chunkscanner.config.TaskConfig;
  * │     valLen: u32  |  val: bytes               │
  * └──────────────────────────────────────────────┘
  */
-public class BinaryChunkDb implements ChunkDb, DbViewProvider {
+public class BinaryChunkDb implements ChunkDb {
     /** 文件魔数："CHNKSCAN"（little-endian uint64）。package-private 供 DbFileUtil 引用。 */
     static final long MAGIC = 0x4E4143534B4E4843L; // "CHNKSCAN" (little-endian)
     /** 任务配置元数据键（存储在 KV store 中，JSON 序列化）。 */
@@ -149,9 +146,6 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
 
     @Override
     public String getScanId() { return scanId; }
-
-    @Override
-    public String scanId() { return scanId; }
 
     // ==================== 字符串池 ====================
 
@@ -550,31 +544,31 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
                 new BinaryChunkDb(scanId, analyzerName, false, dbDir, dbExt, k));
     }
 
-    // ==================== DbViewProvider 实现 ====================
+    // ==================== 公共访问方法（供 RawDbProvider 等使用） ====================
 
-    @Override
+    /** 数据库文件路径。 */
     public Path filePath() {
         return dataPath();
     }
 
-    @Override
+    /** 创建此数据库的分析器名称。 */
     public String analyzerName() {
         return analyzerName != null ? analyzerName : "";
     }
 
-    @Override
+    /** 文件大小（字节）。 */
     public long fileSize() {
         Path p = dataPath();
         try { return Files.exists(p) ? Files.size(p) : 0; } catch (Exception e) { return 0; }
     }
 
-    @Override
+    /** 最后修改时间戳。 */
     public long lastModified() {
         Path p = dataPath();
         try { return Files.exists(p) ? p.toFile().lastModified() : 0; } catch (Exception e) { return 0; }
     }
 
-    @Override
+    /** 打开数据库（延迟加载模式时触发 load）。 */
     public void open() {
         if (opened) return;
         if (metadataOnly) {
@@ -583,48 +577,19 @@ public class BinaryChunkDb implements ChunkDb, DbViewProvider {
         opened = true;
     }
 
-    @Override
+    /** 是否已打开。 */
     public boolean isOpen() {
         return opened;
     }
 
-    @Override
+    /** KV 记录总数。 */
     public int kvCount() {
         return kvStore.size();
     }
 
-    @Override
+    /** Chunk 元数据记录总数。 */
     public int chunkMetaCount() {
         return chunkScanTime.size();
-    }
-
-    // ==================== DbViewProvider.Type ====================
-
-    /** Raw 视图类型描述符：直接显示原始字节。适用于所有分析器。 */
-    public static class DbViewProviderType implements DbViewProvider.Type {
-        @Override
-        public String getId() { return "raw"; }
-
-        @Override
-        public String getName() {
-            return Text.translatable("chunkscanner.dbview.raw.name").getString();
-        }
-
-        @Override
-        public String getDescription() {
-            return Text.translatable("chunkscanner.dbview.raw.desc").getString();
-        }
-
-        @Override
-        public Set<String> applicableAnalyzers() {
-            return Collections.emptySet(); // 适用于所有
-        }
-
-        @Override
-        public DbViewProvider create(ChunkDb db) {
-            // BinaryChunkDb 同时实现了 ChunkDb 和 DbViewProvider
-            return db instanceof DbViewProvider dvp ? dvp : null;
-        }
     }
 
     // ==================== ChunkDb.Factory ====================

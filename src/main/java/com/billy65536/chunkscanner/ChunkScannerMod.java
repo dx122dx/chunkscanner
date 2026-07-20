@@ -7,6 +7,7 @@ import com.billy65536.chunkscanner.components.analyzer.SignAnalyzer;
 import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 import com.billy65536.chunkscanner.components.db.DbFileUtil;
 import com.billy65536.chunkscanner.components.view_provider.QShopDbViewProvider;
+import com.billy65536.chunkscanner.components.view_provider.RawDbProvider;
 import com.billy65536.chunkscanner.components.view_provider.SignDbViewProvider;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.ConfigLoader;
@@ -15,7 +16,7 @@ import com.billy65536.chunkscanner.core.AnalyzerRegistry;
 import com.billy65536.chunkscanner.core.ChunkAnalyzer;
 import com.billy65536.chunkscanner.core.ChunkDb;
 import com.billy65536.chunkscanner.core.ChunkScanner;
-import com.billy65536.chunkscanner.core.DbViewProvider;
+import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.screen.ChunkScannerScreen;
 import com.billy65536.chunkscanner.screen.DatabaseScreen;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -148,9 +149,9 @@ public class ChunkScannerMod implements ClientModInitializer {
         AnalyzerRegistry.register(new QShopAnalyzer());
 
         // 注册 DbViewProvider 类型（提供数据库浏览的不同视图）
-        DbViewProvider.Registry.register(new BinaryChunkDb.DbViewProviderType());
-        DbViewProvider.Registry.register(new SignDbViewProvider.DbViewProviderType());
-        DbViewProvider.Registry.register(new QShopDbViewProvider.DbViewProviderType());
+        DbViewProviderRegistry.register(new RawDbProvider.Type());
+        DbViewProviderRegistry.register(new SignDbViewProvider.Type());
+        DbViewProviderRegistry.register(new QShopDbViewProvider.Type());
 
         // 注册命令（/chunkscanner 和 /cs 两个别名）
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {

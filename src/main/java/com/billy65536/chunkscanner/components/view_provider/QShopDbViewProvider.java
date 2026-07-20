@@ -25,6 +25,8 @@ import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 import com.billy65536.chunkscanner.core.ChunkDb;
 import com.billy65536.chunkscanner.core.DbViewProvider;
 import com.billy65536.chunkscanner.core.LocatedPosition;
+import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
+
 /**
  * QShop 分析器特化的 DbViewProvider。
  *
@@ -109,7 +111,7 @@ public class QShopDbViewProvider implements DbViewProvider {
 
     @Override public Path filePath() { return delegate.filePath(); }
     @Override public String analyzerName() { return delegate.analyzerName(); }
-    @Override public String scanId() { return delegate.scanId(); }
+    @Override public String scanId() { return delegate.getScanId(); }
     @Override public long fileSize() { return delegate.fileSize(); }
     @Override public long lastModified() { return delegate.lastModified(); }
     @Override public void open() { delegate.open(); }
@@ -627,10 +629,10 @@ public class QShopDbViewProvider implements DbViewProvider {
                                String itemId, int flags,
                                String detailNbtString) {}
 
-    // ==================== DbViewProvider.Type ====================
+    // ==================== 类型描述符 ====================
 
     /** QShop 视图类型描述符：解析 QShop 数据为结构化展示。仅适用于 qshop 分析器。 */
-    public static class DbViewProviderType implements DbViewProvider.Type {
+    public static class Type implements DbViewProviderRegistry.Type {
         @Override
         public String getId() { return "qshop_view"; }
 

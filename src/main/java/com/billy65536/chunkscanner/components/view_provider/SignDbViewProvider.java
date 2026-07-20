@@ -15,6 +15,7 @@ import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 import com.billy65536.chunkscanner.core.ChunkDb;
 import com.billy65536.chunkscanner.core.DbViewProvider;
+import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.core.LocatedPosition;
 
 /**
@@ -62,7 +63,7 @@ public class SignDbViewProvider implements DbViewProvider {
 
     @Override
     public String scanId() {
-        return delegate.scanId();
+        return delegate.getScanId();
     }
 
     @Override
@@ -226,10 +227,10 @@ public class SignDbViewProvider implements DbViewProvider {
                               String line1, String line2, String line3, String line4,
                               long timestamp) {}
 
-    // ==================== DbViewProvider.Type ====================
+    // ==================== 类型描述符 ====================
 
     /** Sign 视图类型描述符：解析告示牌数据为可读文本。仅适用于 sign 分析器。 */
-    public static class DbViewProviderType implements DbViewProvider.Type {
+    public static class Type implements DbViewProviderRegistry.Type {
         @Override
         public String getId() { return "sign_view"; }
 
