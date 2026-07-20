@@ -168,6 +168,7 @@
     "chunkscanner.qshop.flag.shulker_expanded": "S - 已展开的潜影盒",
     "chunkscanner.qshop.flag.book": "B - 成书",
     "chunkscanner.qshop.shulker_unit_price": "单价约 %s",
+    "chunkscanner.qshop.enhancement_update_time": "增强信息更新时间：%s",
 
     "chunkscanner.qshop.infinite": "无限",
     "chunkscanner.qshop.out_of_stock": "缺货",

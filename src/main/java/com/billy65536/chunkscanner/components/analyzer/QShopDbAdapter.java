@@ -68,16 +68,18 @@ public final class QShopDbAdapter {
      * @param quantity       交易数量
      * @param itemName       物品名称（游戏内翻译名）
      * @param price          价格（最小货币单位）
-     * @param timestamp      记录时间戳
+     * @param timestamp      记录时间戳（毫秒）
      * @param itemId         物品注册 ID（增强后覆盖）
      * @param flags          标志位（来自 QShopAnalyzer FLAG_*）
      * @param detailNbtString 完整 NBT 字符串（增强数据，可为 null）
+     * @param enhancementTimestamp 增强数据时间戳（毫秒，不存在为 -1）
      */
     public record Record(String dimId, int cx, int cz, int x, int y, int z,
                          String owner, byte mode, int quantity,
                          String itemName, int price, long timestamp,
                          String itemId, int flags,
-                         String detailNbtString) {}
+                         String detailNbtString,
+                         long enhancementTimestamp) {}
 
     /**
      * 聊天增强数据，存储物品的注册 ID、完整 NBT 等信息。
@@ -449,6 +451,7 @@ public final class QShopDbAdapter {
         String itemName = db.lookup(itemNameId);
         String itemId = itemIdPoolId != 0 ? db.lookup(itemIdPoolId) : "";
         String detailNbtString = null;
+        long enhancementTimestamp = -1L;
 
         // 合并增强数据（覆盖 itemId、合并 flags、读取 NBT 详情）
         byte[] enhancedVal = subDb.get(key);
@@ -457,19 +460,20 @@ public final class QShopDbAdapter {
             int enhancedItemId = evb.getInt();
             int detailNbtPoolId = evb.getInt();
             int enhancedFlags = evb.getInt();
-            /* long updateTime = */ evb.getLong();
+            enhancementTimestamp =  evb.getLong();
 
             if (enhancedItemId != 0) {
                 itemId = subDb.lookup(enhancedItemId);
+                flags &= ~QShopAnalyzer.FLAG_ID_RECOVERED; // 覆盖后，不再使用从映射表恢复的 id，移除该标记
             }
             flags |= enhancedFlags;
             detailNbtString = detailNbtPoolId != 0 ? subDb.lookup(detailNbtPoolId) : null;
         }
 
         return new Record(dimId, kh.cx, kh.cz, x, y, z, owner, mode, quantity,
-                itemName, price, timestamp, itemId, flags, detailNbtString);
+                itemName, price, timestamp, itemId, flags, detailNbtString,
+                enhancementTimestamp);
     }
-
     // ==================== 私有 — Enhancement Value 转换 ====================
 
     /**

@@ -10,6 +10,11 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.FormatStyle;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -45,11 +50,9 @@ public class QShopDbViewProvider implements DbViewProvider {
 
     private final ChunkDb db;
 
-    /** 缓存解析后的商店记录（全量，未筛选）。仅渲染线程访问，无需同步。 */
-    private List<QShopRecord> cachedRecords;
+
     /** 缓存筛选并排序后的记录。仅渲染线程访问，无需同步。 */
-    private List<QShopRecord> cachedFilteredSorted;
-    private boolean cacheValid = false;
+    private List<QShopDbAdapter.Record> cachedFilteredSorted;
     private boolean filteredCacheValid = false;
 
     // ==================== 排序常量 ====================
@@ -164,7 +167,6 @@ public class QShopDbViewProvider implements DbViewProvider {
 
     /** 筛选条件变更后使缓存失效，并预编译正则 Pattern。 */
     public void invalidateCache() {
-        cacheValid = false;
         filteredCacheValid = false;
         compiledDimPattern = compileIfNeeded(dimFilter, dimFilterMode);
         compiledOwnerPattern = compileIfNeeded(ownerFilter, ownerFilterMode);
@@ -182,11 +184,11 @@ public class QShopDbViewProvider implements DbViewProvider {
 
     // ==================== ViewLayout ====================
 
-    private static final String[] HEADERS = {"Pos", "Owner", "Type", "Qty", "Item", "Price", "ID", "Preview", "Flags"};
+    private static final String[] HEADERS = {"Pos", "Owner", "Type", "Qty", "Item", "Price", "ID", "Preview", "Flags", "Update Time"};
 
     @Override
     public ILayout getLayout(TextRenderer textRenderer) {
-        List<QShopRecord> matched = getFilteredSortedRecords();
+        List<QShopDbAdapter.Record> matched = getFilteredSortedRecords();
         int metaCount;
         try {
             metaCount = db.getAllChunkMetas().size();
@@ -195,7 +197,7 @@ public class QShopDbViewProvider implements DbViewProvider {
         }
 
         TableLayoutBuilder b = new TableLayoutBuilder(textRenderer, metaCount, HEADERS);
-        for (QShopRecord r : matched) {
+        for (QShopDbAdapter.Record r : matched) {
             String modeStr;
             String quantityStr;
             if (r.mode() == QShopAnalyzer.MODE_SELL) {
@@ -259,6 +261,16 @@ public class QShopDbViewProvider implements DbViewProvider {
                 row.withTooltip(flagTips);
             }
 
+            // Update Time 列
+            String updateTime = formatTimestamp(r.timestamp());
+            row.text(updateTime);
+
+            if(r.enhancementTimestamp() > 0) {
+                row.withTooltip(new String[] {
+                    Text.translatable("chunkscanner.qshop.enhancement_update_time", formatTimestamp(r.enhancementTimestamp())).getString()
+                });
+            }
+
             row.done();
         }
         return b.build();
@@ -314,7 +326,7 @@ public class QShopDbViewProvider implements DbViewProvider {
      * 从 detailNbtString 解析 ItemStack，解析失败返回 null。
      * 供 buildDetailTooltip 和 getLayout() 复用。
      */
-    private static ItemStack parseDetailItemStack(QShopRecord record) {
+    private static ItemStack parseDetailItemStack(QShopDbAdapter.Record record) {
         if (record.detailNbtString() == null || record.detailNbtString().isEmpty()) return null;
         try {
             NbtCompound nbt = StringNbtReader.parse(record.detailNbtString());
@@ -331,7 +343,7 @@ public class QShopDbViewProvider implements DbViewProvider {
      * <p>从 detailNbtString（完整 ItemStack NBT JSON）重建 ItemStack，
      * 调用原版 {@code getTooltip()} 获取物品描述文本。</p>
      */
-    private static List<Text> buildDetailTooltip(QShopRecord record) {
+    private static List<Text> buildDetailTooltip(QShopDbAdapter.Record record) {
         ItemStack stack = parseDetailItemStack(record);
         if (stack == null) return null;
 
@@ -354,7 +366,7 @@ public class QShopDbViewProvider implements DbViewProvider {
      * <p>单价 = 商店价格 / 满箱物品数 = 商店价格 / (27 × 物品堆叠上限)。
      * 显示格式："单价约 X.XX"。</p>
      */
-    private static List<Text> buildShulkerUnitPriceTooltip(QShopRecord record) {
+    private static List<Text> buildShulkerUnitPriceTooltip(QShopDbAdapter.Record record) {
         try {
             int priceCents = record.price();
 
@@ -386,13 +398,13 @@ public class QShopDbViewProvider implements DbViewProvider {
     private static final int SHULKER_SLOTS = 27;
 
     /** 获取筛选并排序后的记录列表。 */
-    private List<QShopRecord> getFilteredSortedRecords() {
+    private List<QShopDbAdapter.Record> getFilteredSortedRecords() {
         if (filteredCacheValid && cachedFilteredSorted != null) {
             return cachedFilteredSorted;
         }
-        List<QShopRecord> records = getQShopRecords();
-        List<QShopRecord> matched = new ArrayList<>();
-        for (QShopRecord r : records) {
+        List<QShopDbAdapter.Record> records = new QShopDbAdapter(db).getAllRecords();
+        List<QShopDbAdapter.Record> matched = new ArrayList<>();
+        for (QShopDbAdapter.Record r : records) {
             if (matchesFilter(r)) {
                 matched.add(r);
             }
@@ -408,11 +420,11 @@ public class QShopDbViewProvider implements DbViewProvider {
     /**
      * 根据当前排序模式返回对应的比较器。
      */
-    private Comparator<QShopRecord> getSortComparator() {
+    private Comparator<QShopDbAdapter.Record> getSortComparator() {
         return switch (sortMode) {
-            case SORT_PRICE_ASC -> Comparator.comparingInt(QShopRecord::price);
+            case SORT_PRICE_ASC -> Comparator.comparingInt(QShopDbAdapter.Record::price);
             case SORT_PRICE_DESC -> (a, b) -> Integer.compare(b.price(), a.price());
-            case SORT_QTY_ASC -> Comparator.comparingInt(QShopRecord::quantity);
+            case SORT_QTY_ASC -> Comparator.comparingInt(QShopDbAdapter.Record::quantity);
             case SORT_QTY_DESC -> (a, b) -> Integer.compare(b.quantity(), a.quantity());
             default -> (a, b) -> 0;
         };
@@ -421,7 +433,7 @@ public class QShopDbViewProvider implements DbViewProvider {
     /**
      * 检查一条记录是否满足当前所有筛选条件。
      */
-    private boolean matchesFilter(QShopRecord r) {
+    private boolean matchesFilter(QShopDbAdapter.Record r) {
         // 模式筛选
         if (modeFilter == 1 && r.mode() != QShopAnalyzer.MODE_SELL) return false;
         if (modeFilter == 2 && r.mode() != QShopAnalyzer.MODE_BUY) return false;
@@ -471,60 +483,16 @@ public class QShopDbViewProvider implements DbViewProvider {
         return String.format("%d.%02d", cents / 100, cents % 100);
     }
 
-    // ==================== QShop 特化展示 ====================
+    private static ZoneId timezone = ZoneId.systemDefault();
+    private static DateTimeFormatter timeFormatter = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT);
 
-    /**
-     * 解析 qshop KV 条目为可读格式。
-     *
-     * 反序列化流程：
-     * 1. 从 db 获取所有原始 KV 条目
-     * 2. 解析值中的 dimPoolId → 通过字符串池 lookup 还原维度 ID
-     * 3. 解析坐标、所有者、模式、数量、商品名、价格
-     *
-     * 结果会被缓存（cacheValid），数据不变时不会重复解析。
-     */
-    public List<QShopRecord> getQShopRecords() {
-        if (cacheValid && cachedRecords != null) {
-            return cachedRecords;
-        }
-
-        QShopDbAdapter adapter = new QShopDbAdapter(db);
-        List<QShopDbAdapter.Record> adapterRecords = adapter.getAllRecords();
-
-        List<QShopRecord> records = new ArrayList<>(adapterRecords.size());
-        for (QShopDbAdapter.Record r : adapterRecords) {
-            records.add(new QShopRecord(r.dimId(), r.x(), r.y(), r.z(),
-                    r.owner(), r.mode(), r.quantity(),
-                    r.itemName(), r.price(), r.timestamp(),
-                    r.itemId(), r.flags(), r.detailNbtString()));
-        }
-
-        cachedRecords = records;
-        cacheValid = true;
-        filteredCacheValid = false;
-        return records;
+    /** 将时间戳（毫秒）转化为时间字符串 */
+    private static String formatTimestamp(long timestamp) {
+        Instant instant = Instant.ofEpochMilli(timestamp);
+        LocalDateTime dateTime = LocalDateTime.ofInstant(instant, timezone);
+        return timeFormatter.format(dateTime);
     }
 
-    /**
-     * QShop 商店记录。
-     *
-     * @param dimId    维度 ID
-     * @param x,y,z    告示牌坐标
-     * @param owner    商店所有者名称
-     * @param mode     0=出售, 1=收购
-     * @param quantity 剩余数量（出售 mode quantity=0 表示缺货，收购 mode quantity=0 表示空间不足）
-     * @param itemName 商品名称（告示牌原文）
-     * @param price    单价（最小货币单位整数，真实价格 = price / 100.0）
-     * @param timestamp 扫描时间戳
-     * @param itemId   商品注册名（如 "minecraft:diamond"），恢复失败为空串
-     * @param flags    特殊值标志位（参见 {@link QShopAnalyzer#FLAG_ENHANCED_DATA} 等）
-     * @param detailNbtString 物品完整 NBT 的 JSON 字符串（用于 Detail 列悬停展示，null 表示未增强）
-     */
-    public record QShopRecord(String dimId, int x, int y, int z,
-                               String owner, byte mode, int quantity,
-                               String itemName, int price, long timestamp,
-                               String itemId, int flags,
-                               String detailNbtString) {}
 
     // ==================== 类型描述符 ====================
 

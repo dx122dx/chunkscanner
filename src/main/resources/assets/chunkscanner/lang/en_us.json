@@ -167,6 +167,7 @@
     "chunkscanner.qshop.flag.shulker_expanded": "S - Shulker box expanded",
     "chunkscanner.qshop.flag.book": "B - Written book",
     "chunkscanner.qshop.shulker_unit_price": "Unit price ~ %s",
+    "chunkscanner.qshop.enhancement_update_time": "Enhancement update time: %s",
 
     "chunkscanner.qshop.infinite": "Unlimited",
     "chunkscanner.qshop.out_of_stock": "Out of Stock",
