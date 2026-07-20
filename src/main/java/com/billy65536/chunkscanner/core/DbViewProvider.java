@@ -1,6 +1,6 @@
 package com.billy65536.chunkscanner.core;
 
-import com.billy65536.chunkscanner.gui.ViewLayout;
+import com.billy65536.chunkscanner.gui.layout.ILayout;
 
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.screen.Screen;
@@ -16,7 +16,7 @@ import net.minecraft.client.gui.screen.Screen;
  * <p>数据访问（文件路径、条目、元数据等）通过 {@link #getDb()} 直接访问底层 {@link ChunkDb} 实例，
  * 不再需要将 ChunkDb 操作转发到 {@link DbViewProvider} 接口。</p>
  *
- * <p>渲染协议通过 {@link #getLayout(TextRenderer)} 返回的 {@link ViewLayout} 统一处理，
+ * <p>渲染协议通过 {@link #getLayout(TextRenderer)} 返回的 {@link ILayout} 统一处理，
  * DatabaseScreen 不再需要关心视图是否为特化、如何渲染等细节。</p>
  */
 public interface DbViewProvider {
@@ -27,14 +27,12 @@ public interface DbViewProvider {
     /**
      * 获取此视图的渲染布局。
      *
-     * <p>原始视图返回列表模式 {@link com.billy65536.chunkscanner.gui.TableLayout}，
-     * Sign/QShop 等特化视图返回表格模式。DatabaseScreen 只需调用此方法即可获得完整的
-     * 渲染协议，无需再通过 instanceof 或 isSpecialized() 分支处理。</p>
+     * <p>DatabaseScreen 只需调用此方法即可获得完整的渲染协议。</p>
      *
      * @param textRenderer 字体渲染器，由 {@code DatabaseScreen} 提供
      * @return 用于渲染的布局对象，不可为 null
      */
-    ViewLayout getLayout(TextRenderer textRenderer);
+    ILayout getLayout(TextRenderer textRenderer);
 
     // ==================== 筛选 ====================
 

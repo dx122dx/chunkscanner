@@ -23,8 +23,8 @@ import com.billy65536.chunkscanner.core.ChunkDb;
 import com.billy65536.chunkscanner.core.DbViewProvider;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.core.LocatedPosition;
-import com.billy65536.chunkscanner.gui.TableLayoutBuilder;
-import com.billy65536.chunkscanner.gui.ViewLayout;
+import com.billy65536.chunkscanner.gui.layout.TableLayoutBuilder;
+import com.billy65536.chunkscanner.gui.layout.ILayout;
 
 /**
  * QShop 分析器特化的 DbViewProvider。
@@ -185,7 +185,7 @@ public class QShopDbViewProvider implements DbViewProvider {
     private static final String[] HEADERS = {"Pos", "Owner", "Type", "Qty", "Item", "Price", "ID", "Preview", "Flags"};
 
     @Override
-    public ViewLayout getLayout(TextRenderer textRenderer) {
+    public ILayout getLayout(TextRenderer textRenderer) {
         List<QShopRecord> matched = getFilteredSortedRecords();
         int metaCount;
         try {
@@ -218,7 +218,6 @@ public class QShopDbViewProvider implements DbViewProvider {
                 }
             }
 
-            String detailStr = (r.detailNbtString() != null && !r.detailNbtString().isEmpty()) ? "ⓘ" : "";
             LocatedPosition pos = new LocatedPosition(r.dimId(), r.x(), r.y(), r.z());
             boolean shulker = (r.flags() & QShopAnalyzer.FLAG_SHULKER_EXPANDED) != 0;
 
@@ -238,8 +237,7 @@ public class QShopDbViewProvider implements DbViewProvider {
                 }
             }
 
-            row.text(r.itemId())
-                    .text(detailStr);
+            row.text(r.itemId());
 
             // Detail 列物品图标和 tooltip
             ItemStack icon = parseDetailItemStack(r);

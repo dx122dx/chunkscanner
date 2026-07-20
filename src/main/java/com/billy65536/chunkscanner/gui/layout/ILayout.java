@@ -1,4 +1,4 @@
-package com.billy65536.chunkscanner.gui;
+package com.billy65536.chunkscanner.gui.layout;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.item.ItemStack;
@@ -11,20 +11,20 @@ import com.billy65536.chunkscanner.core.LocatedPosition;
 /**
  * 数据库视图渲染协议接口。
  *
- * <p>将 KV 具体渲染逻辑从 {@code DatabaseScreen} 中剥离出来，由 {@link TableLayout}
- * 统一实现。通过 default 方法提供表格模式专属方法的空实现，使得列表模式无需关心这些方法。</p>
+ * <p>将具体渲染逻辑从 {@code DatabaseScreen} 中剥离出来，由 {@link TableLayout} 实现。
+ * 部分表格模式专属方法通过 default 提供空实现，简化接口实现。</p>
  *
  * <p>接口方法分为两组：</p>
  * <ul>
- *   <li><b>基础方法</b>（所有模式都需要）：{@link #getItemCount()}, {@link #getMetaCount()},
+ *   <li><b>基础方法</b>：{@link #getItemCount()}, {@link #getMetaCount()},
  *       {@link #computeContentWidth()}, {@link #getHeaderHeight()}, {@link #renderHeader},
- *       {@link #renderRow}, {@link #getTooltip}, {@link #export}</li>
+ *       {@link #renderRow}, {@link #export}</li>
  *   <li><b>表格模式方法</b>（default 空实现）：{@link #getHeaders()}, {@link #isPositionColumn},
  *       {@link #getHoveredCol()}, {@link #getHoveredItemStack()}, {@link #getCellTooltip},
  *       {@link #beginFrame()}, {@link #getPositionAt}, {@link #getRowAt}</li>
  * </ul>
  */
-public interface ViewLayout {
+public interface ILayout {
 
     // ==================== 基础方法 ====================
 
@@ -37,14 +37,11 @@ public interface ViewLayout {
     /** 内容总像素宽度（用于水平滚动条）。 */
     int computeContentWidth();
 
-    /**
-     * 表头占用的像素高度。
-     * 表格模式返回 16，列表模式返回 0。
-     */
+    /** 表头占用的像素高度（0 或 16）。 */
     int getHeaderHeight();
 
     /**
-     * 渲染表头。列表模式无操作。
+     * 渲染表头。
      *
      * @return 表头占用的像素高度
      */
@@ -64,15 +61,15 @@ public interface ViewLayout {
     int renderRow(DrawContext ctx, int idx, int rowY,
                   int margin, int hScrollOffset, int mouseX, int mouseY);
 
-    /** 返回指定行的 tooltip 列表，无 tooltip 返回 null。 */
-    List<Text> getTooltip(int idx);
+    /** 返回指定行的全行 tooltip 列表，无 tooltip 返回 null。 */
+    default List<Text> getTooltip(int idx) { return null; }
 
     /** 导出为文本，追加到 StringBuilder。 */
     void export(StringBuilder sb);
 
     // ==================== 表格模式方法（default 空实现） ====================
 
-    /** 列标题数组，列表模式返回 null。 */
+    /** 列标题数组。 */
     default String[] getHeaders() { return null; }
 
     /** 指定列是否为位置列（可点击创建路径点）。 */
@@ -90,12 +87,12 @@ public interface ViewLayout {
      */
     default List<Text> getCellTooltip(int rowIdx, int colIdx) { return null; }
 
-    /** 每帧渲染前调用，重置帧级悬停状态。表格模式实现此方法。 */
+    /** 每帧渲染前调用，重置帧级悬停状态。 */
     default void beginFrame() {}
 
     /** 返回指定行对应的世界位置，无位置信息返回 null。 */
     default LocatedPosition getPositionAt(int rowIdx) { return null; }
 
-    /** 返回指定行的各列值数组，用于路径点占位符替换。列表模式返回 null。 */
+    /** 返回指定行的各列值数组，用于路径点占位符替换。 */
     default String[] getRowAt(int rowIdx) { return null; }
 }

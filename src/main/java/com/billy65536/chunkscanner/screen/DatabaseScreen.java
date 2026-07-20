@@ -38,7 +38,7 @@ import com.billy65536.chunkscanner.core.LocatedPosition;
 import com.billy65536.chunkscanner.gui.GuiUtil;
 import com.billy65536.chunkscanner.gui.ScrollManager;
 import com.billy65536.chunkscanner.gui.ScrollableListPanel;
-import com.billy65536.chunkscanner.gui.ViewLayout;
+import com.billy65536.chunkscanner.gui.layout.ILayout;
 import com.billy65536.chunkscanner.integration.XaeroWaypointHelper;
 
 /**
@@ -75,7 +75,7 @@ public class DatabaseScreen extends Screen {
     private final ScrollManager kvHScroll = new ScrollManager();
 
     /** 当前页面渲染器（封装原始 KV 视图或特化视图的渲染逻辑与数据）。 */
-    private ViewLayout layout;
+    private ILayout layout;
 
     /** 悬停行索引（渲染时填充，用于 tooltip）。 */
     private int hoveredKvIdx = -1;

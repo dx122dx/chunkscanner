@@ -16,8 +16,8 @@ import com.billy65536.chunkscanner.core.ChunkDb;
 import com.billy65536.chunkscanner.core.DbViewProvider;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.core.LocatedPosition;
-import com.billy65536.chunkscanner.gui.TableLayoutBuilder;
-import com.billy65536.chunkscanner.gui.ViewLayout;
+import com.billy65536.chunkscanner.gui.layout.TableLayoutBuilder;
+import com.billy65536.chunkscanner.gui.layout.ILayout;
 
 /**
  * Sign 分析器特化的 DbViewProvider。
@@ -57,7 +57,7 @@ public class SignDbViewProvider implements DbViewProvider {
     }
 
     @Override
-    public ViewLayout getLayout(TextRenderer textRenderer) {
+    public ILayout getLayout(TextRenderer textRenderer) {
         List<SignRecord> records = getSignRecords();
         int metaCount;
         try {
