@@ -11,8 +11,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Set;
 import java.util.zip.CRC32;
 
@@ -73,17 +71,11 @@ public final class ChatItemExtractor {
      *
      * @param registryId    物品注册名（潜影盒展开后为内容物注册名）
      * @param nbtHash       物品 NBT 的 CRC32 哈希（0 表示无 NBT）
-     * @param enchants      附魔列表（不可变，可能为空）
      * @param fullNbtString 物品完整 NBT 的 JSON 字符串（用于 Detail 列悬停展示）
      * @param flags         特殊物品标志（参见 {@link #FLAG_SHULKER_EXPANDED} 等）
      * @param displayName   物品显示名（潜影盒展开后为内容物名称，成书为标题）
      */
-    public record ExtractedItem(String registryId, int nbtHash, List<String> enchants,
-                                 String fullNbtString, int flags, String displayName) {
-        /** 是否有附魔。 */
-        public boolean hasEnchants() {
-            return enchants != null && !enchants.isEmpty();
-        }
+    public record ExtractedItem(String registryId, int nbtHash, String fullNbtString, int flags, String displayName) {
 
         /** 是否为潜影盒展开（S 标志）。 */
         public boolean isShulkerExpanded() {
@@ -225,13 +217,10 @@ public final class ChatItemExtractor {
             }
         }
 
-        // 提取附魔列表（潜影盒展开后为内容物的附魔）
-        List<String> enchants = extractEnchantments(stack);
-
         // 计算 NBT 哈希（排除附魔等不稳定字段）
         int nbtHash = computeNbtHash(stack);
 
-        return new ExtractedItem(registryId, nbtHash, enchants, fullNbtString, flags, displayName);
+        return new ExtractedItem(registryId, nbtHash, fullNbtString, flags, displayName);
     }
 
     // ==================== 潜影盒展开 ====================
@@ -346,36 +335,6 @@ public final class ChatItemExtractor {
         if (!nbt.contains("title", NbtElement.STRING_TYPE)) return null;
         String title = nbt.getString("title");
         return (title != null && !title.isEmpty()) ? title : null;
-    }
-
-    // ==================== 附魔提取 ====================
-
-    /**
-     * 从 ItemStack 中提取附魔列表（格式："minecraft:sharpness:5"）。
-     */
-    private static List<String> extractEnchantments(ItemStack stack) {
-        List<String> result = new ArrayList<>();
-        NbtCompound nbt = stack.getNbt();
-        if (nbt == null) return result;
-
-        // 附魔存储在 tag.Enchantments 或 tag.StoredEnchantments 中
-        extractEnchFromList(nbt, "Enchantments", result);
-        extractEnchFromList(nbt, "StoredEnchantments", result);
-
-        return result;
-    }
-
-    private static void extractEnchFromList(NbtCompound nbt, String key, List<String> result) {
-        if (!nbt.contains(key, NbtElement.LIST_TYPE)) return;
-        NbtList list = nbt.getList(key, NbtElement.COMPOUND_TYPE);
-        for (int i = 0; i < list.size(); i++) {
-            NbtCompound ench = list.getCompound(i);
-            String enchId = ench.getString("id");
-            int lvl = ench.getShort("lvl");
-            if (enchId != null && !enchId.isEmpty()) {
-                result.add(enchId + ":" + lvl);
-            }
-        }
     }
 
     // ==================== NBT 序列化与哈希 ====================

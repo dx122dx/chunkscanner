@@ -188,8 +188,8 @@ public final class QShopChatListener {
             }
         }
 
-        LOGGER.debug("Detected QShop item: registryId={}, enchants={}, nbtHash={}",
-                item.registryId(), item.enchants().size(), item.nbtHash());
+        LOGGER.debug("Detected QShop item: registryId={}, nbtHash={}",
+                item.registryId(), item.nbtHash());
     }
 
     // ==================== 定时处理（由 ChunkScannerMod 在 END_CLIENT_TICK 调用） ====================
@@ -241,7 +241,7 @@ public final class QShopChatListener {
         for (PendingMessage pm : batch) {
             ChatItemExtractor.ExtractedItem item = pm.item();
             if (item == null) continue;
-            String dedupKey = item.registryId() + "|" + String.join(",", item.enchants()) + "|" + item.nbtHash();
+            String dedupKey = item.registryId() + "|" + item.nbtHash();
             uniqueItems.putIfAbsent(dedupKey, item);
         }
 
@@ -318,9 +318,8 @@ public final class QShopChatListener {
                     item.isBook(), item.isShulkerExpanded(),
                     item.fullNbtString());
 
-            LOGGER.info("Enhanced QShop record: {} at ({}, {}, {}) enchants={} flags={}",
-                    item.registryId(), click.x(), click.y(), click.z(),
-                    item.enchants().size(), item.flags());
+            LOGGER.info("Enhanced QShop record: {} at ({}, {}, {}) flags={}",
+                    item.registryId(), click.x(), click.y(), click.z(), item.flags());
             return true;
         }
 
