@@ -6,6 +6,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
+import java.util.Arrays;
 import java.util.List;
 
 import com.billy65536.chunkscanner.core.LocatedPosition;
@@ -13,7 +14,7 @@ import com.billy65536.chunkscanner.core.LocatedPosition;
 /**
  * {@link ILayout} 的唯一实现，通过 {@link CellContent} 密封接口统一存储单元格数据。
  *
- * <p>每个单元格是 {@link RichText}、{@link PositionCell} 或 {@link ItemCell} 之一，
+ * <p>每个单元格是 {@link TextCell}、{@link PositionCell} 或 {@link ItemCell} 之一，
  * 渲染时通过 {@code instanceof} 分派到对应逻辑。不再维护分离的颜色/tooltip/物品 Map。</p>
  */
 public class TableLayout implements ILayout {
@@ -113,9 +114,9 @@ public class TableLayout implements ILayout {
                     hoveredItemStack = ic.stack();
                 }
 
-            } else if (cell instanceof RichText rt) {
+            } else if (cell instanceof TextCell rt) {
                 ctx.drawTextWithShadow(textRenderer,
-                        Text.literal(rt.text()), rx, rowY, rt.color());
+                        rt.text(), rx, rowY, rt.color());
             }
 
             rx += colWidths[c] + COL_PADDING;
@@ -161,10 +162,8 @@ public class TableLayout implements ILayout {
         if (rowIdx < 0 || rowIdx >= rows.size()) return null;
         if (colIdx < 0 || colIdx >= headers.length) return null;
         CellContent cell = rows.get(rowIdx).get(colIdx);
-        if (cell instanceof RichText rt && rt.tooltip() != null) {
-            return java.util.Arrays.stream(rt.tooltip())
-                    .map(Text::literal)
-                    .collect(java.util.stream.Collectors.toList());
+        if (cell instanceof TextCell rt && rt.tooltip() != null) {
+            return Arrays.asList(rt.tooltip());
         }
         return null;
     }
@@ -199,7 +198,7 @@ public class TableLayout implements ILayout {
 
     /** 将任意 CellContent 转为导出用文本。 */
     private static String cellToText(CellContent cell) {
-        if (cell instanceof RichText rt) return rt.text();
+        if (cell instanceof TextCell rt) return rt.text().getString();
         if (cell instanceof PositionCell pc) return pc.pos().toString();
         if (cell instanceof ItemCell ic) return ic.stack().getName().getString();
         return "";

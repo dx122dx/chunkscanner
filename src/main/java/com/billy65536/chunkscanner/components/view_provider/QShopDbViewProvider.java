@@ -198,25 +198,25 @@ public class QShopDbViewProvider implements DbViewProvider {
 
         TableLayoutBuilder b = new TableLayoutBuilder(textRenderer, metaCount, HEADERS);
         for (QShopDbAdapter.Record r : matched) {
-            String modeStr;
-            String quantityStr;
+            Text modeText;
+            Text quantityText;
             if (r.mode() == QShopAnalyzer.MODE_SELL) {
-                modeStr = Text.translatable("chunkscanner.filter.mode.sell").getString();
+                modeText = Text.translatable("chunkscanner.filter.mode.sell");
                 if (r.quantity() == QShopAnalyzer.INFINITE_QUANTITY) {
-                    quantityStr = Text.translatable("chunkscanner.qshop.infinite").getString();
+                    quantityText = Text.translatable("chunkscanner.qshop.infinite");
                 } else if (r.quantity() == 0) {
-                    quantityStr = Text.translatable("chunkscanner.qshop.out_of_stock").getString();
+                    quantityText = Text.translatable("chunkscanner.qshop.out_of_stock");
                 } else {
-                    quantityStr = String.valueOf(r.quantity());
+                    quantityText = Text.literal(String.valueOf(r.quantity()));
                 }
             } else {
-                modeStr = Text.translatable("chunkscanner.filter.mode.buy").getString();
+                modeText = Text.translatable("chunkscanner.filter.mode.buy");
                 if (r.quantity() == QShopAnalyzer.INFINITE_QUANTITY) {
-                    quantityStr = Text.translatable("chunkscanner.qshop.infinite").getString();
+                    quantityText = Text.translatable("chunkscanner.qshop.infinite");
                 } else if (r.quantity() == 0) {
-                    quantityStr = Text.translatable("chunkscanner.qshop.out_of_space").getString();
+                    quantityText = Text.translatable("chunkscanner.qshop.out_of_space");
                 } else {
-                    quantityStr = String.valueOf(r.quantity());
+                    quantityText = Text.literal(String.valueOf(r.quantity()));
                 }
             }
 
@@ -226,8 +226,8 @@ public class QShopDbViewProvider implements DbViewProvider {
             TableLayoutBuilder.RowBuilder row = b.addRow()
                     .position(pos)
                     .text(r.owner())
-                    .text(modeStr)
-                    .text(quantityStr)
+                    .text(modeText)
+                    .text(quantityText)
                     .text(r.itemName())
                     .text(formatPrice(r.price()));
 

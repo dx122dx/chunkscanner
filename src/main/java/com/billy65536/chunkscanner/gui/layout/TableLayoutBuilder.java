@@ -3,8 +3,10 @@ package com.billy65536.chunkscanner.gui.layout;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import com.billy65536.chunkscanner.core.LocatedPosition;
@@ -24,7 +26,7 @@ import com.billy65536.chunkscanner.core.LocatedPosition;
  * }</pre>
  *
  * <p>每个单元格是 {@link CellContent} 的一个子类型：
- * {@link PositionCell}（位置）、{@link RichText}（文本）、{@link ItemCell}（物品图标）。
+ * {@link PositionCell}（位置）、{@link TextCell}（文本）、{@link ItemCell}（物品图标）。
  * 所有单元格属性（颜色、tooltip、物品）统一存储于 CellContent 中，不再需要分离的 Map。</p>
  */
 public class TableLayoutBuilder {
@@ -64,12 +66,12 @@ public class TableLayoutBuilder {
      * <p>每个单元格的类型由调用的方法决定：
      * <ul>
      *   <li>{@link #position} → {@link PositionCell}</li>
-     *   <li>{@link #text} → {@link RichText}</li>
+     *   <li>{@link #text} → {@link TextCell}</li>
      *   <li>{@link #item} → {@link ItemCell}</li>
      * </ul>
      *
      * <p>{@link #withTooltip} / {@link #withColor} 作用在最近一次填充的
-     * {@link RichText} 单元格上。</p>
+     * {@link TextCell} 单元格上。</p>
      */
     public class RowBuilder {
 
@@ -83,7 +85,7 @@ public class TableLayoutBuilder {
          * 填充一个空白列。
          */
         public RowBuilder blank() {
-            return text(null);
+            return this.text(Text.empty());
         }
 
         /**
@@ -97,18 +99,32 @@ public class TableLayoutBuilder {
 
         /** 填充一个白色无 tooltip 的文本列。 */
         public RowBuilder text(String text) {
-            cells.add(RichText.of(text != null ? text : ""));
+            cells.add(TextCell.of(text != null ? text : ""));
+            return this;
+        }
+
+        /** 填充一个白色无 tooltip 的文本列。 */
+        public RowBuilder text(Text text) {
+            cells.add(TextCell.of(text));
             return this;
         }
 
         /**
          * 为最近一次填充的列设置 tooltip。
-         * 仅当最近一个单元格是 {@link RichText} 时生效。
+         * 仅当最近一个单元格是 {@link TextCell} 时生效。
          */
         public RowBuilder withTooltip(String[] tooltip) {
+            return this.withTooltip(Arrays.stream(tooltip).map(Text::literal).toArray(Text[]::new));
+        }
+
+        /**
+         * 为最近一次填充的列设置 tooltip。
+         * 仅当最近一个单元格是 {@link TextCell} 时生效。
+         */
+        public RowBuilder withTooltip(Text[] tooltip) {
             if (tooltip != null && tooltip.length > 0
                     && !cells.isEmpty()
-                    && cells.get(cells.size() - 1) instanceof RichText rt) {
+                    && cells.get(cells.size() - 1) instanceof TextCell rt) {
                 cells.set(cells.size() - 1, rt.withTooltip(tooltip));
             }
             return this;
@@ -119,20 +135,31 @@ public class TableLayoutBuilder {
          */
         public RowBuilder withTooltip(List<Text> tooltip) {
             if (tooltip != null && !tooltip.isEmpty()) {
-                return withTooltip(
-                        tooltip.stream().map(Text::getString).toArray(String[]::new));
+                return withTooltip(tooltip.toArray(Text[]::new));
             }
             return this;
         }
 
         /**
          * 为最近一次填充的列设置文字颜色 (ARGB)。
-         * 仅当最近一个单元格是 {@link RichText} 时生效。
+         * 仅当最近一个单元格是 {@link TextCell} 时生效。
          */
         public RowBuilder withColor(int argb) {
             if (!cells.isEmpty()
-                    && cells.get(cells.size() - 1) instanceof RichText rt) {
+                    && cells.get(cells.size() - 1) instanceof TextCell rt) {
                 cells.set(cells.size() - 1, rt.withColor(argb));
+            }
+            return this;
+        }
+
+        /**
+         * 为最近一次填充的列设置格式。
+         * 仅当最近一个单元格是 {@link TextCell} 时生效。
+         */
+        public RowBuilder withFormat(Formatting... formattings) {
+            if (!cells.isEmpty()
+                    && cells.get(cells.size() - 1) instanceof TextCell rt) {
+                cells.set(cells.size() - 1, rt.withFormat(formattings));
             }
             return this;
         }
