@@ -154,6 +154,9 @@ class ChunkDbTest {
 
         private final ChunkDb stubDb = new ChunkDb() {
             @Override public String getScanId() { return "test"; }
+            @Override public String getAnalyzerName() { return ""; }
+            @Override public long getStorageSize() { return 0; }
+            @Override public long getLastModifiedTime() { return 0; }
             @Override public int intern(String s) { return 0; }
             @Override public String lookup(int id) { return null; }
             @Override public void put(byte[] key, byte[] value) {}
@@ -164,6 +167,8 @@ class ChunkDbTest {
             @Override public int size() { return 0; }
             @Override public long getChunkScanTime(String dimensionId, int cx, int cz) { return 0; }
             @Override public void updateChunkScanTime(String dimensionId, int cx, int cz, long timestamp) {}
+            @Override public boolean isOpen() { return true; }
+            @Override public void open() {}
             @Override public void flush() {}
             @Override public void close() {}
         };

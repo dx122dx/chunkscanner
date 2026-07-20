@@ -6,13 +6,11 @@ import net.minecraft.text.Text;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
-import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 import com.billy65536.chunkscanner.core.ChunkDb;
 import com.billy65536.chunkscanner.core.DbViewProvider;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
@@ -39,77 +37,19 @@ public class SignDbViewProvider implements DbViewProvider {
     /** 新格式键长度：prefix(5) + dimPoolId(4) + cx(4) + cz(4) + side(1) + keyHi(8) + keyLo(8) = 34 */
     private static final int NEW_KEY_SIZE = KEY_PREFIX.length + 4 + 4 + 4 + 1 + 8 + 8;
 
-    private final BinaryChunkDb delegate;
+    private final ChunkDb db;
 
     /** 缓存解析后的告示牌记录，避免每帧重复解析。 */
     private List<SignRecord> cachedRecords;
     private volatile boolean cacheValid = false;
 
-    public SignDbViewProvider(BinaryChunkDb delegate) {
-        this.delegate = delegate;
-    }
-
-    // ==================== 委托方法 ====================
-
-    @Override
-    public Path filePath() {
-        return delegate.filePath();
+    public SignDbViewProvider(ChunkDb db) {
+        this.db = db;
     }
 
     @Override
-    public String analyzerName() {
-        return delegate.analyzerName();
-    }
-
-    @Override
-    public String scanId() {
-        return delegate.getScanId();
-    }
-
-    @Override
-    public long fileSize() {
-        return delegate.fileSize();
-    }
-
-    @Override
-    public long lastModified() {
-        return delegate.lastModified();
-    }
-
-    @Override
-    public void open() {
-        delegate.open();
-    }
-
-    @Override
-    public void close() {
-        delegate.close();
-    }
-
-    @Override
-    public boolean isOpen() {
-        return delegate.isOpen();
-    }
-
-    @Override
-    public int kvCount() {
-        return getSignRecords().size();
-    }
-
-    @Override
-    public int chunkMetaCount() {
-        return delegate.chunkMetaCount();
-    }
-
-    @Override
-    public List<ChunkDb.Entry> getAllEntries() {
-        // 特化视图不通过 Entry 展示，返回空列表
-        return List.of();
-    }
-
-    @Override
-    public List<ChunkDb.ChunkMeta> getAllChunkMetas() {
-        return delegate.getAllChunkMetas();
+    public ChunkDb getDb() {
+        return db;
     }
 
     @Override
@@ -162,7 +102,7 @@ public class SignDbViewProvider implements DbViewProvider {
         List<SignRecord> records = new ArrayList<>();
         List<ChunkDb.Entry> entries;
         try {
-            entries = delegate.getAllEntries();
+            entries = db.getAllEntries();
         } catch (Exception e) {
             ChunkScannerMod.LOGGER.warn("SignDbViewProvider: failed to get entries: {}", e.getMessage());
             cachedRecords = records;
@@ -185,7 +125,7 @@ public class SignDbViewProvider implements DbViewProvider {
                 long keyLo = vb.getLong();
 
                 int dimPoolId = (int) (keyHi >> 32);
-                String dimId = delegate.lookup(dimPoolId);
+                String dimId = db.lookup(dimPoolId);
                 int x = (int) (keyHi & 0xFFFFFFFFL);
                 int z = (int) (keyLo >> 32);
                 int y = (int) (keyLo & 0xFFFFFFFFL);
@@ -207,10 +147,10 @@ public class SignDbViewProvider implements DbViewProvider {
                     side = "Front";
                 }
 
-                String line1 = delegate.lookup(l1);
-                String line2 = delegate.lookup(l2);
-                String line3 = delegate.lookup(l3);
-                String line4 = delegate.lookup(l4);
+                String line1 = db.lookup(l1);
+                String line2 = db.lookup(l2);
+                String line3 = db.lookup(l3);
+                String line4 = db.lookup(l4);
 
                 records.add(new SignRecord(dimId, x, y, z, side, line1, line2, line3, line4, ts));
             } catch (Exception e) {
@@ -251,10 +191,9 @@ public class SignDbViewProvider implements DbViewProvider {
 
         @Override
         public DbViewProvider create(ChunkDb db) {
-            // 只适用于 sign 分析器生成的数据库
-            if (!(db instanceof BinaryChunkDb bdb)) return null;
-            if (!"sign".equals(bdb.analyzerName())) return null;
-            return new SignDbViewProvider(bdb);
+            // 仅适用于 sign 分析器生成的数据库
+            if (!"sign".equals(db.getAnalyzerName())) return null;
+            return new SignDbViewProvider(db);
         }
     }
 }

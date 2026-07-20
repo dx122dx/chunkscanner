@@ -552,18 +552,18 @@ public class BinaryChunkDb implements ChunkDb {
     }
 
     /** 创建此数据库的分析器名称。 */
-    public String analyzerName() {
+    public String getAnalyzerName() {
         return analyzerName != null ? analyzerName : "";
     }
 
     /** 文件大小（字节）。 */
-    public long fileSize() {
+    public long getStorageSize() {
         Path p = dataPath();
         try { return Files.exists(p) ? Files.size(p) : 0; } catch (Exception e) { return 0; }
     }
 
     /** 最后修改时间戳。 */
-    public long lastModified() {
+    public long getLastModifiedTime() {
         Path p = dataPath();
         try { return Files.exists(p) ? p.toFile().lastModified() : 0; } catch (Exception e) { return 0; }
     }

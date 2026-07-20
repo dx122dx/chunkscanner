@@ -3,7 +3,6 @@ package com.billy65536.chunkscanner.core;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.text.Text;
 
-import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -14,47 +13,15 @@ import java.util.Map;
  * <p>将数据库文件的元信息读取与展示解耦，允许不同的数据库格式通过实现此接口来提供浏览能力。
  * DatabaseScreen 通过此接口访问数据库，不直接依赖具体实现。</p>
  *
- * <p>视图类型的注册通过 {@link ChunkDb.Type} 和 {@link ChunkDb.ViewRegistry} 完成。</p>
+ * <p>视图类型的注册通过 {@link DbViewProviderRegistry.Type} 和 {@link DbViewProviderRegistry} 完成。</p>
+ *
+ * <p>数据访问（文件路径、条目、元数据等）通过 {@link #getDb()} 直接访问底层 {@link ChunkDb} 实例，
+ * 不再需要将 ChunkDb 操作转发到 {@link DbViewProvider} 接口。</p>
  */
 public interface DbViewProvider {
 
-    // ==================== 数据访问 ====================
-
-    /** 数据库文件的路径。 */
-    Path filePath();
-
-    /** 创建此数据库的分析器名称（即数据库文件中记录的分析器 id）。 */
-    String analyzerName();
-
-    /** 扫描 ID。 */
-    String scanId();
-
-    /** 文件大小（字节）。 */
-    long fileSize();
-
-    /** 最后修改时间戳。 */
-    long lastModified();
-
-    /** 打开数据库，加载数据到内存。 */
-    void open();
-
-    /** 关闭数据库，释放资源。 */
-    void close();
-
-    /** 是否已打开。 */
-    boolean isOpen();
-
-    /** KV 记录总数。 */
-    int kvCount();
-
-    /** Chunk 元数据记录总数。 */
-    int chunkMetaCount();
-
-    /** 获取所有 KV 条目。 */
-    List<ChunkDb.Entry> getAllEntries();
-
-    /** 获取所有 Chunk 元数据。 */
-    List<ChunkDb.ChunkMeta> getAllChunkMetas();
+    /** 获取底层数据库实例，用于直接执行数据访问操作。 */
+    ChunkDb getDb();
 
     /**
      * 是否为特化视图（提供结构化展示而非原始键值对）。

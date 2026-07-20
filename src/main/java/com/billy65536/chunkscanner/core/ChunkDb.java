@@ -19,8 +19,19 @@ import java.util.Map;
  */
 public interface ChunkDb {
 
+    // ==================== DB 元信息 ====================
+
     /** 获取此数据库实例的扫描 ID。 */
     String getScanId();
+    
+    /** 创建此数据库的分析器名称。 */
+    String getAnalyzerName();
+
+    /** 文件大小（字节）。 */
+    long getStorageSize();
+
+    /** 最后修改时间戳。 */
+    long getLastModifiedTime();
 
     // ==================== 字符串池 ====================
 
@@ -77,6 +88,12 @@ public interface ChunkDb {
     void updateChunkScanTime(String dimensionId, int cx, int cz, long timestamp);
 
     // ==================== 生命周期 ====================
+
+    /** 打开数据库，加载数据到内存。已有实现可留空。 */
+    void open();
+
+    /** 是否已打开。 */
+    boolean isOpen();
 
     /** 将内存数据刷写到磁盘。 */
     void flush();

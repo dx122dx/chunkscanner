@@ -9,7 +9,6 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -21,11 +20,10 @@ import java.util.regex.PatternSyntaxException;
 
 import com.billy65536.chunkscanner.components.analyzer.QShopAnalyzer;
 import com.billy65536.chunkscanner.components.analyzer.QShopDbAdapter;
-import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 import com.billy65536.chunkscanner.core.ChunkDb;
 import com.billy65536.chunkscanner.core.DbViewProvider;
-import com.billy65536.chunkscanner.core.LocatedPosition;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
+import com.billy65536.chunkscanner.core.LocatedPosition;
 
 /**
  * QShop 分析器特化的 DbViewProvider。
@@ -44,7 +42,7 @@ import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
  */
 public class QShopDbViewProvider implements DbViewProvider {
 
-    private final BinaryChunkDb delegate;
+    private final ChunkDb db;
 
     /** 缓存解析后的商店记录（全量，未筛选）。仅渲染线程访问，无需同步。 */
     private List<QShopRecord> cachedRecords;
@@ -103,39 +101,13 @@ public class QShopDbViewProvider implements DbViewProvider {
     /** 排序模式。 */
     private int sortMode = SORT_NONE;
 
-    public QShopDbViewProvider(BinaryChunkDb delegate) {
-        this.delegate = delegate;
-    }
-
-    // ==================== 委托方法 ====================
-
-    @Override public Path filePath() { return delegate.filePath(); }
-    @Override public String analyzerName() { return delegate.analyzerName(); }
-    @Override public String scanId() { return delegate.getScanId(); }
-    @Override public long fileSize() { return delegate.fileSize(); }
-    @Override public long lastModified() { return delegate.lastModified(); }
-    @Override public void open() { delegate.open(); }
-    @Override public void close() { delegate.close(); }
-    @Override public boolean isOpen() { return delegate.isOpen(); }
-
-    @Override
-    public int kvCount() {
-        return getQShopRecords().size();
+    public QShopDbViewProvider(ChunkDb db) {
+        this.db = db;
     }
 
     @Override
-    public int chunkMetaCount() {
-        return delegate.chunkMetaCount();
-    }
-
-    @Override
-    public List<ChunkDb.Entry> getAllEntries() {
-        return List.of();
-    }
-
-    @Override
-    public List<ChunkDb.ChunkMeta> getAllChunkMetas() {
-        return delegate.getAllChunkMetas();
+    public ChunkDb getDb() {
+        return db;
     }
 
     @Override
@@ -580,7 +552,7 @@ public class QShopDbViewProvider implements DbViewProvider {
      * 解析 qshop KV 条目为可读格式。
      *
      * 反序列化流程：
-     * 1. 从 delegate 获取所有原始 KV 条目
+     * 1. 从 db 获取所有原始 KV 条目
      * 2. 解析值中的 dimPoolId → 通过字符串池 lookup 还原维度 ID
      * 3. 解析坐标、所有者、模式、数量、商品名、价格
      *
@@ -591,7 +563,7 @@ public class QShopDbViewProvider implements DbViewProvider {
             return cachedRecords;
         }
 
-        QShopDbAdapter adapter = new QShopDbAdapter(delegate);
+        QShopDbAdapter adapter = new QShopDbAdapter(db);
         List<QShopDbAdapter.Record> adapterRecords = adapter.getAllRecords();
 
         List<QShopRecord> records = new ArrayList<>(adapterRecords.size());
@@ -653,9 +625,8 @@ public class QShopDbViewProvider implements DbViewProvider {
 
         @Override
         public DbViewProvider create(ChunkDb db) {
-            if (!(db instanceof BinaryChunkDb bdb)) return null;
-            if (!"qshop".equals(bdb.analyzerName())) return null;
-            return new QShopDbViewProvider(bdb);
+            if (!"qshop".equals(db.getAnalyzerName())) return null;
+            return new QShopDbViewProvider(db);
         }
     }
 }

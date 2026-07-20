@@ -23,7 +23,6 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
-import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 import com.billy65536.chunkscanner.components.db.DbFileUtil;
 import com.billy65536.chunkscanner.components.view_provider.RawDbProvider;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
@@ -151,24 +150,17 @@ public class DatabaseScreen extends Screen {
     // ==================== 打开/关闭数据库 ====================
 
     private void openDatabase(DbFileUtil.FileMeta meta) {
-        if (openedDb != null) {
-            openedDb.close();
+        if (rawChunkDb != null) {
+            rawChunkDb.close();
         }
         ChunkScannerMod.LOGGER.debug("Opening database: scanId={} analyzer={}", meta.scanId(), meta.analyzerName());
         Path fileDir = meta.filePath() != null ? meta.filePath().getParent() : null;
         ChunkDb.Factory dbFactory = ChunkDb.FactoryRegistry.getDefault();
         ChunkDb db = dbFactory.createMetadataOnly(meta.scanId(), meta.analyzerName(), fileDir);
-        if (!(db instanceof BinaryChunkDb bdb)) {
-            ChunkScannerMod.LOGGER.warn("Unsupported database type for '{}'", meta.scanId());
-            openedDb = null;
-            rawChunkDb = null;
-            cachedTaskConfig = null;
-            return;
-        }
-        rawChunkDb = bdb;
-        openedDb = new RawDbProvider(bdb);
+        rawChunkDb = db;
+        openedDb = new RawDbProvider(db);
         try {
-            openedDb.open();
+            db.open();
         } catch (Exception e) {
             ChunkScannerMod.LOGGER.warn("Failed to open database: {}", e.getMessage());
             openedDb = null;
@@ -178,7 +170,7 @@ public class DatabaseScreen extends Screen {
         }
 
         // 读取 DB 中存储的任务配置，用于路径点命名等
-        cachedTaskConfig = bdb.getTaskConfig();
+        cachedTaskConfig = db.getTaskConfig();
         if (cachedTaskConfig != null) {
             ChunkScannerMod.LOGGER.debug("Loaded TaskConfig from DB for '{}': {}", meta.scanId(), cachedTaskConfig.toDisplayString());
         }
@@ -191,13 +183,13 @@ public class DatabaseScreen extends Screen {
     }
 
     private void closeOpenedDb() {
-        if (openedDb != null) {
-            openedDb.close();
-            openedDb = null;
-            rawChunkDb = null;
-            currentView = null;
-            cachedTaskConfig = null;
+        if (rawChunkDb != null) {
+            rawChunkDb.close();
         }
+        openedDb = null;
+        rawChunkDb = null;
+        currentView = null;
+        cachedTaskConfig = null;
     }
 
     // ==================== 视图提供者 ====================
@@ -235,7 +227,7 @@ public class DatabaseScreen extends Screen {
         // —— 加载公共数据 ——
         List<ChunkDb.ChunkMeta> metas;
         try {
-            metas = currentView.getAllChunkMetas();
+            metas = rawChunkDb.getAllChunkMetas();
         } catch (Exception e) {
             ChunkScannerMod.LOGGER.warn("Failed to load chunk metas: {}", e.getMessage());
             metas = List.of();
@@ -279,7 +271,7 @@ public class DatabaseScreen extends Screen {
         } else {
             List<ChunkDb.Entry> entries;
             try {
-                entries = currentView.getAllEntries();
+                entries = rawChunkDb.getAllEntries();
             } catch (Exception e) {
                 ChunkScannerMod.LOGGER.warn("Failed to load entries: {}", e.getMessage());
                 entries = List.of();
@@ -310,11 +302,11 @@ public class DatabaseScreen extends Screen {
     }
 
     private boolean isCurrentTypeApplicable() {
-        if (openedDb == null || viewTypes.isEmpty()) return true;
+        if (rawChunkDb == null || viewTypes.isEmpty()) return true;
         DbViewProviderRegistry.Type selectedType = viewTypes.get(selectedViewTypeIdx);
         Set<String> applicable = selectedType.applicableAnalyzers();
         if (applicable.isEmpty()) return true;
-        return applicable.contains(openedDb.analyzerName());
+        return applicable.contains(rawChunkDb.getAnalyzerName());
     }
 
     private boolean isUniversallyApplicable() {
@@ -429,7 +421,7 @@ public class DatabaseScreen extends Screen {
     }
 
     private void saveAs() {
-        if (openedDb == null) return;
+        if (rawChunkDb == null) return;
         Path dir = ChunkScannerMod.getDbRoot();
 
         // 在后台线程通过 EDT 调度 JFileChooser，避免 AWT 模态对话框阻塞 GL 渲染线程
@@ -437,7 +429,7 @@ public class DatabaseScreen extends Screen {
             try {
                 final JFileChooser chooser = new JFileChooser();
                 chooser.setDialogTitle(Text.translatable("chunkscanner.gui.database.save_as").getString());
-                chooser.setSelectedFile(new File(openedDb.scanId() + "_export.txt"));
+                chooser.setSelectedFile(new File(rawChunkDb.getScanId() + "_export.txt"));
                 chooser.setFileFilter(new FileNameExtensionFilter("Text Files (*.txt)", "txt"));
 
                 // 设置默认目录
@@ -673,7 +665,7 @@ public class DatabaseScreen extends Screen {
 
         context.drawCenteredTextWithShadow(textRenderer,
                 Text.translatable("chunkscanner.gui.database.kv_title",
-                        openedDb != null ? openedDb.scanId() : "?")
+                        rawChunkDb != null ? rawChunkDb.getScanId() : "?")
                         .formatted(Formatting.GOLD, Formatting.BOLD),
                 centerX, 12, 0xFFFFFF);
 
@@ -682,7 +674,7 @@ public class DatabaseScreen extends Screen {
 
         int kvSize = pageRenderer != null ? pageRenderer.getItemCount() : 0;
         int metaSize = pageRenderer != null ? pageRenderer.getMetaCount() : 0;
-        String aName = openedDb != null ? GuiUtil.getAnalyzerDisplayName(openedDb.analyzerName()) : "";
+        String aName = rawChunkDb != null ? GuiUtil.getAnalyzerDisplayName(rawChunkDb.getAnalyzerName()) : "";
         String vName = viewTypes.isEmpty() ? "" : viewTypes.get(selectedViewTypeIdx).getName();
 
         context.drawTextWithShadow(textRenderer,
