@@ -1,6 +1,7 @@
 package com.billy65536.chunkscanner.components.view_provider;
 
 import com.billy65536.chunkscanner.core.CoreUtil;
+import net.minecraft.client.font.TextRenderer;
 import net.minecraft.text.Text;
 
 import java.nio.ByteBuffer;
@@ -15,6 +16,8 @@ import com.billy65536.chunkscanner.core.ChunkDb;
 import com.billy65536.chunkscanner.core.DbViewProvider;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.core.LocatedPosition;
+import com.billy65536.chunkscanner.gui.TableLayoutBuilder;
+import com.billy65536.chunkscanner.gui.ViewLayout;
 
 /**
  * Sign 分析器特化的 DbViewProvider。
@@ -36,6 +39,7 @@ public class SignDbViewProvider implements DbViewProvider {
     private static final byte[] KEY_PREFIX = "sign:".getBytes(StandardCharsets.UTF_8);
     /** 新格式键长度：prefix(5) + dimPoolId(4) + cx(4) + cz(4) + side(1) + keyHi(8) + keyLo(8) = 34 */
     private static final int NEW_KEY_SIZE = KEY_PREFIX.length + 4 + 4 + 4 + 1 + 8 + 8;
+    private static final String[] HEADERS = {"位置", "Side", "Line 1", "Line 2", "Line 3", "Line 4"};
 
     private final ChunkDb db;
 
@@ -53,39 +57,28 @@ public class SignDbViewProvider implements DbViewProvider {
     }
 
     @Override
-    public boolean isSpecialized() {
-        return true;
-    }
-
-    @Override
-    public String[] getSpecializedHeaders() {
-        return new String[]{"位置", "Side", "Line 1", "Line 2", "Line 3", "Line 4"};
-    }
-
-    @Override
-    public List<String[]> getSpecializedRows() {
+    public ViewLayout getLayout(TextRenderer textRenderer) {
         List<SignRecord> records = getSignRecords();
-        List<String[]> rows = new ArrayList<>(records.size());
-        for (SignRecord sr : records) {
-            String posStr = new LocatedPosition(sr.dimId(), sr.x(), sr.y(), sr.z()).toString();
-            rows.add(new String[] {
-                    posStr,
-                    sr.side(),
-                    sr.line1(),
-                    sr.line2(),
-                    sr.line3(),
-                    sr.line4()
-            });
+        int metaCount;
+        try {
+            metaCount = db.getAllChunkMetas().size();
+        } catch (Exception e) {
+            metaCount = 0;
         }
-        return rows;
-    }
 
-    @Override
-    public LocatedPosition getPositionAt(int rowIndex) {
-        List<SignRecord> records = getSignRecords();
-        if (rowIndex < 0 || rowIndex >= records.size()) return null;
-        SignRecord sr = records.get(rowIndex);
-        return new LocatedPosition(sr.dimId(), sr.x(), sr.y(), sr.z());
+        TableLayoutBuilder b = new TableLayoutBuilder(textRenderer, metaCount, HEADERS);
+        for (SignRecord sr : records) {
+            LocatedPosition pos = new LocatedPosition(sr.dimId(), sr.x(), sr.y(), sr.z());
+            b.addRow()
+                    .position(pos)
+                    .text(sr.side())
+                    .text(sr.line1())
+                    .text(sr.line2())
+                    .text(sr.line3())
+                    .text(sr.line4())
+                    .done();
+        }
+        return b.build();
     }
 
     // ==================== Sign 特化展示 ====================

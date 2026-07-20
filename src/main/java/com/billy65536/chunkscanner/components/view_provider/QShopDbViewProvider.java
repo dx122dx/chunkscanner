@@ -1,5 +1,6 @@
 package com.billy65536.chunkscanner.components.view_provider;
 
+import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NbtCompound;
@@ -11,9 +12,7 @@ import net.minecraft.util.Identifier;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -24,6 +23,8 @@ import com.billy65536.chunkscanner.core.ChunkDb;
 import com.billy65536.chunkscanner.core.DbViewProvider;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.core.LocatedPosition;
+import com.billy65536.chunkscanner.gui.TableLayoutBuilder;
+import com.billy65536.chunkscanner.gui.ViewLayout;
 
 /**
  * QShop 分析器特化的 DbViewProvider。
@@ -48,8 +49,6 @@ public class QShopDbViewProvider implements DbViewProvider {
     private List<QShopRecord> cachedRecords;
     /** 缓存筛选并排序后的记录。仅渲染线程访问，无需同步。 */
     private List<QShopRecord> cachedFilteredSorted;
-    /** 缓存的单元格物品图标映射。仅渲染线程访问，无需同步。 */
-    private Map<Integer, Map<String, ItemStack>> cachedCellItems;
     private boolean cacheValid = false;
     private boolean filteredCacheValid = false;
 
@@ -110,11 +109,6 @@ public class QShopDbViewProvider implements DbViewProvider {
         return db;
     }
 
-    @Override
-    public boolean isSpecialized() {
-        return true;
-    }
-
     // ==================== 筛选接口 ====================
 
     @Override
@@ -172,7 +166,6 @@ public class QShopDbViewProvider implements DbViewProvider {
     public void invalidateCache() {
         cacheValid = false;
         filteredCacheValid = false;
-        cachedCellItems = null;
         compiledDimPattern = compileIfNeeded(dimFilter, dimFilterMode);
         compiledOwnerPattern = compileIfNeeded(ownerFilter, ownerFilterMode);
         compiledItemPattern = compileIfNeeded(itemFilter, itemFilterMode);
@@ -187,78 +180,88 @@ public class QShopDbViewProvider implements DbViewProvider {
         }
     }
 
-    // ==================== 特化展示 ====================
+    // ==================== ViewLayout ====================
+
+    private static final String[] HEADERS = {"Pos", "Owner", "Type", "Qty", "Item", "Price", "ID", "Preview", "Flags"};
 
     @Override
-    public String[] getSpecializedHeaders() {
-        return new String[]{"位置", "Owner", "Type", "Qty", "Item", "Price", "Item ID", "Detail", "Flags"};
-    }
-
-    @Override
-    public List<String[]> getSpecializedRows() {
+    public ViewLayout getLayout(TextRenderer textRenderer) {
         List<QShopRecord> matched = getFilteredSortedRecords();
-        List<String[]> rows = new ArrayList<>(matched.size());
+        int metaCount;
+        try {
+            metaCount = db.getAllChunkMetas().size();
+        } catch (Exception e) {
+            metaCount = 0;
+        }
+
+        TableLayoutBuilder b = new TableLayoutBuilder(textRenderer, metaCount, HEADERS);
         for (QShopRecord r : matched) {
-            rows.add(buildRowData(r));
-        }
-        return rows;
-    }
-
-    /** 将一条 QShopRecord 转换为展示用的字符串数组。 */
-    private String[] buildRowData(QShopRecord r) {
-        String modeStr;
-        String quantityStr;
-        if (r.mode() == QShopAnalyzer.MODE_SELL) {
-            modeStr = Text.translatable("chunkscanner.filter.mode.sell").getString();
-            if (r.quantity() == QShopAnalyzer.INFINITE_QUANTITY) {
-                quantityStr = Text.translatable("chunkscanner.qshop.infinite").getString();
-            } else if (r.quantity() == 0) {
-                quantityStr = Text.translatable("chunkscanner.qshop.out_of_stock").getString();
+            String modeStr;
+            String quantityStr;
+            if (r.mode() == QShopAnalyzer.MODE_SELL) {
+                modeStr = Text.translatable("chunkscanner.filter.mode.sell").getString();
+                if (r.quantity() == QShopAnalyzer.INFINITE_QUANTITY) {
+                    quantityStr = Text.translatable("chunkscanner.qshop.infinite").getString();
+                } else if (r.quantity() == 0) {
+                    quantityStr = Text.translatable("chunkscanner.qshop.out_of_stock").getString();
+                } else {
+                    quantityStr = String.valueOf(r.quantity());
+                }
             } else {
-                quantityStr = String.valueOf(r.quantity());
+                modeStr = Text.translatable("chunkscanner.filter.mode.buy").getString();
+                if (r.quantity() == QShopAnalyzer.INFINITE_QUANTITY) {
+                    quantityStr = Text.translatable("chunkscanner.qshop.infinite").getString();
+                } else if (r.quantity() == 0) {
+                    quantityStr = Text.translatable("chunkscanner.qshop.out_of_space").getString();
+                } else {
+                    quantityStr = String.valueOf(r.quantity());
+                }
             }
-        } else {
-            modeStr = Text.translatable("chunkscanner.filter.mode.buy").getString();
-            if (r.quantity() == QShopAnalyzer.INFINITE_QUANTITY) {
-                quantityStr = Text.translatable("chunkscanner.qshop.infinite").getString();
-            } else if (r.quantity() == 0) {
-                quantityStr = Text.translatable("chunkscanner.qshop.out_of_space").getString();
-            } else {
-                quantityStr = String.valueOf(r.quantity());
+
+            String detailStr = (r.detailNbtString() != null && !r.detailNbtString().isEmpty()) ? "ⓘ" : "";
+            LocatedPosition pos = new LocatedPosition(r.dimId(), r.x(), r.y(), r.z());
+            boolean shulker = (r.flags() & QShopAnalyzer.FLAG_SHULKER_EXPANDED) != 0;
+
+            TableLayoutBuilder.RowBuilder row = b.addRow()
+                    .position(pos)
+                    .text(r.owner())
+                    .text(modeStr)
+                    .text(quantityStr)
+                    .text(r.itemName())
+                    .text(formatPrice(r.price()));
+
+            if (shulker) {
+                List<Text> unitPriceTip = buildShulkerUnitPriceTooltip(r);
+                if (unitPriceTip != null) {
+                    row.withColor(0xFFFF55FF);
+                    row.withTooltip(unitPriceTip);
+                }
             }
+
+            row.text(r.itemId())
+                    .text(detailStr);
+
+            // Detail 列物品图标和 tooltip
+            ItemStack icon = parseDetailItemStack(r);
+            if (icon != null) {
+                row.item(icon);
+            }
+            List<Text> detailTips = buildDetailTooltip(r);
+            if (detailTips != null) {
+                row.withTooltip(detailTips);
+            }
+
+            // Flags 列
+            String flagsStr = formatFlagsShort(r.flags());
+            List<Text> flagTips = formatFlagsTooltip(r.flags());
+            row.text(flagsStr);
+            if (flagTips != null) {
+                row.withTooltip(flagTips);
+            }
+
+            row.done();
         }
-
-        String posStr = new LocatedPosition(r.dimId(), r.x(), r.y(), r.z()).toString();
-        // Detail 列：有增强数据时显示 "ⓘ"（导出可识别），GUI 中图标由 getCellItems() 提供
-        String detailStr = (r.detailNbtString() != null && !r.detailNbtString().isEmpty()) ? "ⓘ" : "";
-
-        return new String[] {
-                posStr,
-                r.owner(),
-                modeStr,
-                quantityStr,
-                r.itemName(),
-                formatPrice(r.price()),
-                r.itemId(),
-                detailStr,
-                formatFlagsShort(r.flags())
-        };
-    }
-
-    @Override
-    public String[] getRowAt(int rowIndex) {
-        List<QShopRecord> matched = getFilteredSortedRecords();
-        if (rowIndex < 0 || rowIndex >= matched.size()) return null;
-        QShopRecord r = matched.get(rowIndex);
-        return buildRowData(r);
-    }
-
-    @Override
-    public LocatedPosition getPositionAt(int rowIndex) {
-        List<QShopRecord> matched = getFilteredSortedRecords();
-        if (rowIndex < 0 || rowIndex >= matched.size()) return null;
-        QShopRecord r = matched.get(rowIndex);
-        return new LocatedPosition(r.dimId(), r.x(), r.y(), r.z());
+        return b.build();
     }
 
     // ==================== 特殊值展示 ====================
@@ -307,47 +310,9 @@ public class QShopDbViewProvider implements DbViewProvider {
         return lines.isEmpty() ? null : lines;
     }
 
-    @Override
-    public Map<Integer, Map<String, List<Text>>> getSpecializedCellTooltips() {
-        List<QShopRecord> matched = getFilteredSortedRecords();
-        Map<Integer, Map<String, List<Text>>> result = new HashMap<>();
-        for (int i = 0; i < matched.size(); i++) {
-            QShopRecord r = matched.get(i);
-            Map<String, List<Text>> rowTips = null;
-
-            // Flags 列 tooltip
-            List<Text> flagTips = formatFlagsTooltip(r.flags());
-            if (flagTips != null) {
-                if (rowTips == null) rowTips = new HashMap<>();
-                rowTips.put("Flags", flagTips);
-            }
-
-            // Detail 列 tooltip（物品悬停预览）
-            List<Text> detailTips = buildDetailTooltip(r);
-            if (detailTips != null) {
-                if (rowTips == null) rowTips = new HashMap<>();
-                rowTips.put("Detail", detailTips);
-            }
-
-            // Price 列 tooltip（S 标志：显示单价）
-            if ((r.flags() & QShopAnalyzer.FLAG_SHULKER_EXPANDED) != 0) {
-                List<Text> priceTips = buildShulkerUnitPriceTooltip(r);
-                if (priceTips != null) {
-                    if (rowTips == null) rowTips = new HashMap<>();
-                    rowTips.put("Price", priceTips);
-                }
-            }
-
-            if (rowTips != null) {
-                result.put(i, rowTips);
-            }
-        }
-        return result;
-    }
-
     /**
      * 从 detailNbtString 解析 ItemStack，解析失败返回 null。
-     * 供 buildDetailTooltip 和 getCellItems 复用。
+     * 供 buildDetailTooltip 和 getLayout() 复用。
      */
     private static ItemStack parseDetailItemStack(QShopRecord record) {
         if (record.detailNbtString() == null || record.detailNbtString().isEmpty()) return null;
@@ -420,47 +385,7 @@ public class QShopDbViewProvider implements DbViewProvider {
 
     private static final int SHULKER_SLOTS = 27;
 
-    @Override
-    public Map<Integer, Map<String, Integer>> getSpecializedCellColors() {
-        List<QShopRecord> matched = getFilteredSortedRecords();
-        Map<Integer, Map<String, Integer>> result = new HashMap<>();
-        for (int i = 0; i < matched.size(); i++) {
-            QShopRecord r = matched.get(i);
-            if ((r.flags() & QShopAnalyzer.FLAG_SHULKER_EXPANDED) != 0) {
-                Map<String, Integer> rowColors = new HashMap<>();
-                rowColors.put("Price", 0xFFFF55FF); // 品红色
-                result.put(i, rowColors);
-            }
-        }
-        return result;
-    }
-
-    /**
-     * 获取 Detail 列的物品图标映射，用于在表格中渲染 JEI 风格物品图标。
-     *
-     * <p>返回 Map&lt;行索引, Map&lt;"Detail", ItemStack&gt;&gt;。仅对有增强数据
-     * （detailNbtString 非空）的记录提供图标。结果会被缓存。</p>
-     *
-     * @return 物品图标映射
-     */
-    public Map<Integer, Map<String, ItemStack>> getCellItems() {
-        if (cachedCellItems != null) return cachedCellItems;
-        List<QShopRecord> matched = getFilteredSortedRecords();
-        Map<Integer, Map<String, ItemStack>> result = new HashMap<>();
-        for (int i = 0; i < matched.size(); i++) {
-            QShopRecord r = matched.get(i);
-            ItemStack stack = parseDetailItemStack(r);
-            if (stack != null) {
-                Map<String, ItemStack> rowItems = new HashMap<>();
-                rowItems.put("Detail", stack);
-                result.put(i, rowItems);
-            }
-        }
-        cachedCellItems = result;
-        return result;
-    }
-
-    /** 获取筛选并排序后的记录列表。与 getSpecializedRows 返回顺序一致。 */
+    /** 获取筛选并排序后的记录列表。 */
     private List<QShopRecord> getFilteredSortedRecords() {
         if (filteredCacheValid && cachedFilteredSorted != null) {
             return cachedFilteredSorted;

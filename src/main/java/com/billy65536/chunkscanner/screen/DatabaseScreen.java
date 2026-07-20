@@ -36,9 +36,9 @@ import com.billy65536.chunkscanner.core.DbViewProvider;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.core.LocatedPosition;
 import com.billy65536.chunkscanner.gui.GuiUtil;
-import com.billy65536.chunkscanner.gui.KvPageRenderer;
 import com.billy65536.chunkscanner.gui.ScrollManager;
 import com.billy65536.chunkscanner.gui.ScrollableListPanel;
+import com.billy65536.chunkscanner.gui.ViewLayout;
 import com.billy65536.chunkscanner.integration.XaeroWaypointHelper;
 
 /**
@@ -75,7 +75,7 @@ public class DatabaseScreen extends Screen {
     private final ScrollManager kvHScroll = new ScrollManager();
 
     /** 当前页面渲染器（封装原始 KV 视图或特化视图的渲染逻辑与数据）。 */
-    private KvPageRenderer pageRenderer;
+    private ViewLayout layout;
 
     /** 悬停行索引（渲染时填充，用于 tooltip）。 */
     private int hoveredKvIdx = -1;
@@ -118,7 +118,7 @@ public class DatabaseScreen extends Screen {
         openedDb = null;
         rawChunkDb = null;
         currentView = null;
-        pageRenderer = null;
+        layout = null;
         fileListPanel.endDrag();
         kvPanel.endDrag();
         kvHScroll.endDrag();
@@ -196,13 +196,12 @@ public class DatabaseScreen extends Screen {
 
     /**
      * 统一重建页面渲染器，将 view provider 创建、数据加载和渲染器构造合并。
-     * 替代了旧版的 refreshCurrentView() + loadViewData()。
      *
      * @param forceRecreate 是否强制重新创建视图提供者（筛选返回时不需重建，保留筛选状态）
      */
     private void rebuildPageRenderer(boolean forceRecreate) {
         if (openedDb == null) {
-            pageRenderer = null;
+            layout = null;
             return;
         }
 
@@ -224,62 +223,8 @@ public class DatabaseScreen extends Screen {
             }
         }
 
-        // —— 加载公共数据 ——
-        List<ChunkDb.ChunkMeta> metas;
-        try {
-            metas = rawChunkDb.getAllChunkMetas();
-        } catch (Exception e) {
-            ChunkScannerMod.LOGGER.warn("Failed to load chunk metas: {}", e.getMessage());
-            metas = List.of();
-        }
-        int metaCount = metas != null ? metas.size() : 0;
-
-        // —— 判断视图类型并构造渲染器 ——
-        boolean specialized = false;
-        try {
-            specialized = currentView.isSpecialized();
-        } catch (Exception e) {
-            // 视为非特化视图
-        }
-
-        if (specialized) {
-            List<String[]> rows;
-            String[] headers;
-            try {
-                rows = currentView.getSpecializedRows();
-                headers = currentView.getSpecializedHeaders();
-            } catch (Exception e) {
-                ChunkScannerMod.LOGGER.warn("Failed to get specialized data: {}", e.getMessage());
-                rows = List.of();
-                headers = new String[0];
-            }
-            KvPageRenderer.Specialized specRenderer = new KvPageRenderer.Specialized(textRenderer,
-                    rows != null ? rows : List.of(),
-                    headers != null ? headers : new String[0],
-                    metaCount);
-            try {
-                specRenderer.setCellTooltips(currentView.getSpecializedCellTooltips());
-                specRenderer.setCellColors(currentView.getSpecializedCellColors());
-            } catch (Exception e) {
-                ChunkScannerMod.LOGGER.debug("Failed to set cell tooltips: {}", e.getMessage());
-            }
-            // 连接物品图标数据（仅 QShopDbViewProvider 提供）
-            if (currentView instanceof com.billy65536.chunkscanner.components.view_provider.QShopDbViewProvider qsp) {
-                specRenderer.setCellItems(qsp.getCellItems());
-            }
-            pageRenderer = specRenderer;
-        } else {
-            List<ChunkDb.Entry> entries;
-            try {
-                entries = rawChunkDb.getAllEntries();
-            } catch (Exception e) {
-                ChunkScannerMod.LOGGER.warn("Failed to load entries: {}", e.getMessage());
-                entries = List.of();
-            }
-            pageRenderer = new KvPageRenderer.Entries(textRenderer,
-                    entries != null ? entries : List.of(),
-                    metaCount);
-        }
+        // —— 直接从视图提供者获取渲染布局 ——
+        layout = currentView.getLayout(textRenderer);
     }
 
     private void cycleViewType() {
@@ -392,7 +337,7 @@ public class DatabaseScreen extends Screen {
     private void backToList() {
         closeOpenedDb();
         showingKvView = false;
-        pageRenderer = null;
+        layout = null;
         fileListPanel.endDrag();
         kvPanel.endDrag();
         kvHScroll.endDrag();
@@ -462,8 +407,8 @@ public class DatabaseScreen extends Screen {
 
     private void exportToFile(Path path) throws IOException {
         StringBuilder sb = new StringBuilder();
-        if (pageRenderer != null) {
-            pageRenderer.export(sb);
+        if (layout != null) {
+            layout.export(sb);
         }
         Files.writeString(path, sb.toString(), StandardCharsets.UTF_8);
     }
@@ -525,15 +470,11 @@ public class DatabaseScreen extends Screen {
         }
 
         // KV 视图悬停 — JEI 风格物品图标 tooltip（优先于文字 tooltip）
-        if (showingKvView && pageRenderer instanceof KvPageRenderer.Specialized spec) {
-            ItemStack hoveredStack = spec.getHoveredItemStack();
+        if (showingKvView && layout != null) {
+            ItemStack hoveredStack = layout.getHoveredItemStack();
             if (hoveredStack != null && !hoveredStack.isEmpty()) {
                 MinecraftClient client = MinecraftClient.getInstance();
                 if (client.player != null) {
-                    // 使用 Screen.getTooltipFromItem 获取与物品栏完全一致的 tooltip：
-                    // - 自动根据 F3+H（advancedItemTooltips）切换 BASIC/ADVANCED
-                    // - ItemStack.getTooltip() 内部通过 Fabric Mixin 触发 ItemTooltipCallback.EVENT
-                    //   所有注册了该事件的 mod（JEI、WTHIT 等）都会追加自定义 tooltip 行
                     List<Text> itemTooltip = Screen.getTooltipFromItem(client, hoveredStack);
                     context.drawTooltip(textRenderer, itemTooltip,
                             hoveredStack.getTooltipData(), mouseX, mouseY);
@@ -541,10 +482,10 @@ public class DatabaseScreen extends Screen {
             }
         }
 
-        // KV 视图悬停 — 位置列 tooltip
+        // KV 视图悬停 — 位置列 tooltip / 单元格 tooltip
         if (showingKvView && hoveredKvIdx >= 0 && hoveredKvCol >= 0
-                && pageRenderer instanceof KvPageRenderer.Specialized spec) {
-            if (spec.isPositionColumn(hoveredKvCol)) {
+                && layout != null) {
+            if (layout.isPositionColumn(hoveredKvCol)) {
                 String key = XaeroWaypointHelper.isAvailable()
                         ? "chunkscanner.tooltip.create_waypoint"
                         : "chunkscanner.tooltip.print_coords";
@@ -553,19 +494,13 @@ public class DatabaseScreen extends Screen {
                         mouseX, mouseY);
             } else {
                 // 非位置列的单元格 tooltip（仅当没有物品图标悬停时显示）
-                ItemStack hoveredStack = spec.getHoveredItemStack();
+                ItemStack hoveredStack = layout.getHoveredItemStack();
                 if (hoveredStack == null || hoveredStack.isEmpty()) {
-                    List<Text> cellTooltip = spec.getCellTooltip(hoveredKvIdx, hoveredKvCol);
+                    List<Text> cellTooltip = layout.getCellTooltip(hoveredKvIdx, hoveredKvCol);
                     if (cellTooltip != null && !cellTooltip.isEmpty()) {
                         context.drawTooltip(textRenderer, cellTooltip, mouseX, mouseY);
                     }
                 }
-            }
-        }
-        if (showingKvView && hoveredKvIdx >= 0 && pageRenderer != null) {
-            List<Text> tooltip = pageRenderer.getTooltip(hoveredKvIdx);
-            if (tooltip != null) {
-                context.drawTooltip(textRenderer, tooltip, mouseX, mouseY);
             }
         }
     }
@@ -672,8 +607,8 @@ public class DatabaseScreen extends Screen {
         int margin = 4;
         int infoY = 28;
 
-        int kvSize = pageRenderer != null ? pageRenderer.getItemCount() : 0;
-        int metaSize = pageRenderer != null ? pageRenderer.getMetaCount() : 0;
+        int kvSize = layout != null ? layout.getItemCount() : 0;
+        int metaSize = layout != null ? layout.getMetaCount() : 0;
         String aName = rawChunkDb != null ? GuiUtil.getAnalyzerDisplayName(rawChunkDb.getAnalyzerName()) : "";
         String vName = viewTypes.isEmpty() ? "" : viewTypes.get(selectedViewTypeIdx).getName();
 
@@ -687,11 +622,10 @@ public class DatabaseScreen extends Screen {
         int listTop = infoY + 16;
         int listBottomV = this.height - 34 - SCROLLBAR_RESERVE;
 
-        // 特化视图：渲染表头，数据区域下移
-        if (pageRenderer instanceof KvPageRenderer.Specialized spec) {
-            int headerH = spec.renderHeader(context, listTop, margin, kvHScroll.getOffset());
+        // 渲染表头（表格模式），数据区域下移
+        if (layout != null) {
+            int headerH = layout.renderHeader(context, listTop, margin, kvHScroll.getOffset());
             listTop += headerH;
-            listBottomV = Math.min(listBottomV, this.height - 34 - SCROLLBAR_RESERVE);
         }
 
         // 设置面板边界并 clamp
@@ -705,9 +639,9 @@ public class DatabaseScreen extends Screen {
             return;
         }
 
-        // 每帧渲染前重置特化视图的悬停状态（避免上一帧状态残留）
-        if (pageRenderer instanceof KvPageRenderer.Specialized spec) {
-            spec.beginFrame();
+        // 每帧渲染前重置表格视图的悬停状态（避免上一帧状态残留）
+        if (layout != null) {
+            layout.beginFrame();
         }
 
         // 委托渲染器逐行渲染
@@ -715,14 +649,14 @@ public class DatabaseScreen extends Screen {
             int idx = kvPanel.getOffset() + i;
             if (idx >= kvSize) break;
             int rowY = listTop + i * ITEM_HEIGHT;
-            int hov = pageRenderer.renderRow(context, idx, rowY, margin,
+            int hov = layout.renderRow(context, idx, rowY, margin,
                     kvHScroll.getOffset(), mouseX, mouseY);
             if (hov >= 0) hoveredKvIdx = hov;
         }
 
-        // 捕获特化视图的列级悬停
-        if (pageRenderer instanceof KvPageRenderer.Specialized spec) {
-            hoveredKvCol = spec.getHoveredCol();
+        // 捕获表格视图的列级悬停
+        if (layout != null) {
+            hoveredKvCol = layout.getHoveredCol();
         }
 
         // 垂直滚动条
@@ -738,7 +672,7 @@ public class DatabaseScreen extends Screen {
 
     /** 计算当前视图内容的总宽度（像素），用于水平滚动条。 */
     private int computeContentWidth() {
-        return pageRenderer != null ? pageRenderer.computeContentWidth() : 0;
+        return layout != null ? layout.computeContentWidth() : 0;
     }
 
     /** 水平内容可见宽度（屏幕像素）。留出左右各约 5px 的边距。 */
@@ -809,8 +743,8 @@ public class DatabaseScreen extends Screen {
     /** 计算 KV 视图的数据区域 top（含特化视图表头高度，与 renderKvView 保持一致）。 */
     private int computeKvListTop() {
         int listTop = 44; // infoY(28) + 16
-        if (pageRenderer != null) {
-            listTop += pageRenderer.getHeaderHeight();
+        if (layout != null) {
+            listTop += layout.getHeaderHeight();
         }
         return listTop;
     }
@@ -818,7 +752,7 @@ public class DatabaseScreen extends Screen {
     private boolean handleKvClick(double mouseX, double mouseY, int button) {
         int listTop = computeKvListTop();
         int listBottomV = this.height - 34 - SCROLLBAR_RESERVE;
-        int kvSize = pageRenderer != null ? pageRenderer.getItemCount() : 0;
+        int kvSize = layout != null ? layout.getItemCount() : 0;
 
         // KV 垂直滚动条
         kvPanel.setBounds(listTop, listBottomV, this.width - 6);
@@ -838,17 +772,17 @@ public class DatabaseScreen extends Screen {
 
         // 位置列点击：创建 Xaero 路径点（支持 {key} 占位符替换）
         if (hoveredKvIdx >= 0 && hoveredKvCol >= 0
-                && pageRenderer instanceof KvPageRenderer.Specialized spec
-                && spec.isPositionColumn(hoveredKvCol)
+                && layout != null
+                && layout.isPositionColumn(hoveredKvCol)
                 && currentView != null) {
-            LocatedPosition pos = currentView.getPositionAt(hoveredKvIdx);
+            LocatedPosition pos = layout.getPositionAt(hoveredKvIdx);
             if (pos != null) {
                 // 合并全局配置与 DB 中存储的任务配置（任务配置优先）
                 ChunkScannerConfig cfg = cachedTaskConfig != null
                         ? cachedTaskConfig.applyTo(ChunkScannerMod.CONFIG)
                         : ChunkScannerMod.CONFIG;
-                String[] headers = currentView.getSpecializedHeaders();
-                String[] row = currentView.getRowAt(hoveredKvIdx);
+                String[] headers = layout.getHeaders();
+                String[] row = layout.getRowAt(hoveredKvIdx);
                 if (headers == null || row == null) return true;
                 String wpName = CoreUtil.replacePlaceholders(cfg.waypointName, headers, row);
                 String wpInit = CoreUtil.replacePlaceholders(cfg.waypointInitials, headers, row);
@@ -879,7 +813,7 @@ public class DatabaseScreen extends Screen {
             // KV 垂直拖拽
             int listTop = computeKvListTop();
             int listBottomV = this.height - 34 - SCROLLBAR_RESERVE;
-            int kvSize = pageRenderer != null ? pageRenderer.getItemCount() : 0;
+            int kvSize = layout != null ? layout.getItemCount() : 0;
             kvPanel.setBounds(listTop, listBottomV, this.width - 6);
             if (kvPanel.handleDrag(mouseY, kvSize)) {
                 return true;
@@ -925,7 +859,7 @@ public class DatabaseScreen extends Screen {
     private boolean handleKvScroll(double amount) {
         int listTop = computeKvListTop();
         int listBottomV = this.height - 34 - SCROLLBAR_RESERVE;
-        int kvSize = pageRenderer != null ? pageRenderer.getItemCount() : 0;
+        int kvSize = layout != null ? layout.getItemCount() : 0;
 
         if (hasShiftDown()) {
             int visibleW = horizVisibleWidth();
@@ -975,7 +909,7 @@ public class DatabaseScreen extends Screen {
             DbFileUtil.deleteDbFile(meta.scanId());
             closeOpenedDb();
             showingKvView = false;
-            pageRenderer = null;
+            layout = null;
             scanDbFiles();
             clearChildren();
             rebuildFileListButtons();
