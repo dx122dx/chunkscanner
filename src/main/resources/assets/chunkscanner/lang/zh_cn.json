@@ -64,6 +64,8 @@
     "chunkscanner.dbview.sign.desc": "解析告示牌数据，显示可读的文本内容和坐标。仅适用于告示牌分析器。",
     "chunkscanner.dbview.qshop.name": "QShop 商店视图",
     "chunkscanner.dbview.qshop.desc": "解析 QShop 商店数据，以结构化表格展示所有者、买卖模式、商品、价格等信息。仅适用于 QShop 分析器。",
+    "chunkscanner.dbview.error.title": "数据库解析失败",
+    "chunkscanner.dbview.error.msg": "解析当前数据库时发生异常，可能是由于数据库损坏或尚未报告的错误。请联系开发者以获取帮助，并提供下列异常信息。",
 
     "chunkscanner.gui.title": "ChunkScanner 任务视图",
     "chunkscanner.gui.id_hint": "扫描 ID（留空则自动生成）",

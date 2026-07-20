@@ -38,6 +38,7 @@ import com.billy65536.chunkscanner.core.LocatedPosition;
 import com.billy65536.chunkscanner.gui.GuiUtil;
 import com.billy65536.chunkscanner.gui.ScrollManager;
 import com.billy65536.chunkscanner.gui.ScrollableListPanel;
+import com.billy65536.chunkscanner.gui.layout.ErrorDisplayLayout;
 import com.billy65536.chunkscanner.gui.layout.ILayout;
 import com.billy65536.chunkscanner.integration.XaeroWaypointHelper;
 
@@ -224,7 +225,12 @@ public class DatabaseScreen extends Screen {
         }
 
         // —— 直接从视图提供者获取渲染布局 ——
-        layout = currentView.getLayout(textRenderer);
+        try {
+            layout = currentView.getLayout(textRenderer);
+        } catch (Exception e) {
+            ChunkScannerMod.LOGGER.warn("Failed to get layout from view provider '{}': {}", currentView.getClass().getSimpleName(), e.getMessage());
+            layout = new ErrorDisplayLayout(textRenderer, e);
+        }
     }
 
     private void cycleViewType() {

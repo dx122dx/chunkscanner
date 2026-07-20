@@ -63,6 +63,8 @@
     "chunkscanner.dbview.sign.desc": "Parse sign data and display readable text content with coordinates. Only for Sign analyzer.",
     "chunkscanner.dbview.qshop.name": "QShop View",
     "chunkscanner.dbview.qshop.desc": "Parse QShop data and display structured table with owner, buy/sell mode, item, and price. Only for QShop analyzer.",
+    "chunkscanner.dbview.error.title": "Database parsing failed",
+    "chunkscanner.dbview.error.msg": "An exception occurred while parsing the current database, possibly due to database corruption or an unreported error. Please contact the developer for assistance and provide the following exception information.",
 
     "chunkscanner.gui.title": "ChunkScanner Tasks",
     "chunkscanner.gui.id_hint": "Scan ID (auto-generated if empty)",
