@@ -45,7 +45,7 @@ class DbViewProviderRegistryTest {
             DbViewProviderRegistry.ITypeDescriptor retrieved = DbViewProviderRegistry.get("test.getId1");
             assertNotNull(retrieved);
             assertEquals("test.getId1", retrieved.getId());
-            assertEquals("Name 1", retrieved.getName());
+            assertEquals("Name 1", retrieved.getName().getString());
         }
 
         @Test
@@ -64,7 +64,7 @@ class DbViewProviderRegistryTest {
             DbViewProviderRegistry.register(second);
 
             DbViewProviderRegistry.ITypeDescriptor retrieved = DbViewProviderRegistry.get("test.dup.id");
-            assertEquals("Second", retrieved.getName());
+            assertEquals("Second", retrieved.getName().getString());
         }
     }
 
