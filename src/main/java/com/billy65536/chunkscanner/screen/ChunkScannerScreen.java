@@ -14,6 +14,7 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ConfirmScreen;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
@@ -273,7 +274,7 @@ public class ChunkScannerScreen extends Screen {
             MinecraftClient client = MinecraftClient.getInstance();
             ChunkScanner.ChunkStatusBreakdown bd = s.getStatusBreakdown(client);
             List<Text> tooltip = new ArrayList<>();
-            tooltip.add(Text.literal(s.analyzer.getName().getString() + " — " + s.scanId)
+            tooltip.add(s.analyzer.getName().copy().append(" — ").append(s.scanId)
                     .formatted(Formatting.GOLD));
             tooltip.add(Text.literal(""));
             tooltip.add(Text.translatable("chunkscanner.tooltip.session.pending", bd.pending())
@@ -334,10 +335,10 @@ public class ChunkScannerScreen extends Screen {
         int x = leftX + 4;
 
         // --- 第 1 行：分析器名称和 id ---
-        String header = "[" + s.analyzer.getName().getString() + "] " + s.scanId;
-        context.drawTextWithShadow(textRenderer,
-                Text.literal(header).formatted(Formatting.YELLOW),
-                x, y, 0xFFFFFF);
+        Text header = Text.literal("[").append(s.analyzer.getName()).append("] ").append(s.scanId)
+                                    .formatted(Formatting.YELLOW);
+
+        context.drawTextWithShadow(textRenderer, header, x, y, 0xFFFFFF);
 
         // 右侧按钮区域（预留滚动条空间）：左侧暂停/继续，右侧停止
         int btnRight = leftX + SCROLLBAR_X_OFFSET - 4;
@@ -415,16 +416,14 @@ public class ChunkScannerScreen extends Screen {
 
         // --- 第 3 行：紧凑数值统计 ---
         int numY = barY + barH + 2;
-        String numText = Text.translatable("chunkscanner.gui.scanned").getString()
-                + ":" + s.totalScannedChunks.get()
-                + "  " + Text.translatable("chunkscanner.gui.errors").getString()
-                + ":" + s.totalErrors.get()
-                + "  " + Text.translatable("chunkscanner.gui.found").getString()
-                + ":" + s.totalFoundChunks.get();
-        if (s.paused) numText += "  [⏸]";
-        context.drawTextWithShadow(textRenderer,
-                Text.literal(numText).formatted(Formatting.DARK_GRAY),
-                x, numY, 0xFFFFFF);
+        MutableText numText = Text.translatable("chunkscanner.gui.scanned").copy()
+                .append(":").append(String.valueOf(s.totalScannedChunks.get()))
+                .append("  ").append(Text.translatable("chunkscanner.gui.errors"))
+                .append(":").append(String.valueOf(s.totalErrors.get()))
+                .append("  ").append(Text.translatable("chunkscanner.gui.found"))
+                .append(":").append(String.valueOf(s.totalFoundChunks.get()));
+        if (s.paused) numText.append("  [⏸]");
+        context.drawTextWithShadow(textRenderer, numText.formatted(Formatting.DARK_GRAY), x, numY, 0xFFFFFF);
 
         // 检测悬停（排除右侧按钮区域，防止与按钮 hover 冲突）
         if (GuiUtil.isInRect(mouseX, mouseY, x, y, SCROLLBAR_X_OFFSET - 32, LIST_ITEM_HEIGHT)) {

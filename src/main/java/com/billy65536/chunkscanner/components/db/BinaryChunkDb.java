@@ -30,8 +30,8 @@ import com.billy65536.chunkscanner.config.TaskConfig;
  * │   version: u32 (4)                           │
  * │   scanIdLen: u16 (2)                         │
  * │   scanId: UTF-8 (scanIdLen)                  │
- * │   analyzerLen: u16 (2)                       │
- * │   analyzerName: UTF-8 (analyzerLen)           │
+ * │   analyzerIdLen: u16 (2)                       │
+ * │   analyzerId: UTF-8 (analyzerLen)           │
  * ├──────────────────────────────────────────────┤
  * │ String Pool                                  │
  * │   count: u32                                 │
@@ -63,10 +63,10 @@ public class BinaryChunkDb implements ChunkDb {
     private final String fileStem;
     /** 数据库扩展标识（由 Factory 指定，如 "bin4"）。 */
     private final String dbExt;
-    /** 创建该数据库的分析器名称。 */
-    private String analyzerName;
+    /** 创建该数据库的分析器 ID。 */
+    private String analyzerId;
     /** 用于文件名的分析器 ID（sanitized）。 */
-    private final String analyzerId;
+    private final String safeAnalyzerId;
     /** 子数据库 ID，0 表示主数据库。 */
     private final int subId;
 
@@ -99,8 +99,8 @@ public class BinaryChunkDb implements ChunkDb {
         this(scanId, "");
     }
 
-    public BinaryChunkDb(String scanId, String analyzerName) {
-        this(scanId, analyzerName, false);
+    public BinaryChunkDb(String scanId, String analyzerId) {
+        this(scanId, analyzerId, false);
     }
 
     /**
@@ -108,8 +108,8 @@ public class BinaryChunkDb implements ChunkDb {
      *
      * @param metadataOnly 若为 true，只存储元数据不加载文件内容，用于文件列表浏览。
      */
-    public BinaryChunkDb(String scanId, String analyzerName, boolean metadataOnly) {
-        this(scanId, analyzerName, metadataOnly, ChunkScannerMod.getDbDir(), "bin4", 0);
+    public BinaryChunkDb(String scanId, String analyzerId, boolean metadataOnly) {
+        this(scanId, analyzerId, metadataOnly, ChunkScannerMod.getDbDir(), "bin4", 0);
     }
 
     /**
@@ -121,14 +121,14 @@ public class BinaryChunkDb implements ChunkDb {
      * @param dbExt  数据库扩展标识（如 "bin4"），决定文件扩展名。
      * @param subId 子数据库 ID，0 表示主数据库。子数据库使用 .sub_{subId}. 文件名段。
      */
-    public BinaryChunkDb(String scanId, String analyzerName, boolean metadataOnly, Path dbDir, String dbExt, int subId) {
+    public BinaryChunkDb(String scanId, String analyzerId, boolean metadataOnly, Path dbDir, String dbExt, int subId) {
         this.scanId = scanId;
-        this.analyzerName = analyzerName;
+        this.analyzerId = analyzerId;
         this.dbDir = dbDir != null ? dbDir : ChunkScannerMod.getDbDir();
         this.dbExt = dbExt;
         this.subId = subId;
         this.fileStem = safeFileStem(scanId);
-        this.analyzerId = sanitizeAnalyzerId(analyzerName);
+        this.safeAnalyzerId = sanitizeAnalyzerId(analyzerId);
         this.stringPool = new ConcurrentHashMap<>();
         this.stringPoolReverse = new ConcurrentHashMap<>();
         this.kvStore = new ConcurrentHashMap<>();
@@ -287,9 +287,9 @@ public class BinaryChunkDb implements ChunkDb {
     /** 返回完整文件名（用于日志/显示/路径解析）。 */
     private String fileName() {
         if (subId > 0) {
-            return fileStem + "." + analyzerId + ".sub_" + subId + "." + dbExt;
+            return fileStem + "." + safeAnalyzerId + ".sub_" + subId + "." + dbExt;
         }
-        return fileStem + "." + analyzerId + "." + dbExt;
+        return fileStem + "." + safeAnalyzerId + "." + dbExt;
     }
 
     // ==================== 二进制加载 ====================
@@ -299,7 +299,7 @@ public class BinaryChunkDb implements ChunkDb {
      *
      * 读取流程（对应文件格式）：
      * 1. 验证 magic 魔数
-     * 2. 读取 version，根据版本解析 header（v2+ 含 analyzerName）
+     * 2. 读取 version，根据版本解析 header（v2+ 含 analyzerId）
      * 3. 加载字符串池（v3+ 每条记录带显式 ID，v1/v2 按顺序）
      * 4. 加载 Chunk Meta（含 dimPoolId，需通过字符串池还原维度名）
      * 5. 加载 KV 记录
@@ -333,7 +333,7 @@ public class BinaryChunkDb implements ChunkDb {
             byte[] scanIdBytes = new byte[scanIdLen];
             readFully(ch, ByteBuffer.wrap(scanIdBytes), scanIdLen);
 
-            // analyzerName (version >= 2)
+            // analyzerId (version >= 2)
             if (version >= 2) {
                 buf.clear(); readFully(ch, buf, 2); buf.flip();
                 int analyzerLen = buf.getShort() & 0xFFFF;
@@ -341,7 +341,7 @@ public class BinaryChunkDb implements ChunkDb {
                 if (analyzerLen > 0) {
                     byte[] analyzerBytes = new byte[analyzerLen];
                     readFully(ch, ByteBuffer.wrap(analyzerBytes), analyzerLen);
-                    this.analyzerName = new String(analyzerBytes, StandardCharsets.UTF_8);
+                    this.analyzerId = new String(analyzerBytes, StandardCharsets.UTF_8);
                 }
             }
 
@@ -454,7 +454,7 @@ public class BinaryChunkDb implements ChunkDb {
             Files.createDirectories(dbDir);
             Path tmpPath = dataPath().resolveSibling(fileName() + ".tmp");
             byte[] scanIdBytes = scanId.getBytes(StandardCharsets.UTF_8);
-            byte[] analyzerBytes = (analyzerName != null ? analyzerName : "").getBytes(StandardCharsets.UTF_8);
+            byte[] analyzerBytes = (analyzerId != null ? analyzerId : "").getBytes(StandardCharsets.UTF_8);
 
             try (FileChannel ch = FileChannel.open(tmpPath,
                     StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
@@ -541,7 +541,7 @@ public class BinaryChunkDb implements ChunkDb {
             throw new UnsupportedOperationException("Sub-database cannot create sub-databases");
         }
         return subDbs.computeIfAbsent(id, k ->
-                new BinaryChunkDb(scanId, analyzerName, false, dbDir, dbExt, k));
+                new BinaryChunkDb(scanId, analyzerId, false, dbDir, dbExt, k));
     }
 
     // ==================== 公共访问方法（供 RawDbProvider 等使用） ====================
@@ -552,8 +552,8 @@ public class BinaryChunkDb implements ChunkDb {
     }
 
     /** 创建此数据库的分析器名称。 */
-    public String getAnalyzerName() {
-        return analyzerName != null ? analyzerName : "";
+    public String getAnalyzerId() {
+        return analyzerId != null ? analyzerId : "";
     }
 
     /** 文件大小（字节）。 */
@@ -600,16 +600,16 @@ public class BinaryChunkDb implements ChunkDb {
         public String getId() { return "binary"; }
 
         @Override
-        public String getdbExt() { return "bin4"; }
+        public String getExt() { return "bin4"; }
 
         @Override
-        public ChunkDb create(String scanId, String analyzerName, Path dbDir) {
-            return new BinaryChunkDb(scanId, analyzerName, false, dbDir, getdbExt(), 0);
+        public ChunkDb create(String scanId, String analyzerId, Path dbDir) {
+            return new BinaryChunkDb(scanId, analyzerId, false, dbDir, getExt(), 0);
         }
 
         @Override
-        public ChunkDb createMetadataOnly(String scanId, String analyzerName, Path dbDir) {
-            return new BinaryChunkDb(scanId, analyzerName, true, dbDir, getdbExt(), 0);
+        public ChunkDb createMetadataOnly(String scanId, String analyzerId, Path dbDir) {
+            return new BinaryChunkDb(scanId, analyzerId, true, dbDir, getExt(), 0);
         }
     }
 

@@ -185,7 +185,7 @@ public class SignDbViewProvider implements DbViewProvider {
         @Override
         public DbViewProvider create(ChunkDb db) {
             // 仅适用于 sign 分析器生成的数据库
-            if (!"sign".equals(db.getAnalyzerName())) return null;
+            if (!"sign".equals(db.getAnalyzerId())) return null;
             return new SignDbViewProvider(db);
         }
     }

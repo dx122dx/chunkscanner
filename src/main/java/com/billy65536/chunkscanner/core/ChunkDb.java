@@ -24,8 +24,8 @@ public interface ChunkDb {
     /** 获取此数据库实例的扫描 ID。 */
     String getScanId();
     
-    /** 创建此数据库的分析器名称。 */
-    String getAnalyzerName();
+    /** 创建此数据库的分析器 ID。 */
+    String getAnalyzerId();
 
     /** 文件大小（字节）。 */
     long getStorageSize();
@@ -164,27 +164,27 @@ public interface ChunkDb {
          * 数据库文件扩展标识符，由实现自行指定。
          * 推荐使用 id + 版本号形式，如: “bin4”
          */
-        String getdbExt();
+        String getExt();
 
         /**
          * 创建数据库实例（完整模式，构造时立即加载数据）。
          *
          * @param scanId        扫描任务 ID
-         * @param analyzerName  分析器名称
+         * @param analyzerId  分析器 ID
          * @param dbDir         数据库文件存储目录
          * @return 新的 ChunkDb 实例
          */
-        ChunkDb create(String scanId, String analyzerName, Path dbDir);
+        ChunkDb create(String scanId, String analyzerId, Path dbDir);
 
         /**
          * 创建数据库实例（元数据模式，延迟加载）。
          *
          * @param scanId        扫描任务 ID
-         * @param analyzerName  分析器名称
+         * @param analyzerId  分析器 ID
          * @param dbDir         数据库文件存储目录
          * @return 新的 ChunkDb 实例（未加载数据，需调用 open()）
          */
-        ChunkDb createMetadataOnly(String scanId, String analyzerName, Path dbDir);
+        ChunkDb createMetadataOnly(String scanId, String analyzerId, Path dbDir);
     }
 
     /** 数据库工厂全局注册表。 */

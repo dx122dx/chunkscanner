@@ -154,7 +154,7 @@ class ChunkDbTest {
 
         private final ChunkDb stubDb = new ChunkDb() {
             @Override public String getScanId() { return "test"; }
-            @Override public String getAnalyzerName() { return ""; }
+            @Override public String getAnalyzerId() { return ""; }
             @Override public long getStorageSize() { return 0; }
             @Override public long getLastModifiedTime() { return 0; }
             @Override public int intern(String s) { return 0; }

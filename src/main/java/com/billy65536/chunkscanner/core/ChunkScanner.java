@@ -121,27 +121,27 @@ public class ChunkScanner {
     // ==================== 命令接口 ====================
 
     /** 使用默认配置启动扫描任务。scanId 为可选参数，不传则自动生成时间戳 id。 */
-    public void start(MinecraftClient client, String analyzerName, String scanId) {
-        start(client, analyzerName, scanId, null);
+    public void start(MinecraftClient client, String analyzerId, String scanId) {
+        start(client, analyzerId, scanId, null);
     }
 
     /**
      * 启动一个新的扫描任务。
      *
      * @param client     Minecraft 客户端实例
-     * @param analyzerName 分析器注册 ID
+     * @param analyzerId 分析器注册 ID
      * @param scanId    扫描任务唯一标识符
      * @param taskConfig 任务级配置（可为 null，使用全局默认）
      */
-    public void start(MinecraftClient client, String analyzerName, String scanId, TaskConfig taskConfig) {
+    public void start(MinecraftClient client, String analyzerId, String scanId, TaskConfig taskConfig) {
         if (client.player == null || client.world == null) {
             CoreUtil.sendMsg(client, Text.translatable(KEY_NOT_IN_WORLD).formatted(Formatting.RED));
             return;
         }
 
-        ChunkAnalyzer analyzer = AnalyzerRegistry.get(analyzerName);
+        ChunkAnalyzer analyzer = AnalyzerRegistry.get(analyzerId);
         if (analyzer == null) {
-            CoreUtil.sendMsg(client, Text.translatable(KEY_UNKNOWN_ANALYZER, analyzerName).formatted(Formatting.RED));
+            CoreUtil.sendMsg(client, Text.translatable(KEY_UNKNOWN_ANALYZER, analyzerId).formatted(Formatting.RED));
             return;
         }
 

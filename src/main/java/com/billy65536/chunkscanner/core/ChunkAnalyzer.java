@@ -41,15 +41,9 @@ public interface ChunkAnalyzer {
     /** 唯一标识符，不可变，用于注册和命令选择。 */
     String getId();
 
-    /** 显示名称（本地化 key 或直接文本），用于 GUI 展示。 */
+    /** 显示名称，用于 GUI 展示。 */
     Text getName();
 
-    /** 描述文本（本地化 key 或直接文本），用于悬停提示。 */
+    /** 描述文本，用于悬停提示。 */
     Text getDescription();
-
-    // ==================== 默认兼容方法 ====================
-
-    /** @deprecated 使用 {@link #getId()} */
-    @Deprecated
-    default String getNameString() { return getId(); }
 }

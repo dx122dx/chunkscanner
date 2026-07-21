@@ -161,8 +161,8 @@ public class TaskConfigScreen extends Screen {
         this.analyzerList = new ArrayList<>();
 
         // 扫描名称
-        String analyzerName = session.analyzer.getName().getString();
-        this.scanNameText = Text.literal("[" + analyzerName + "] " + session.scanId)
+        Text analyzerName = session.analyzer.getName();
+        this.scanNameText = Text.literal("[").append(analyzerName).append("] ").append(session.scanId)
                 .formatted(Formatting.YELLOW);
         this.defaultScanId = session.scanId;
 

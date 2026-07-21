@@ -213,11 +213,11 @@ public class ChunkScannerMod implements ClientModInitializer {
                         .then(ClientCommandManager.argument("id", StringArgumentType.word())
                                 .then(ClientCommandManager.argument("config", StringArgumentType.string())
                                         .executes(ctx -> {
-                                            String analyzerName = StringArgumentType.getString(ctx, "name");
+                                            String analyzerId = StringArgumentType.getString(ctx, "id");
                                             String scanId = StringArgumentType.getString(ctx, "id");
                                             String configStr = StringArgumentType.getString(ctx, "config");
                                             TaskConfig taskConfig = TaskConfig.parse(configStr);
-                                            scanner.start(ctx.getSource().getClient(), analyzerName, scanId, taskConfig);
+                                            scanner.start(ctx.getSource().getClient(), analyzerId, scanId, taskConfig);
                                             return 1;
                                         }))
                                 .executes(ctx -> {
@@ -399,7 +399,7 @@ public class ChunkScannerMod implements ClientModInitializer {
 
     /**
      * 从已有的数据库文件恢复/重启扫描任务。
-     * 读取文件的 scanId 和 analyzerName 元数据，创建 BinaryChunkDb 实例，
+     * 读取文件的 scanId 和 analyzerId 元数据，创建 BinaryChunkDb 实例，
      * 读取存储在 DB 中的 TaskConfig 并恢复应用，
      * 通过 scanner.startWithDb() 恢复扫描（保留已有数据）。
      */
@@ -412,7 +412,7 @@ public class ChunkScannerMod implements ClientModInitializer {
         }
 
         DbFileUtil.FileMeta meta = DbFileUtil.readFileMeta(file);
-        if (meta.isEmpty() || meta.analyzerName().isEmpty()) {
+        if (meta.isEmpty() || meta.analyzerId().isEmpty()) {
             sendMsg(client, Text.translatable("chunkscanner.msg.db_file_corrupt")
                     .formatted(Formatting.RED));
             return;
@@ -422,7 +422,7 @@ public class ChunkScannerMod implements ClientModInitializer {
         try {
             Path fileDir = file.getParent();
             ChunkDb.Factory dbFactory = ChunkDb.FactoryRegistry.getDefault();
-            existingDb = dbFactory.create(meta.scanId(), meta.analyzerName(), fileDir);
+            existingDb = dbFactory.create(meta.scanId(), meta.analyzerId(), fileDir);
         } catch (Exception e) {
             sendMsg(client, Text.translatable("chunkscanner.msg.db_file_corrupt")
                     .formatted(Formatting.RED));
@@ -435,7 +435,7 @@ public class ChunkScannerMod implements ClientModInitializer {
             ChunkScannerMod.LOGGER.info("Restored TaskConfig from DB for '{}': {}", scanId, storedConfig.toDisplayString());
         }
 
-        scanner.startWithDb(client, meta.scanId(), meta.analyzerName(), storedConfig, existingDb);
+        scanner.startWithDb(client, meta.scanId(), meta.analyzerId(), storedConfig, existingDb);
     }
 
     private static void sendMsg(MinecraftClient client, Text msg) {

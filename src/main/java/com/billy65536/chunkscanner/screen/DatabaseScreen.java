@@ -154,10 +154,10 @@ public class DatabaseScreen extends Screen {
         if (rawChunkDb != null) {
             rawChunkDb.close();
         }
-        ChunkScannerMod.LOGGER.debug("Opening database: scanId={} analyzer={}", meta.scanId(), meta.analyzerName());
+        ChunkScannerMod.LOGGER.debug("Opening database: scanId={} analyzer={}", meta.scanId(), meta.analyzerId());
         Path fileDir = meta.filePath() != null ? meta.filePath().getParent() : null;
         ChunkDb.Factory dbFactory = ChunkDb.FactoryRegistry.getDefault();
-        ChunkDb db = dbFactory.createMetadataOnly(meta.scanId(), meta.analyzerName(), fileDir);
+        ChunkDb db = dbFactory.createMetadataOnly(meta.scanId(), meta.analyzerId(), fileDir);
         rawChunkDb = db;
         openedDb = new RawDbProvider(db);
         try {
@@ -257,7 +257,7 @@ public class DatabaseScreen extends Screen {
         DbViewProviderRegistry.Type selectedType = viewTypes.get(selectedViewTypeIdx);
         Set<String> applicable = selectedType.applicableAnalyzers();
         if (applicable.isEmpty()) return true;
-        return applicable.contains(rawChunkDb.getAnalyzerName());
+        return applicable.contains(rawChunkDb.getAnalyzerId());
     }
 
     private boolean isUniversallyApplicable() {
@@ -563,7 +563,7 @@ public class DatabaseScreen extends Screen {
             int color = hovered ? 0xFFFF55 : 0xFFFFFF;
 
             String label = meta.scanId();
-            String aName = meta.analyzerName();
+            String aName = meta.analyzerId();
             if (aName != null && !aName.isEmpty()) {
                 label = label + " [" + GuiUtil.getAnalyzerDisplayName(aName) + "]";
             }
@@ -615,7 +615,7 @@ public class DatabaseScreen extends Screen {
 
         int kvSize = layout != null ? layout.getItemCount() : 0;
         int metaSize = layout != null ? layout.getMetaCount() : 0;
-        Text aName = rawChunkDb != null ? GuiUtil.getAnalyzerDisplayName(rawChunkDb.getAnalyzerName()) : Text.empty();
+        Text aName = rawChunkDb != null ? GuiUtil.getAnalyzerDisplayName(rawChunkDb.getAnalyzerId()) : Text.empty();
         Text vName = viewTypes.isEmpty() ? Text.empty() : viewTypes.get(selectedViewTypeIdx).getName();
 
         context.drawTextWithShadow(textRenderer,
@@ -897,17 +897,17 @@ public class DatabaseScreen extends Screen {
         ChunkScanner scanner = ChunkScannerMod.getScanner();
         if (scanner == null || client.player == null || client.world == null) return;
 
-        ChunkAnalyzer analyzer = AnalyzerRegistry.get(meta.analyzerName());
+        ChunkAnalyzer analyzer = AnalyzerRegistry.get(meta.analyzerId());
         if (analyzer == null) return;
 
         Path fileDir = meta.filePath() != null ? meta.filePath().getParent() : null;
         ChunkDb.Factory dbFactory = ChunkDb.FactoryRegistry.getDefault();
-        ChunkDb existingDb = dbFactory.create(meta.scanId(), meta.analyzerName(), fileDir);
+        ChunkDb existingDb = dbFactory.create(meta.scanId(), meta.analyzerId(), fileDir);
         TaskConfig storedConfig = existingDb.getTaskConfig();
         if (storedConfig != null) {
             ChunkScannerMod.LOGGER.info("Restored TaskConfig from DB for '{}': {}", meta.scanId(), storedConfig.toDisplayString());
         }
-        scanner.startWithDb(client, meta.scanId(), meta.analyzerName(), storedConfig, existingDb);
+        scanner.startWithDb(client, meta.scanId(), meta.analyzerId(), storedConfig, existingDb);
     }
 
     private void deleteDbFile(DbFileUtil.FileMeta meta) {

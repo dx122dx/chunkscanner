@@ -34,7 +34,7 @@ public final class DbFileUtil {
     // ==================== 元数据读取 ====================
 
     /**
-     * 从二进制文件中读取 scanId 和 analyzerName。
+     * 从二进制文件中读取 scanId 和 analyzerId。
      * 使用 FileChannel 只读取头部数据，避免大文件全量加载到内存。
      */
     public static FileMeta readFileMeta(Path file) {
@@ -43,7 +43,7 @@ public final class DbFileUtil {
             if (fileLen < MIN_HEADER_SIZE) return FileMeta.EMPTY;
             long lastModified = Files.getLastModifiedTime(file).toMillis();
 
-            // 只读取头部静态部分（最多 4096 字节，应覆盖所有合理的 scanId 和 analyzerName）
+            // 只读取头部静态部分（最多 4096 字节，应覆盖所有合理的 scanId 和 analyzerId）
             int readLen = (int) Math.min(fileLen, 4096);
             byte[] headBytes = new byte[readLen];
             try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(file.toFile(), "r")) {
@@ -64,18 +64,18 @@ public final class DbFileUtil {
             buf.get(scanIdBytes);
             String scanId = new String(scanIdBytes, StandardCharsets.UTF_8);
 
-            String analyzerName = "";
+            String analyzerId = "";
             if (version >= 2) {
                 if (buf.remaining() < 2) return new FileMeta(scanId, "", fileLen, lastModified, file);
                 int analyzerLen = buf.getShort() & 0xFFFF;
                 if (analyzerLen > 0 && analyzerLen <= 1024 && buf.remaining() >= analyzerLen) {
                     byte[] analyzerBytes = new byte[analyzerLen];
                     buf.get(analyzerBytes);
-                    analyzerName = new String(analyzerBytes, StandardCharsets.UTF_8);
+                    analyzerId = new String(analyzerBytes, StandardCharsets.UTF_8);
                 }
             }
 
-            return new FileMeta(scanId, analyzerName, fileLen, lastModified, file);
+            return new FileMeta(scanId, analyzerId, fileLen, lastModified, file);
         } catch (IOException e) {
             return FileMeta.EMPTY;
         }
@@ -193,8 +193,8 @@ public final class DbFileUtil {
                     : meta.fileSize() < 1024 * 1024
                         ? String.format("%.1f KB", meta.fileSize() / 1024.0)
                         : String.format("%.1f MB", meta.fileSize() / (1024.0 * 1024.0));
-            String aName = meta.analyzerName() != null && !meta.analyzerName().isEmpty()
-                    ? meta.analyzerName() : "?";
+            String aName = meta.analyzerId() != null && !meta.analyzerId().isEmpty()
+                    ? meta.analyzerId() : "?";
             sendMsg(client, Text.literal("  ")
                     .append(Text.literal(meta.scanId()).formatted(Formatting.YELLOW))
                     .append(Text.literal(" [" + aName + "]").formatted(Formatting.GRAY))
@@ -211,10 +211,10 @@ public final class DbFileUtil {
     // ==================== 辅助类型 ====================
 
     /**
-     * 数据库文件的轻量元数据（scanId、analyzerName、大小、修改时间、文件路径）。
+     * 数据库文件的轻量元数据（scanId、analyzerId、大小、修改时间、文件路径）。
      * 不加载 KV 数据，仅用于文件列表展示。
      */
-    public record FileMeta(String scanId, String analyzerName, long fileSize, long lastModified, Path filePath) {
+    public record FileMeta(String scanId, String analyzerId, long fileSize, long lastModified, Path filePath) {
         public static final FileMeta EMPTY = new FileMeta("", "", 0, 0, null);
 
         public boolean isEmpty() {

@@ -518,7 +518,7 @@ public class QShopDbViewProvider implements DbViewProvider {
 
         @Override
         public DbViewProvider create(ChunkDb db) {
-            if (!"qshop".equals(db.getAnalyzerName())) return null;
+            if (!"qshop".equals(db.getAnalyzerId())) return null;
             return new QShopDbViewProvider(db);
         }
     }
