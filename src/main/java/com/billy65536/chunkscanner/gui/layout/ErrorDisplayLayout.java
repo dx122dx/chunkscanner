@@ -249,7 +249,7 @@ public class ErrorDisplayLayout implements ILayout {
     @Override
     public void export(StringBuilder sb) {
         for (ErrorRow row : rows) {
-            sb.append(row.text).append('\n');
+            sb.append(row.text.getString()).append('\n');
         }
     }
 
