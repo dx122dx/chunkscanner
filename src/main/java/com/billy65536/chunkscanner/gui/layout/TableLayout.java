@@ -12,7 +12,7 @@ import java.util.List;
 import com.billy65536.chunkscanner.core.LocatedPosition;
 
 /**
- * {@link ILayout} 的唯一实现，通过 {@link CellContent} 密封接口统一存储单元格数据。
+ * {@link ILayout} 的唯一实现，通过 {@link IContentCell} 密封接口统一存储单元格数据。
  *
  * <p>每个单元格是 {@link TextCell}、{@link PositionCell} 或 {@link ItemCell} 之一，
  * 渲染时通过 {@code instanceof} 分派到对应逻辑。不再维护分离的颜色/tooltip/物品 Map。</p>
@@ -31,7 +31,7 @@ public class TableLayout implements ILayout {
 
     private final TextRenderer textRenderer;
     private final String[] headers;
-    private final List<List<CellContent>> rows;
+    private final List<List<IContentCell>> rows;
     private final int metaCount;
     private final int[] colWidths;
 
@@ -41,7 +41,7 @@ public class TableLayout implements ILayout {
 
     // ==================== 构造 ====================
 
-    TableLayout(TextRenderer tr, String[] headers, List<List<CellContent>> rows,
+    TableLayout(TextRenderer tr, String[] headers, List<List<IContentCell>> rows,
                 int metaCount) {
         this.textRenderer = tr;
         this.headers = headers;
@@ -89,7 +89,7 @@ public class TableLayout implements ILayout {
     @Override
     public int renderRow(DrawContext ctx, int idx, int rowY,
                           int margin, int hScrollOffset, int mouseX, int mouseY) {
-        List<CellContent> row = rows.get(idx);
+        List<IContentCell> row = rows.get(idx);
         int rx = margin - hScrollOffset;
         boolean rowHovered = false;
         for (int c = 0; c < row.size(); c++) {
@@ -100,7 +100,7 @@ public class TableLayout implements ILayout {
                 rowHovered = true;
             }
 
-            CellContent cell = row.get(c);
+            IContentCell cell = row.get(c);
 
             if (cell instanceof PositionCell pc) {
                 int color = colHovered ? POSITION_HOVER_COLOR : POSITION_COL_COLOR;
@@ -127,7 +127,7 @@ public class TableLayout implements ILayout {
     @Override
     public void export(StringBuilder sb) {
         sb.append(String.join("\t", headers)).append("\n");
-        for (List<CellContent> row : rows) {
+        for (List<IContentCell> row : rows) {
             for (int i = 0; i < row.size(); i++) {
                 if (i > 0) sb.append("\t");
                 sb.append(cellToText(row.get(i)));
@@ -161,7 +161,7 @@ public class TableLayout implements ILayout {
     public List<Text> getCellTooltip(int rowIdx, int colIdx) {
         if (rowIdx < 0 || rowIdx >= rows.size()) return null;
         if (colIdx < 0 || colIdx >= headers.length) return null;
-        CellContent cell = rows.get(rowIdx).get(colIdx);
+        IContentCell cell = rows.get(rowIdx).get(colIdx);
         if (cell instanceof TextCell rt && rt.tooltip() != null) {
             return Arrays.asList(rt.tooltip());
         }
@@ -177,7 +177,7 @@ public class TableLayout implements ILayout {
     @Override
     public LocatedPosition getPositionAt(int rowIdx) {
         if (rowIdx < 0 || rowIdx >= rows.size()) return null;
-        for (CellContent cell : rows.get(rowIdx)) {
+        for (IContentCell cell : rows.get(rowIdx)) {
             if (cell instanceof PositionCell pc) return pc.pos();
         }
         return null;
@@ -186,7 +186,7 @@ public class TableLayout implements ILayout {
     @Override
     public String[] getRowAt(int rowIdx) {
         if (rowIdx < 0 || rowIdx >= rows.size()) return null;
-        List<CellContent> row = rows.get(rowIdx);
+        List<IContentCell> row = rows.get(rowIdx);
         String[] result = new String[row.size()];
         for (int i = 0; i < row.size(); i++) {
             result[i] = cellToText(row.get(i));
@@ -197,7 +197,7 @@ public class TableLayout implements ILayout {
     // ==================== 内部工具 ====================
 
     /** 将任意 CellContent 转为导出用文本。 */
-    private static String cellToText(CellContent cell) {
+    private static String cellToText(IContentCell cell) {
         if (cell instanceof TextCell rt) return rt.text().getString();
         if (cell instanceof PositionCell pc) return pc.pos().toString();
         if (cell instanceof ItemCell ic) return ic.stack().getName().getString();
@@ -205,7 +205,7 @@ public class TableLayout implements ILayout {
     }
 
     /** 计算任意 CellContent 的文本像素宽度。 */
-    private int cellTextWidth(CellContent cell) {
+    private int cellTextWidth(IContentCell cell) {
         return textRenderer.getWidth(cellToText(cell));
     }
 
@@ -220,7 +220,7 @@ public class TableLayout implements ILayout {
         // 采样最多 200 行获取实际数据宽度
         int sampleSize = Math.min(rows.size(), 200);
         for (int i = 0; i < sampleSize; i++) {
-            List<CellContent> row = rows.get(i);
+            List<IContentCell> row = rows.get(i);
             for (int c = 0; c < row.size() && c < cols; c++) {
                 int w = cellTextWidth(row.get(c));
                 if (w > widths[c]) widths[c] = w;

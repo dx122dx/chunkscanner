@@ -10,7 +10,7 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.billy65536.chunkscanner.core.ChunkDb;
+import com.billy65536.chunkscanner.core.IChunkDb;
 
 /**
  * QShop 数据库适配器 —— 所有 QShop 二进制格式定义和数据库读写的唯一权威。
@@ -37,17 +37,17 @@ import com.billy65536.chunkscanner.core.ChunkDb;
  *   <li>转换 key — {@link #makeKey(String, int, int, int, int, int)}</li>
  *   <li>转换 value — {@link #makeRecordValue} / {@link #parseRecordValue} /
  *       {@link #makeEnhancementValue} / {@link #parseEnhancementValue}</li>
- *   <li>DB 操作 — {@link ChunkDb#put} / {@link ChunkDb#get} / …</li>
+ *   <li>DB 操作 — {@link IChunkDb#put} / {@link IChunkDb#get} / …</li>
  * </ol>
  */
 public final class QShopDbAdapter {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("chunkscanner.adapter");
 
-    private final ChunkDb db;
-    private final ChunkDb subDb;
+    private final IChunkDb db;
+    private final IChunkDb subDb;
 
-    public QShopDbAdapter(ChunkDb db) {
+    public QShopDbAdapter(IChunkDb db) {
         this.db = db;
         this.subDb = db.getSubDb(1);
     }
@@ -161,7 +161,7 @@ public final class QShopDbAdapter {
      * @return 全部记录列表，异常时返回空列表
      */
     public List<Record> getAllRecords() {
-        List<ChunkDb.Entry> entries;
+        List<IChunkDb.Entry> entries;
         try {
             entries = db.getAllEntries();
         } catch (Exception e) {
@@ -171,7 +171,7 @@ public final class QShopDbAdapter {
         if (entries.isEmpty()) return Collections.emptyList();
 
         List<Record> records = new ArrayList<>(entries.size());
-        for (ChunkDb.Entry entry : entries) {
+        for (IChunkDb.Entry entry : entries) {
             byte[] key = entry.key();
             byte[] val = entry.value();
             if (!isQShopKey(key)) continue;
@@ -244,7 +244,7 @@ public final class QShopDbAdapter {
      * @return 全部增强数据列表，异常时返回空列表
      */
     public List<Enhancement> getAllEnhancements() {
-        List<ChunkDb.Entry> entries;
+        List<IChunkDb.Entry> entries;
         try {
             entries = subDb.getAllEntries();
         } catch (Exception e) {
@@ -254,7 +254,7 @@ public final class QShopDbAdapter {
         if (entries.isEmpty()) return Collections.emptyList();
 
         List<Enhancement> results = new ArrayList<>(entries.size());
-        for (ChunkDb.Entry entry : entries) {
+        for (IChunkDb.Entry entry : entries) {
             byte[] val = entry.value();
             if (val.length < ENHANCED_RECORD_SIZE) continue;
             try {
@@ -270,12 +270,12 @@ public final class QShopDbAdapter {
     }
 
     /** @return 底层主数据库实例（id=0） */
-    public ChunkDb getMainDb() {
+    public IChunkDb getMainDb() {
         return db;
     }
 
     /** @return 底层子数据库实例（id=1，存储增强数据） */
-    public ChunkDb getSubDb() {
+    public IChunkDb getSubDb() {
         return subDb;
     }
 
@@ -353,7 +353,7 @@ public final class QShopDbAdapter {
 
     /**
      * 构造 chunk 级删除前缀（18 字节）。
-     * <p>仅含 prefix + dimPoolId + cx + cz，不含坐标，用于 {@link ChunkDb#removeAllWithPrefix} 批量删除。
+     * <p>仅含 prefix + dimPoolId + cx + cz，不含坐标，用于 {@link IChunkDb#removeAllWithPrefix} 批量删除。
      */
     private byte[] makeChunkPrefix(String dimId, int cx, int cz) {
         int dimPoolId = db.intern(dimId);
@@ -393,7 +393,7 @@ public final class QShopDbAdapter {
 
     /**
      * 序列化基础记录为 48 字节（小端序）。
-     * <p>所有字符串通过 {@link ChunkDb#intern} 池化，仅写回整数引用。
+     * <p>所有字符串通过 {@link IChunkDb#intern} 池化，仅写回整数引用。
      * registryId 为 null 时不设 FLAG_ID_RECOVERED。
      */
     private byte[] makeRecordValue(String dimId, int x, int z, int y,
@@ -478,7 +478,7 @@ public final class QShopDbAdapter {
 
     /**
      * 序列化增强数据为 20 字节（小端序）。
-     * <p>字符串通过子数据库的 {@link ChunkDb#intern} 池化（与主数据库隔离）。
+     * <p>字符串通过子数据库的 {@link IChunkDb#intern} 池化（与主数据库隔离）。
      * isBook / isShulkerExpanded 编码到 flags 字段。
      */
     private byte[] makeEnhancementValue(String registryId, String fullNbtString,
@@ -502,7 +502,7 @@ public final class QShopDbAdapter {
 
     /**
      * 反序列化 Enhancement。
-     * <p>坐标从 key 中解析，池化 ID 通过子数据库的 {@link ChunkDb#lookup} 恢复为字符串。
+     * <p>坐标从 key 中解析，池化 ID 通过子数据库的 {@link IChunkDb#lookup} 恢复为字符串。
      */
     private Enhancement parseEnhancementValue(byte[] key, byte[] value) {
         KeyHeader kh = parseKeyHeader(key);

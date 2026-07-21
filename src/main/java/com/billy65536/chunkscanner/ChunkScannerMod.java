@@ -13,8 +13,8 @@ import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.ConfigLoader;
 import com.billy65536.chunkscanner.config.TaskConfig;
 import com.billy65536.chunkscanner.core.AnalyzerRegistry;
-import com.billy65536.chunkscanner.core.ChunkAnalyzer;
-import com.billy65536.chunkscanner.core.ChunkDb;
+import com.billy65536.chunkscanner.core.IChunkAnalyzer;
+import com.billy65536.chunkscanner.core.IChunkDb;
 import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.screen.ChunkScannerScreen;
@@ -47,7 +47,7 @@ public class ChunkScannerMod implements ClientModInitializer {
     private static final SuggestionProvider<FabricClientCommandSource> ANALYZER_SUGGESTIONS =
             (ctx, builder) -> {
                 String remaining = builder.getRemaining().toLowerCase();
-                for (ChunkAnalyzer a : AnalyzerRegistry.getAll()) {
+                for (IChunkAnalyzer a : AnalyzerRegistry.getAll()) {
                     if (a.getId().toLowerCase().startsWith(remaining)) {
                         builder.suggest(a.getId());
                     }
@@ -142,7 +142,7 @@ public class ChunkScannerMod implements ClientModInitializer {
         scanner = new ChunkScanner(CONFIG);
 
         // 注册数据库工厂（必须最先注册，ScanSession 依赖它创建数据库）
-        ChunkDb.FactoryRegistry.register(new BinaryChunkDb.Factory());
+        IChunkDb.FactoryRegistry.register(new BinaryChunkDb.Factory());
 
         // 注册分析器
         AnalyzerRegistry.register(new SignAnalyzer());
@@ -418,10 +418,10 @@ public class ChunkScannerMod implements ClientModInitializer {
             return;
         }
 
-        ChunkDb existingDb;
+        IChunkDb existingDb;
         try {
             Path fileDir = file.getParent();
-            ChunkDb.Factory dbFactory = ChunkDb.FactoryRegistry.getDefault();
+            IChunkDb.IFactory dbFactory = IChunkDb.FactoryRegistry.getDefault();
             existingDb = dbFactory.create(meta.scanId(), meta.analyzerId(), fileDir);
         } catch (Exception e) {
             sendMsg(client, Text.translatable("chunkscanner.msg.db_file_corrupt")

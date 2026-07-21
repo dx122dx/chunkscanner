@@ -28,11 +28,11 @@ import com.billy65536.chunkscanner.components.view_provider.RawDbProvider;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.TaskConfig;
 import com.billy65536.chunkscanner.core.AnalyzerRegistry;
-import com.billy65536.chunkscanner.core.ChunkAnalyzer;
-import com.billy65536.chunkscanner.core.ChunkDb;
+import com.billy65536.chunkscanner.core.IChunkAnalyzer;
+import com.billy65536.chunkscanner.core.IChunkDb;
 import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.CoreUtil;
-import com.billy65536.chunkscanner.core.DbViewProvider;
+import com.billy65536.chunkscanner.core.IDbViewProvider;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.core.LocatedPosition;
 import com.billy65536.chunkscanner.gui.GuiUtil;
@@ -67,9 +67,9 @@ public class DatabaseScreen extends Screen {
 
     // ==================== KV 视图页 ====================
 
-    private DbViewProvider openedDb;
-    private ChunkDb rawChunkDb;
-    private DbViewProvider currentView;
+    private IDbViewProvider openedDb;
+    private IChunkDb rawChunkDb;
+    private IDbViewProvider currentView;
     private boolean showingKvView = false;
 
     private final ScrollableListPanel kvPanel = new ScrollableListPanel(ITEM_HEIGHT);
@@ -86,7 +86,7 @@ public class DatabaseScreen extends Screen {
 
     // ==================== 视图类型选择 ====================
 
-    private List<DbViewProviderRegistry.Type> viewTypes;
+    private List<DbViewProviderRegistry.ITypeDescriptor> viewTypes;
     private int selectedViewTypeIdx = 0;
     private ButtonWidget providerButton;
     private ButtonWidget filterButton;
@@ -156,8 +156,8 @@ public class DatabaseScreen extends Screen {
         }
         ChunkScannerMod.LOGGER.debug("Opening database: scanId={} analyzer={}", meta.scanId(), meta.analyzerId());
         Path fileDir = meta.filePath() != null ? meta.filePath().getParent() : null;
-        ChunkDb.Factory dbFactory = ChunkDb.FactoryRegistry.getDefault();
-        ChunkDb db = dbFactory.createMetadataOnly(meta.scanId(), meta.analyzerId(), fileDir);
+        IChunkDb.IFactory dbFactory = IChunkDb.FactoryRegistry.getDefault();
+        IChunkDb db = dbFactory.createMetadataOnly(meta.scanId(), meta.analyzerId(), fileDir);
         rawChunkDb = db;
         openedDb = new RawDbProvider(db);
         try {
@@ -210,7 +210,7 @@ public class DatabaseScreen extends Screen {
         if (viewTypes.isEmpty()) {
             currentView = openedDb;
         } else {
-            DbViewProviderRegistry.Type selectedType = viewTypes.get(selectedViewTypeIdx);
+            DbViewProviderRegistry.ITypeDescriptor selectedType = viewTypes.get(selectedViewTypeIdx);
             if (forceRecreate || currentView == null) {
                 try {
                     currentView = selectedType.create(rawChunkDb);
@@ -254,7 +254,7 @@ public class DatabaseScreen extends Screen {
 
     private boolean isCurrentTypeApplicable() {
         if (rawChunkDb == null || viewTypes.isEmpty()) return true;
-        DbViewProviderRegistry.Type selectedType = viewTypes.get(selectedViewTypeIdx);
+        DbViewProviderRegistry.ITypeDescriptor selectedType = viewTypes.get(selectedViewTypeIdx);
         Set<String> applicable = selectedType.applicableAnalyzers();
         if (applicable.isEmpty()) return true;
         return applicable.contains(rawChunkDb.getAnalyzerId());
@@ -307,7 +307,7 @@ public class DatabaseScreen extends Screen {
         filterButton = null;
 
         if (!viewTypes.isEmpty()) {
-            DbViewProviderRegistry.Type vt = viewTypes.get(selectedViewTypeIdx);
+            DbViewProviderRegistry.ITypeDescriptor vt = viewTypes.get(selectedViewTypeIdx);
             // 筛选按钮 "..."（在视图选择器右侧）
             if (currentView != null && currentView.supportsFilter()) {
                 filterButton = ButtonWidget.builder(
@@ -451,7 +451,7 @@ public class DatabaseScreen extends Screen {
         // provider 按钮 tooltip
         if (showingKvView && providerButton != null && providerButton.isMouseOver(mouseX, mouseY)
                 && !viewTypes.isEmpty()) {
-            DbViewProviderRegistry.Type vt = viewTypes.get(selectedViewTypeIdx);
+            DbViewProviderRegistry.ITypeDescriptor vt = viewTypes.get(selectedViewTypeIdx);
             context.drawTooltip(textRenderer,
                     vt.getDescription().copy().formatted(getProviderColor()),
                     mouseX, mouseY);
@@ -897,12 +897,12 @@ public class DatabaseScreen extends Screen {
         ChunkScanner scanner = ChunkScannerMod.getScanner();
         if (scanner == null || client.player == null || client.world == null) return;
 
-        ChunkAnalyzer analyzer = AnalyzerRegistry.get(meta.analyzerId());
+        IChunkAnalyzer analyzer = AnalyzerRegistry.get(meta.analyzerId());
         if (analyzer == null) return;
 
         Path fileDir = meta.filePath() != null ? meta.filePath().getParent() : null;
-        ChunkDb.Factory dbFactory = ChunkDb.FactoryRegistry.getDefault();
-        ChunkDb existingDb = dbFactory.create(meta.scanId(), meta.analyzerId(), fileDir);
+        IChunkDb.IFactory dbFactory = IChunkDb.FactoryRegistry.getDefault();
+        IChunkDb existingDb = dbFactory.create(meta.scanId(), meta.analyzerId(), fileDir);
         TaskConfig storedConfig = existingDb.getTaskConfig();
         if (storedConfig != null) {
             ChunkScannerMod.LOGGER.info("Restored TaskConfig from DB for '{}': {}", meta.scanId(), storedConfig.toDisplayString());

@@ -2,7 +2,7 @@ package com.billy65536.chunkscanner.gui;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.AnalyzerRegistry;
-import com.billy65536.chunkscanner.core.ChunkAnalyzer;
+import com.billy65536.chunkscanner.core.IChunkAnalyzer;
 import com.billy65536.chunkscanner.core.ChunkScanner;
 
 import net.minecraft.text.Text;
@@ -44,7 +44,7 @@ public final class GuiUtil {
         if (analyzerId == null || analyzerId.isEmpty()) return Text.empty();
         ChunkScanner scanner = ChunkScannerMod.getScanner();
         if (scanner != null) {
-            ChunkAnalyzer a = AnalyzerRegistry.get(analyzerId);
+            IChunkAnalyzer a = AnalyzerRegistry.get(analyzerId);
             if (a != null) return a.getName();
         }
         return Text.literal(analyzerId);

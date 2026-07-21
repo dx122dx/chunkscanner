@@ -12,7 +12,7 @@ import net.minecraft.util.Formatting;
  * @param tooltip 悬停 tooltip 行数组，{@code null} 表示无 tooltip
  * @param color   ARGB 颜色值（如 {@code 0xFFFFFFFF} 为白色）
  */
-public record TextCell(Text text, Text[] tooltip, int color) implements CellContent {
+public record TextCell(Text text, Text[] tooltip, int color) implements IContentCell {
 
     public TextCell withTooltip(Text tooltop[]) {
         return new TextCell(text(), tooltop, color());

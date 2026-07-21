@@ -16,7 +16,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
-import com.billy65536.chunkscanner.core.ChunkDb;
+import com.billy65536.chunkscanner.core.IChunkDb;
 
 /**
  * 监听客户端聊天消息和按键事件，捕获 QuickShop 商店 Item 行中的增强物品数据。
@@ -278,7 +278,7 @@ public final class QShopChatListener {
     /**
      * 通过点击位置精确查找并增强数据库记录。
      *
-     * <p>直接使用点击坐标构造数据库键，通过 {@link ChunkDb#get(byte[])} 精确查找。
+     * <p>直接使用点击坐标构造数据库键，通过 {@link IChunkDb#get(byte[])} 精确查找。
      * 即使多个商店出售相同物品，也能准确匹配到被点击的那个。</p>
      *
      * <p>增强数据仅写入子数据库（id=1），不修改主数据库，避免触发主数据库全量刷写。
@@ -294,7 +294,7 @@ public final class QShopChatListener {
         for (var session : scanner.getActiveSessions()) {
             if (!"qshop".equals(session.analyzer.getId())) continue;
 
-            ChunkDb db = session.db;
+            IChunkDb db = session.db;
             if (db == null) continue;
 
             QShopDbAdapter adapter = new QShopDbAdapter(db);

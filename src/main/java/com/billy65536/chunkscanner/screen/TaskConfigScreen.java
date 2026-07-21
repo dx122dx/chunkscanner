@@ -3,7 +3,7 @@ package com.billy65536.chunkscanner.screen;
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.TaskConfig;
-import com.billy65536.chunkscanner.core.ChunkAnalyzer;
+import com.billy65536.chunkscanner.core.IChunkAnalyzer;
 import com.billy65536.chunkscanner.core.AnalyzerRegistry;
 import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.ScanSession;
@@ -60,7 +60,7 @@ public class TaskConfigScreen extends Screen {
     private ButtonWidget applyButton;
 
     /** 分析器列表 */
-    private List<ChunkAnalyzer> analyzerList;
+    private List<IChunkAnalyzer> analyzerList;
     private int selectedAnalyzerIdx = 0;
 
     /** 默认扫描 ID（当前时间戳） */
@@ -287,7 +287,7 @@ public class TaskConfigScreen extends Screen {
         if (analyzerList.isEmpty()) {
             return Text.translatable("chunkscanner.label.none").formatted(Formatting.GRAY);
         }
-        ChunkAnalyzer a = analyzerList.get(selectedAnalyzerIdx);
+        IChunkAnalyzer a = analyzerList.get(selectedAnalyzerIdx);
         return a.getName().copy().formatted(Formatting.YELLOW);
     }
 

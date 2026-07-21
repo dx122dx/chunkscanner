@@ -40,8 +40,8 @@ import net.minecraft.world.chunk.WorldChunk;
 public class ScanSession {
     private final ChunkScanner chunkScanner;
     public final String scanId;
-    public final ChunkAnalyzer analyzer;
-    public final ChunkDb db;
+    public final IChunkAnalyzer analyzer;
+    public final IChunkDb db;
     /** 此任务独立的配置副本（合并了全局默认值和任务级配置覆盖）。 */
     ChunkScannerConfig sessionConfig;
     /** 原始任务配置引用（用于显示、数据库持久化和任务恢复）。 */
@@ -88,25 +88,25 @@ public class ScanSession {
     private volatile long lastBreakdownTime = 0;
 
     /** 新建会话（通过 FactoryRegistry 创建数据库）。 */
-    ScanSession(ChunkScanner chunkScanner, String scanId, ChunkAnalyzer analyzer) {
+    ScanSession(ChunkScanner chunkScanner, String scanId, IChunkAnalyzer analyzer) {
         this(chunkScanner, scanId, analyzer, null, createDb(scanId, analyzer.getId()));
     }
 
     /** 从已有数据库恢复会话。 */
-    ScanSession(ChunkScanner chunkScanner, String scanId, ChunkAnalyzer analyzer, ChunkDb existingDb) {
+    ScanSession(ChunkScanner chunkScanner, String scanId, IChunkAnalyzer analyzer, IChunkDb existingDb) {
         this(chunkScanner, scanId, analyzer, null, existingDb);
     }
 
     /** 新建会话并应用任务级配置。 */
-    ScanSession(ChunkScanner chunkScanner, String scanId, ChunkAnalyzer analyzer, TaskConfig taskConfig) {
+    ScanSession(ChunkScanner chunkScanner, String scanId, IChunkAnalyzer analyzer, TaskConfig taskConfig) {
         this(chunkScanner, scanId, analyzer, taskConfig, createDb(scanId, analyzer.getId()));
     }
 
     /**
      * 通过 FactoryRegistry 创建数据库实例。
      */
-    private static ChunkDb createDb(String scanId, String analyzerId) {
-        ChunkDb.Factory factory = ChunkDb.FactoryRegistry.getDefault();
+    private static IChunkDb createDb(String scanId, String analyzerId) {
+        IChunkDb.IFactory factory = IChunkDb.FactoryRegistry.getDefault();
         if (factory == null) {
             throw new IllegalStateException("No ChunkDb factory registered");
         }
@@ -120,7 +120,7 @@ public class ScanSession {
      * @param taskConfig 任务级配置覆盖（可为 null，使用全局默认）
      * @param existingDb 已有数据库实例（用于恢复扫描）
      */
-    ScanSession(ChunkScanner chunkScanner, String scanId, ChunkAnalyzer analyzer, TaskConfig taskConfig, ChunkDb existingDb) {
+    ScanSession(ChunkScanner chunkScanner, String scanId, IChunkAnalyzer analyzer, TaskConfig taskConfig, IChunkDb existingDb) {
         this.chunkScanner = chunkScanner;
         this.scanId = scanId;
         this.analyzer = analyzer;

@@ -24,8 +24,8 @@ import java.util.regex.PatternSyntaxException;
 
 import com.billy65536.chunkscanner.components.analyzer.QShopAnalyzer;
 import com.billy65536.chunkscanner.components.analyzer.QShopDbAdapter;
-import com.billy65536.chunkscanner.core.ChunkDb;
-import com.billy65536.chunkscanner.core.DbViewProvider;
+import com.billy65536.chunkscanner.core.IChunkDb;
+import com.billy65536.chunkscanner.core.IDbViewProvider;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.core.LocatedPosition;
 import com.billy65536.chunkscanner.gui.layout.TableLayoutBuilder;
@@ -46,9 +46,9 @@ import com.billy65536.chunkscanner.gui.layout.ILayout;
  *   mode+quantity 打包：byte0 = mode (0=出售,1=收购), bytes1-3 = quantity (24-bit unsigned)
  *   price：整数，真实价格 = price / 100.0
  */
-public class QShopDbViewProvider implements DbViewProvider {
+public class QShopDbViewProvider implements IDbViewProvider {
 
-    private final ChunkDb db;
+    private final IChunkDb db;
 
 
     /** 缓存筛选并排序后的记录。仅渲染线程访问，无需同步。 */
@@ -103,12 +103,12 @@ public class QShopDbViewProvider implements DbViewProvider {
     /** 排序模式。 */
     private int sortMode = SORT_NONE;
 
-    public QShopDbViewProvider(ChunkDb db) {
+    public QShopDbViewProvider(IChunkDb db) {
         this.db = db;
     }
 
     @Override
-    public ChunkDb getDb() {
+    public IChunkDb getDb() {
         return db;
     }
 
@@ -497,7 +497,7 @@ public class QShopDbViewProvider implements DbViewProvider {
     // ==================== 类型描述符 ====================
 
     /** QShop 视图类型描述符：解析 QShop 数据为结构化展示。仅适用于 qshop 分析器。 */
-    public static class Type implements DbViewProviderRegistry.Type {
+    public static class Type implements DbViewProviderRegistry.ITypeDescriptor {
         @Override
         public String getId() { return "qshop_view"; }
 
@@ -517,7 +517,7 @@ public class QShopDbViewProvider implements DbViewProvider {
         }
 
         @Override
-        public DbViewProvider create(ChunkDb db) {
+        public IDbViewProvider create(IChunkDb db) {
             if (!"qshop".equals(db.getAnalyzerId())) return null;
             return new QShopDbViewProvider(db);
         }

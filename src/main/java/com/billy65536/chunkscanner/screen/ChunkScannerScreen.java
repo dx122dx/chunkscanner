@@ -2,7 +2,7 @@ package com.billy65536.chunkscanner.screen;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.config.TaskConfig;
-import com.billy65536.chunkscanner.core.ChunkAnalyzer;
+import com.billy65536.chunkscanner.core.IChunkAnalyzer;
 import com.billy65536.chunkscanner.core.AnalyzerRegistry;
 import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.ScanSession;
@@ -57,7 +57,7 @@ public class ChunkScannerScreen extends Screen {
     private ButtonWidget databaseButton;
 
     // 分析器列表
-    private List<ChunkAnalyzer> analyzerList;
+    private List<IChunkAnalyzer> analyzerList;
     private int selectedAnalyzerIdx = 0;
 
     // 活跃任务列表滚动
@@ -132,7 +132,7 @@ public class ChunkScannerScreen extends Screen {
         if (analyzerList.isEmpty()) {
             return Text.translatable("chunkscanner.label.none").formatted(Formatting.GRAY);
         }
-        ChunkAnalyzer a = analyzerList.get(selectedAnalyzerIdx);
+        IChunkAnalyzer a = analyzerList.get(selectedAnalyzerIdx);
         return a.getName().copy().formatted(Formatting.YELLOW);
     }
 
@@ -263,7 +263,7 @@ public class ChunkScannerScreen extends Screen {
         // 分析器选择按钮悬停 tooltip
         if (analyzerButton != null && analyzerButton.isMouseOver(mouseX, mouseY)) {
             if (!analyzerList.isEmpty()) {
-                ChunkAnalyzer a = analyzerList.get(selectedAnalyzerIdx);
+                IChunkAnalyzer a = analyzerList.get(selectedAnalyzerIdx);
                 context.drawTooltip(textRenderer, a.getDescription(), mouseX, mouseY);
             }
         }

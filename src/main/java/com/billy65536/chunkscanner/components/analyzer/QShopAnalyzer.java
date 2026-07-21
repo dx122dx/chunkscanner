@@ -15,8 +15,8 @@ import java.util.regex.Pattern;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.AnalyzeResult;
-import com.billy65536.chunkscanner.core.ChunkAnalyzer;
-import com.billy65536.chunkscanner.core.ChunkDb;
+import com.billy65536.chunkscanner.core.IChunkAnalyzer;
+import com.billy65536.chunkscanner.core.IChunkDb;
 
 /**
  * QShop 商店分析器：扫描贴在容器上的特化告示牌，识别 QShop 格式商店。
@@ -42,7 +42,7 @@ import com.billy65536.chunkscanner.core.ChunkDb;
  *     FLAG_SHULKER_EXPANDED  (0x04) — 潜影盒已展开（S），内容物作为商品
  *     FLAG_BOOK              (0x08) — 成书（B），商品名已替换为标题
  */
-public class QShopAnalyzer implements ChunkAnalyzer {
+public class QShopAnalyzer implements IChunkAnalyzer {
 
     /** 特殊值：物品注册名通过译名映射表恢复（R）。 */
     public static final int FLAG_ID_RECOVERED = 0x01;
@@ -126,12 +126,12 @@ public class QShopAnalyzer implements ChunkAnalyzer {
     }
 
     @Override
-    public AnalyzeResult analyze(WorldChunk chunk, int cx, int cz, String dimId, ChunkDb db, long now) {
+    public AnalyzeResult analyze(WorldChunk chunk, int cx, int cz, String dimId, IChunkDb db, long now) {
         return analyze(chunk, cx, cz, dimId, db, now, null);
     }
 
     @Override
-    public AnalyzeResult analyze(WorldChunk chunk, int cx, int cz, String dimId, ChunkDb db, long now, World world) {
+    public AnalyzeResult analyze(WorldChunk chunk, int cx, int cz, String dimId, IChunkDb db, long now, World world) {
         // 从全局配置读取 QShop 正则模式（缓存编译结果）
         LocalePatterns patterns = getPatterns();
 

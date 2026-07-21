@@ -14,8 +14,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.billy65536.chunkscanner.core.AnalyzeResult;
-import com.billy65536.chunkscanner.core.ChunkAnalyzer;
-import com.billy65536.chunkscanner.core.ChunkDb;
+import com.billy65536.chunkscanner.core.IChunkAnalyzer;
+import com.billy65536.chunkscanner.core.IChunkDb;
 
 /**
  * 默认告示牌分析器：扫描区块内所有告示牌并存入 ChunkDb。
@@ -30,7 +30,7 @@ import com.billy65536.chunkscanner.core.ChunkDb;
  * 值格式（48 字节）：
  *   keyHi:u64 (8B) | keyLo:u64 (8B) | l1..l4:u32 each (16B) | timestamp:u64 (8B)
  */
-public class SignAnalyzer implements ChunkAnalyzer {
+public class SignAnalyzer implements IChunkAnalyzer {
 
     private static final int RECORD_SIZE = 48; // 8+8+4*4+8
     private static final byte[] KEY_PREFIX = "sign:".getBytes(StandardCharsets.UTF_8);
@@ -41,7 +41,7 @@ public class SignAnalyzer implements ChunkAnalyzer {
     private static final byte SIDE_BACK = 1;
 
     @Override
-    public AnalyzeResult analyze(WorldChunk chunk, int cx, int cz, String dimId, ChunkDb db, long now) {
+    public AnalyzeResult analyze(WorldChunk chunk, int cx, int cz, String dimId, IChunkDb db, long now) {
         int dimPoolId = db.intern(dimId);
 
         List<byte[]> records = new ArrayList<>();
@@ -69,9 +69,9 @@ public class SignAnalyzer implements ChunkAnalyzer {
         }
 
         // 批量写入（key/value 成对存储在 records 列表中）
-        List<ChunkDb.Entry> entries = new ArrayList<>(records.size() / 2);
+        List<IChunkDb.Entry> entries = new ArrayList<>(records.size() / 2);
         for (int i = 0; i < records.size(); i += 2) {
-            entries.add(ChunkDb.Entry.of(records.get(i), records.get(i + 1)));
+            entries.add(IChunkDb.Entry.of(records.get(i), records.get(i + 1)));
         }
         db.putAll(entries);
 
@@ -83,7 +83,7 @@ public class SignAnalyzer implements ChunkAnalyzer {
      */
     private static void collectRecord(List<byte[]> records, SignText text,
                                        long keyHi, long keyLo, int cx, int cz, byte side,
-                                       long now, ChunkDb db) {
+                                       long now, IChunkDb db) {
         String[] lines = new String[4];
         boolean hasContent = false;
         for (int i = 0; i < 4; i++) {

@@ -7,9 +7,9 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * ChunkDb 辅助类型及默认方法单元测试。
+ * IChunkDb 辅助类型及默认方法单元测试。
  */
-@DisplayName("ChunkDb")
+@DisplayName("IChunkDb")
 class ChunkDbTest {
 
     // ==================== Entry ====================
@@ -23,7 +23,7 @@ class ChunkDbTest {
         void factoryOf_shouldCreateEntry() {
             byte[] key = {1, 2, 3};
             byte[] value = {4, 5, 6};
-            ChunkDb.Entry entry = ChunkDb.Entry.of(key, value);
+            IChunkDb.Entry entry = IChunkDb.Entry.of(key, value);
             assertArrayEquals(key, entry.key());
             assertArrayEquals(value, entry.value());
         }
@@ -31,7 +31,7 @@ class ChunkDbTest {
         @Test
         @DisplayName("空数组可正常创建")
         void emptyArrays_shouldWork() {
-            ChunkDb.Entry entry = ChunkDb.Entry.of(new byte[0], new byte[0]);
+            IChunkDb.Entry entry = IChunkDb.Entry.of(new byte[0], new byte[0]);
             assertEquals(0, entry.key().length);
             assertEquals(0, entry.value().length);
         }
@@ -41,8 +41,8 @@ class ChunkDbTest {
         void equals_sameReferences_shouldBeEqual() {
             byte[] k = {10, 20};
             byte[] v = {30, 40};
-            ChunkDb.Entry a = ChunkDb.Entry.of(k, v);
-            ChunkDb.Entry b = ChunkDb.Entry.of(k, v);
+            IChunkDb.Entry a = IChunkDb.Entry.of(k, v);
+            IChunkDb.Entry b = IChunkDb.Entry.of(k, v);
             assertEquals(a, b);
             assertEquals(a.hashCode(), b.hashCode());
         }
@@ -50,8 +50,8 @@ class ChunkDbTest {
         @Test
         @DisplayName("不同 byte[] 对象即使内容相同也不相等（record 数组组件使用引用相等）")
         void equals_differentArraysSameContent_shouldNotBeEqual() {
-            ChunkDb.Entry a = ChunkDb.Entry.of(new byte[]{10, 20}, new byte[]{30, 40});
-            ChunkDb.Entry b = ChunkDb.Entry.of(new byte[]{10, 20}, new byte[]{30, 40});
+            IChunkDb.Entry a = IChunkDb.Entry.of(new byte[]{10, 20}, new byte[]{30, 40});
+            IChunkDb.Entry b = IChunkDb.Entry.of(new byte[]{10, 20}, new byte[]{30, 40});
             // Java record 的 byte[] 组件使用 Object.equals，即引用相等
             assertNotEquals(a, b);
         }
@@ -59,22 +59,22 @@ class ChunkDbTest {
         @Test
         @DisplayName("不同内容的 Entry 应不相等")
         void equals_differentContent_shouldNotBeEqual() {
-            ChunkDb.Entry a = ChunkDb.Entry.of(new byte[]{1}, new byte[]{2});
-            ChunkDb.Entry b = ChunkDb.Entry.of(new byte[]{1}, new byte[]{3});
+            IChunkDb.Entry a = IChunkDb.Entry.of(new byte[]{1}, new byte[]{2});
+            IChunkDb.Entry b = IChunkDb.Entry.of(new byte[]{1}, new byte[]{3});
             assertNotEquals(a, b);
         }
 
         @Test
         @DisplayName("与 null 比较返回 false")
         void equals_null_shouldReturnFalse() {
-            ChunkDb.Entry entry = ChunkDb.Entry.of(new byte[]{1}, new byte[]{2});
+            IChunkDb.Entry entry = IChunkDb.Entry.of(new byte[]{1}, new byte[]{2});
             assertNotEquals(null, entry);
         }
 
         @Test
         @DisplayName("key 为 null 时 of() 可正常创建")
         void nullKey_shouldWork() {
-            ChunkDb.Entry entry = ChunkDb.Entry.of(null, new byte[]{1});
+            IChunkDb.Entry entry = IChunkDb.Entry.of(null, new byte[]{1});
             assertNull(entry.key());
             assertArrayEquals(new byte[]{1}, entry.value());
         }
@@ -82,7 +82,7 @@ class ChunkDbTest {
         @Test
         @DisplayName("value 为 null 时 of() 可正常创建")
         void nullValue_shouldWork() {
-            ChunkDb.Entry entry = ChunkDb.Entry.of(new byte[]{1}, null);
+            IChunkDb.Entry entry = IChunkDb.Entry.of(new byte[]{1}, null);
             assertArrayEquals(new byte[]{1}, entry.key());
             assertNull(entry.value());
         }
@@ -90,7 +90,7 @@ class ChunkDbTest {
         @Test
         @DisplayName("toString 包含 key 和 value 长度信息")
         void toString_shouldContainLengthInfo() {
-            ChunkDb.Entry entry = ChunkDb.Entry.of(new byte[]{1, 2}, new byte[]{3, 4, 5});
+            IChunkDb.Entry entry = IChunkDb.Entry.of(new byte[]{1, 2}, new byte[]{3, 4, 5});
             String s = entry.toString();
             assertNotNull(s);
             // record toString 格式类似 Entry[key=[1, 2], value=[3, 4, 5]]
@@ -107,7 +107,7 @@ class ChunkDbTest {
         @Test
         @DisplayName("构造后可访问各字段")
         void constructor_shouldSetAllFields() {
-            ChunkDb.ChunkMeta meta = new ChunkDb.ChunkMeta("minecraft:overworld", 10, 20, 1234567890L);
+            IChunkDb.ChunkMeta meta = new IChunkDb.ChunkMeta("minecraft:overworld", 10, 20, 1234567890L);
             assertEquals("minecraft:overworld", meta.dimensionId());
             assertEquals(10, meta.cx());
             assertEquals(20, meta.cz());
@@ -117,8 +117,8 @@ class ChunkDbTest {
         @Test
         @DisplayName("相同值的 ChunkMeta 应相等")
         void equals_sameValues_shouldBeEqual() {
-            ChunkDb.ChunkMeta a = new ChunkDb.ChunkMeta("overworld", 5, 5, 100L);
-            ChunkDb.ChunkMeta b = new ChunkDb.ChunkMeta("overworld", 5, 5, 100L);
+            IChunkDb.ChunkMeta a = new IChunkDb.ChunkMeta("overworld", 5, 5, 100L);
+            IChunkDb.ChunkMeta b = new IChunkDb.ChunkMeta("overworld", 5, 5, 100L);
             assertEquals(a, b);
             assertEquals(a.hashCode(), b.hashCode());
         }
@@ -126,22 +126,22 @@ class ChunkDbTest {
         @Test
         @DisplayName("不同 scanTime 应不相等")
         void equals_differentScanTime_shouldNotBeEqual() {
-            ChunkDb.ChunkMeta a = new ChunkDb.ChunkMeta("overworld", 0, 0, 100L);
-            ChunkDb.ChunkMeta b = new ChunkDb.ChunkMeta("overworld", 0, 0, 200L);
+            IChunkDb.ChunkMeta a = new IChunkDb.ChunkMeta("overworld", 0, 0, 100L);
+            IChunkDb.ChunkMeta b = new IChunkDb.ChunkMeta("overworld", 0, 0, 200L);
             assertNotEquals(a, b);
         }
 
         @Test
         @DisplayName("null dimensionId 可正常构造")
         void nullDimensionId_shouldWork() {
-            ChunkDb.ChunkMeta meta = new ChunkDb.ChunkMeta(null, 0, 0, 0L);
+            IChunkDb.ChunkMeta meta = new IChunkDb.ChunkMeta(null, 0, 0, 0L);
             assertNull(meta.dimensionId());
         }
 
         @Test
         @DisplayName("scanTime 为 0 表示从未扫描")
         void zeroScanTime_representsNeverScanned() {
-            ChunkDb.ChunkMeta meta = new ChunkDb.ChunkMeta("overworld", 0, 0, 0L);
+            IChunkDb.ChunkMeta meta = new IChunkDb.ChunkMeta("overworld", 0, 0, 0L);
             assertEquals(0L, meta.scanTime());
         }
     }
@@ -152,7 +152,7 @@ class ChunkDbTest {
     @DisplayName("默认方法")
     class DefaultMethods {
 
-        private final ChunkDb stubDb = new ChunkDb() {
+        private final IChunkDb stubDb = new IChunkDb() {
             @Override public String getScanId() { return "test"; }
             @Override public String getAnalyzerId() { return ""; }
             @Override public long getStorageSize() { return 0; }

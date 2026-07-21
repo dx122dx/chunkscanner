@@ -12,8 +12,8 @@ import java.util.List;
 import java.util.Set;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
-import com.billy65536.chunkscanner.core.ChunkDb;
-import com.billy65536.chunkscanner.core.DbViewProvider;
+import com.billy65536.chunkscanner.core.IChunkDb;
+import com.billy65536.chunkscanner.core.IDbViewProvider;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.core.LocatedPosition;
 import com.billy65536.chunkscanner.gui.layout.TableLayoutBuilder;
@@ -34,25 +34,25 @@ import com.billy65536.chunkscanner.gui.layout.ILayout;
  * 值格式（48 字节）：
  *   keyHi:u64 (8B) | keyLo:u64 (8B) | l1..l4:u32 each (16B) | timestamp:u64 (8B)
  */
-public class SignDbViewProvider implements DbViewProvider {
+public class SignDbViewProvider implements IDbViewProvider {
 
     private static final byte[] KEY_PREFIX = "sign:".getBytes(StandardCharsets.UTF_8);
     /** 新格式键长度：prefix(5) + dimPoolId(4) + cx(4) + cz(4) + side(1) + keyHi(8) + keyLo(8) = 34 */
     private static final int NEW_KEY_SIZE = KEY_PREFIX.length + 4 + 4 + 4 + 1 + 8 + 8;
     private static final String[] HEADERS = {"位置", "Side", "Line 1", "Line 2", "Line 3", "Line 4"};
 
-    private final ChunkDb db;
+    private final IChunkDb db;
 
     /** 缓存解析后的告示牌记录，避免每帧重复解析。 */
     private List<SignRecord> cachedRecords;
     private volatile boolean cacheValid = false;
 
-    public SignDbViewProvider(ChunkDb db) {
+    public SignDbViewProvider(IChunkDb db) {
         this.db = db;
     }
 
     @Override
-    public ChunkDb getDb() {
+    public IChunkDb getDb() {
         return db;
     }
 
@@ -93,7 +93,7 @@ public class SignDbViewProvider implements DbViewProvider {
         }
 
         List<SignRecord> records = new ArrayList<>();
-        List<ChunkDb.Entry> entries;
+        List<IChunkDb.Entry> entries;
         try {
             entries = db.getAllEntries();
         } catch (Exception e) {
@@ -103,7 +103,7 @@ public class SignDbViewProvider implements DbViewProvider {
             return records;
         }
 
-        for (ChunkDb.Entry entry : entries) {
+        for (IChunkDb.Entry entry : entries) {
             try {
                 byte[] key = entry.key();
                 // 检查前缀
@@ -163,7 +163,7 @@ public class SignDbViewProvider implements DbViewProvider {
     // ==================== 类型描述符 ====================
 
     /** Sign 视图类型描述符：解析告示牌数据为可读文本。仅适用于 sign 分析器。 */
-    public static class Type implements DbViewProviderRegistry.Type {
+    public static class Type implements DbViewProviderRegistry.ITypeDescriptor {
         @Override
         public String getId() { return "sign_view"; }
 
@@ -183,7 +183,7 @@ public class SignDbViewProvider implements DbViewProvider {
         }
 
         @Override
-        public DbViewProvider create(ChunkDb db) {
+        public IDbViewProvider create(IChunkDb db) {
             // 仅适用于 sign 分析器生成的数据库
             if (!"sign".equals(db.getAnalyzerId())) return null;
             return new SignDbViewProvider(db);

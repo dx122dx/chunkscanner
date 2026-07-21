@@ -48,21 +48,21 @@ public class ChunkScanner {
 
     // ==================== 分析器注册（委托给全局 AnalyzerRegistry） ====================
 
-    /** @deprecated 使用 {@link AnalyzerRegistry#register(ChunkAnalyzer)} */
+    /** @deprecated 使用 {@link AnalyzerRegistry#register(IChunkAnalyzer)} */
     @Deprecated
-    public void registerAnalyzer(ChunkAnalyzer analyzer) {
+    public void registerAnalyzer(IChunkAnalyzer analyzer) {
         AnalyzerRegistry.register(analyzer);
     }
 
     /** @deprecated 使用 {@link AnalyzerRegistry#getAll()} */
     @Deprecated
-    public Collection<ChunkAnalyzer> getAnalyzers() {
+    public Collection<IChunkAnalyzer> getAnalyzers() {
         return AnalyzerRegistry.getAll();
     }
 
     /** @deprecated 使用 {@link AnalyzerRegistry#get(String)} */
     @Deprecated
-    public ChunkAnalyzer getAnalyzer(String id) {
+    public IChunkAnalyzer getAnalyzer(String id) {
         return AnalyzerRegistry.get(id);
     }
 
@@ -139,7 +139,7 @@ public class ChunkScanner {
             return;
         }
 
-        ChunkAnalyzer analyzer = AnalyzerRegistry.get(analyzerId);
+        IChunkAnalyzer analyzer = AnalyzerRegistry.get(analyzerId);
         if (analyzer == null) {
             CoreUtil.sendMsg(client, Text.translatable(KEY_UNKNOWN_ANALYZER, analyzerId).formatted(Formatting.RED));
             return;
@@ -252,7 +252,7 @@ public class ChunkScanner {
      * 从已有数据库文件恢复扫描任务（使用全局默认配置）。
      * 适用于 /cs db reboot 命令。
      */
-    public void startWithDb(MinecraftClient client, String scanId, String analyzerId, ChunkDb existingDb) {
+    public void startWithDb(MinecraftClient client, String scanId, String analyzerId, IChunkDb existingDb) {
         startWithDb(client, scanId, analyzerId, null, existingDb);
     }
 
@@ -261,12 +261,12 @@ public class ChunkScanner {
      * 与 start() 的区别：不创建新的数据库实例，而是复用已有的数据库实例。
      * 这会保留之前扫描的所有数据，继续在已有基础上扫描。
      */
-    public void startWithDb(MinecraftClient client, String scanId, String analyzerId, TaskConfig taskConfig, ChunkDb existingDb) {
+    public void startWithDb(MinecraftClient client, String scanId, String analyzerId, TaskConfig taskConfig, IChunkDb existingDb) {
         if (client.player == null || client.world == null) {
             CoreUtil.sendMsg(client, Text.translatable(KEY_NOT_IN_WORLD).formatted(Formatting.RED));
             return;
         }
-        ChunkAnalyzer analyzer = AnalyzerRegistry.get(analyzerId);
+        IChunkAnalyzer analyzer = AnalyzerRegistry.get(analyzerId);
         if (analyzer == null) {
             CoreUtil.sendMsg(client, Text.translatable(KEY_UNKNOWN_ANALYZER, analyzerId).formatted(Formatting.RED));
             return;
@@ -384,7 +384,7 @@ public class ChunkScanner {
         CoreUtil.sendMsg(client, Text.translatable(KEY_LIST_TITLE)
                 .formatted(Formatting.GOLD, Formatting.BOLD));
 
-        for (ChunkAnalyzer a : AnalyzerRegistry.getAll()) {
+        for (IChunkAnalyzer a : AnalyzerRegistry.getAll()) {
             CoreUtil.sendMsg(client, Text.literal("  ")
                     .append(Text.literal(a.getId()).formatted(Formatting.YELLOW, Formatting.BOLD))
                     .append(Text.literal(" — ").formatted(Formatting.GRAY))
@@ -484,7 +484,7 @@ public class ChunkScanner {
         // 用新配置重启（保留原有 TaskConfig）
         int restarted = 0;
         for (SessionInfo si : toRestart) {
-            ChunkAnalyzer analyzer = AnalyzerRegistry.get(si.analyzerId);
+            IChunkAnalyzer analyzer = AnalyzerRegistry.get(si.analyzerId);
             if (analyzer == null) continue;
             ScanSession session = new ScanSession(this, si.scanId, analyzer, si.taskConfig);
             sessions.put(si.scanId, session);

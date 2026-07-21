@@ -20,13 +20,13 @@ class DbViewProviderRegistryTest {
     // ==================== 辅助 ====================
 
     /** 创建一个简单 ViewType 实现用于测试。 */
-    private static DbViewProviderRegistry.Type createType(String id, String name) {
-        return new DbViewProviderRegistry.Type() {
+    private static DbViewProviderRegistry.ITypeDescriptor createType(String id, String name) {
+        return new DbViewProviderRegistry.ITypeDescriptor() {
             @Override public String getId() { return id; }
             @Override public Text getName() { return Text.literal(name); }
             @Override public Text getDescription() { return Text.literal("desc: " + name); }
             @Override public Set<String> applicableAnalyzers() { return Set.of(); }
-            @Override public DbViewProvider create(ChunkDb db) { return null; }
+            @Override public IDbViewProvider create(IChunkDb db) { return null; }
         };
     }
 
@@ -39,10 +39,10 @@ class DbViewProviderRegistryTest {
         @Test
         @DisplayName("注册后可通过 id 获取")
         void registered_shouldBeRetrievableById() {
-            DbViewProviderRegistry.Type type = createType("test.getId1", "Name 1");
+            DbViewProviderRegistry.ITypeDescriptor type = createType("test.getId1", "Name 1");
             DbViewProviderRegistry.register(type);
 
-            DbViewProviderRegistry.Type retrieved = DbViewProviderRegistry.get("test.getId1");
+            DbViewProviderRegistry.ITypeDescriptor retrieved = DbViewProviderRegistry.get("test.getId1");
             assertNotNull(retrieved);
             assertEquals("test.getId1", retrieved.getId());
             assertEquals("Name 1", retrieved.getName());
@@ -57,13 +57,13 @@ class DbViewProviderRegistryTest {
         @Test
         @DisplayName("同 id 重复注册会覆盖")
         void duplicateRegister_shouldOverwrite() {
-            DbViewProviderRegistry.Type first = createType("test.dup.id", "First");
-            DbViewProviderRegistry.Type second = createType("test.dup.id", "Second");
+            DbViewProviderRegistry.ITypeDescriptor first = createType("test.dup.id", "First");
+            DbViewProviderRegistry.ITypeDescriptor second = createType("test.dup.id", "Second");
 
             DbViewProviderRegistry.register(first);
             DbViewProviderRegistry.register(second);
 
-            DbViewProviderRegistry.Type retrieved = DbViewProviderRegistry.get("test.dup.id");
+            DbViewProviderRegistry.ITypeDescriptor retrieved = DbViewProviderRegistry.get("test.dup.id");
             assertEquals("Second", retrieved.getName());
         }
     }
@@ -77,12 +77,12 @@ class DbViewProviderRegistryTest {
         @Test
         @DisplayName("getAll 返回注册的所有类型")
         void getAll_shouldReturnAllRegistered() {
-            DbViewProviderRegistry.Type t1 = createType("test.getAll.1", "A");
-            DbViewProviderRegistry.Type t2 = createType("test.getAll.2", "B");
+            DbViewProviderRegistry.ITypeDescriptor t1 = createType("test.getAll.1", "A");
+            DbViewProviderRegistry.ITypeDescriptor t2 = createType("test.getAll.2", "B");
             DbViewProviderRegistry.register(t1);
             DbViewProviderRegistry.register(t2);
 
-            Collection<DbViewProviderRegistry.Type> all = DbViewProviderRegistry.getAll();
+            Collection<DbViewProviderRegistry.ITypeDescriptor> all = DbViewProviderRegistry.getAll();
             assertTrue(all.size() >= 2);
             assertTrue(all.contains(t1));
             assertTrue(all.contains(t2));
@@ -91,10 +91,10 @@ class DbViewProviderRegistryTest {
         @Test
         @DisplayName("getAll 返回的集合不可修改")
         void getAll_shouldReturnUnmodifiableCollection() {
-            DbViewProviderRegistry.Type type = createType("test.unmod", "Test");
+            DbViewProviderRegistry.ITypeDescriptor type = createType("test.unmod", "Test");
             DbViewProviderRegistry.register(type);
 
-            Collection<DbViewProviderRegistry.Type> all = DbViewProviderRegistry.getAll();
+            Collection<DbViewProviderRegistry.ITypeDescriptor> all = DbViewProviderRegistry.getAll();
             assertThrows(UnsupportedOperationException.class, () -> all.add(
                     createType("should.fail", "Fail")));
         }

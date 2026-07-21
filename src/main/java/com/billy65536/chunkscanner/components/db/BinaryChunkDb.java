@@ -13,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
-import com.billy65536.chunkscanner.core.ChunkDb;
+import com.billy65536.chunkscanner.core.IChunkDb;
 import com.billy65536.chunkscanner.core.CoreUtil;
 import com.billy65536.chunkscanner.config.TaskConfig;
 
@@ -49,7 +49,7 @@ import com.billy65536.chunkscanner.config.TaskConfig;
  * │     valLen: u32  |  val: bytes               │
  * └──────────────────────────────────────────────┘
  */
-public class BinaryChunkDb implements ChunkDb {
+public class BinaryChunkDb implements IChunkDb {
     /** 文件魔数："CHNKSCAN"（little-endian uint64）。package-private 供 DbFileUtil 引用。 */
     static final long MAGIC = 0x4E4143534B4E4843L; // "CHNKSCAN" (little-endian)
     /** 任务配置元数据键（存储在 KV store 中，JSON 序列化）。 */
@@ -535,7 +535,7 @@ public class BinaryChunkDb implements ChunkDb {
     private final Map<Integer, BinaryChunkDb> subDbs = new ConcurrentHashMap<>();
 
     @Override
-    public ChunkDb getSubDb(int id) {
+    public IChunkDb getSubDb(int id) {
         if (id == 0) return this;
         if (subId > 0) {
             throw new UnsupportedOperationException("Sub-database cannot create sub-databases");
@@ -592,10 +592,10 @@ public class BinaryChunkDb implements ChunkDb {
         return chunkScanTime.size();
     }
 
-    // ==================== ChunkDb.Factory ====================
+    // ==================== IChunkDb.Factory ====================
 
     /** BinaryChunkDb 的工厂实现，注册为默认数据库引擎。 */
-    public static class Factory implements ChunkDb.Factory {
+    public static class Factory implements IChunkDb.IFactory {
         @Override
         public String getId() { return "binary"; }
 
@@ -603,12 +603,12 @@ public class BinaryChunkDb implements ChunkDb {
         public String getExt() { return "bin4"; }
 
         @Override
-        public ChunkDb create(String scanId, String analyzerId, Path dbDir) {
+        public IChunkDb create(String scanId, String analyzerId, Path dbDir) {
             return new BinaryChunkDb(scanId, analyzerId, false, dbDir, getExt(), 0);
         }
 
         @Override
-        public ChunkDb createMetadataOnly(String scanId, String analyzerId, Path dbDir) {
+        public IChunkDb createMetadataOnly(String scanId, String analyzerId, Path dbDir) {
             return new BinaryChunkDb(scanId, analyzerId, true, dbDir, getExt(), 0);
         }
     }

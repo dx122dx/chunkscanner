@@ -12,21 +12,21 @@ import java.util.Collections;
 
 /** 全局视图类型注册表。 */
 public final class DbViewProviderRegistry {
-    private static final Map<String, Type> types = new LinkedHashMap<>();
+    private static final Map<String, ITypeDescriptor> types = new LinkedHashMap<>();
 
     /** 注册一个视图类型。 */
-    public static void register(Type type) {
+    public static void register(ITypeDescriptor type) {
         types.put(type.getId(), type);
         ChunkScannerMod.LOGGER.info("Registered DbViewProvider: {}", type.getId());
     }
 
     /** 获取所有已注册的类型（只读）。 */
-    public static java.util.Collection<Type> getAll() {
+    public static java.util.Collection<ITypeDescriptor> getAll() {
         return Collections.unmodifiableCollection(types.values());
     }
 
     /** 通过 id 获取类型。 */
-    public static Type get(String id) {
+    public static ITypeDescriptor get(String id) {
         return types.get(id);
     }
 
@@ -39,7 +39,7 @@ public final class DbViewProviderRegistry {
      * 实际的数据访问实例由类型描述符根据底层 ChunkDb 创建。
      * </p>
      */
-    public interface Type {
+    public interface ITypeDescriptor {
         /** 唯一标识符，不可变。 */
         String getId();
 
@@ -56,7 +56,7 @@ public final class DbViewProviderRegistry {
          * 根据底层 ChunkDb 创建此类型的 DbViewProvider 实例。
          * 如果此类型不适用于该数据库，返回 null。
          */
-        DbViewProvider create(ChunkDb db);
+        IDbViewProvider create(IChunkDb db);
     }
 
 }

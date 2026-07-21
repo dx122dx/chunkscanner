@@ -7,8 +7,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
-import com.billy65536.chunkscanner.core.ChunkDb;
-import com.billy65536.chunkscanner.core.DbViewProvider;
+import com.billy65536.chunkscanner.core.IChunkDb;
+import com.billy65536.chunkscanner.core.IDbViewProvider;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.gui.GuiUtil;
 import com.billy65536.chunkscanner.gui.layout.TableLayoutBuilder;
@@ -20,26 +20,26 @@ import com.billy65536.chunkscanner.gui.layout.ILayout;
  * <p>封装 ChunkDb，直接显示原始字节的键值对，不进行结构化解析。
  * 适用于所有分析器（applicableAnalyzers 为空集）。</p>
  */
-public class RawDbProvider implements DbViewProvider {
+public class RawDbProvider implements IDbViewProvider {
 
     private static final int KEY_COLOR = 0xFFFFFF00;
     private static final String[] HEADERS = {"Key", "Value"};
 
 
-    private final ChunkDb db;
+    private final IChunkDb db;
 
-    public RawDbProvider(ChunkDb db) {
+    public RawDbProvider(IChunkDb db) {
         this.db = db;
     }
 
     @Override
-    public ChunkDb getDb() {
+    public IChunkDb getDb() {
         return db;
     }
 
     @Override
     public ILayout getLayout(TextRenderer textRenderer) {
-        List<ChunkDb.Entry> entries;
+        List<IChunkDb.Entry> entries;
         int metaCount;
         try {
             entries = db.getAllEntries();
@@ -51,7 +51,7 @@ public class RawDbProvider implements DbViewProvider {
 
         TableLayoutBuilder lb = new TableLayoutBuilder(textRenderer, metaCount, HEADERS);
 
-        for (ChunkDb.Entry e : entries) {
+        for (IChunkDb.Entry e : entries) {
             String hexKey = GuiUtil.bytesToFullHex(e.key());
             String hexVal = GuiUtil.bytesToFullHex(e.value());
 
@@ -64,7 +64,7 @@ public class RawDbProvider implements DbViewProvider {
     // ==================== 类型描述符 ====================
 
     /** Raw 视图类型描述符：直接显示原始字节。适用于所有分析器。 */
-    public static class Type implements DbViewProviderRegistry.Type {
+    public static class Type implements DbViewProviderRegistry.ITypeDescriptor {
         @Override
         public String getId() { return "raw"; }
 
@@ -84,7 +84,7 @@ public class RawDbProvider implements DbViewProvider {
         }
 
         @Override
-        public DbViewProvider create(ChunkDb db) {
+        public IDbViewProvider create(IChunkDb db) {
             return new RawDbProvider(db);
         }
     }

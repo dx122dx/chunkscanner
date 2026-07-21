@@ -17,7 +17,7 @@ import java.util.Map;
  *
  * 内置字符串池（intern）用于高效压缩重复字符串。
  */
-public interface ChunkDb {
+public interface IChunkDb {
 
     // ==================== DB 元信息 ====================
 
@@ -117,7 +117,7 @@ public interface ChunkDb {
      * @return 子数据库实例
      * @throws UnsupportedOperationException 如果实现不支持子数据库
      */
-    default ChunkDb getSubDb(int id) {
+    default IChunkDb getSubDb(int id) {
         if (id == 0) return this;
         throw new UnsupportedOperationException("Sub-database not supported");
     }
@@ -156,7 +156,7 @@ public interface ChunkDb {
      * <p>每个数据库实现通过 Factory 注册到 {@link FactoryRegistry}，
      * 允许模组扩展替换底层存储引擎。</p>
      */
-    interface Factory {
+    interface IFactory {
         /** 工厂唯一标识符。 */
         String getId();
 
@@ -172,9 +172,9 @@ public interface ChunkDb {
          * @param scanId        扫描任务 ID
          * @param analyzerId  分析器 ID
          * @param dbDir         数据库文件存储目录
-         * @return 新的 ChunkDb 实例
+         * @return 新的 IChunkDb 实例
          */
-        ChunkDb create(String scanId, String analyzerId, Path dbDir);
+        IChunkDb create(String scanId, String analyzerId, Path dbDir);
 
         /**
          * 创建数据库实例（元数据模式，延迟加载）。
@@ -182,29 +182,29 @@ public interface ChunkDb {
          * @param scanId        扫描任务 ID
          * @param analyzerId  分析器 ID
          * @param dbDir         数据库文件存储目录
-         * @return 新的 ChunkDb 实例（未加载数据，需调用 open()）
+         * @return 新的 IChunkDb 实例（未加载数据，需调用 open()）
          */
-        ChunkDb createMetadataOnly(String scanId, String analyzerId, Path dbDir);
+        IChunkDb createMetadataOnly(String scanId, String analyzerId, Path dbDir);
     }
 
     /** 数据库工厂全局注册表。 */
     final class FactoryRegistry {
-        private static final Map<String, Factory> factories = new LinkedHashMap<>();
+        private static final Map<String, IFactory> factories = new LinkedHashMap<>();
 
         private FactoryRegistry() {}
 
         /** 注册一个数据库工厂。 */
-        public static void register(Factory factory) {
+        public static void register(IFactory factory) {
             factories.put(factory.getId(), factory);
         }
 
         /** 通过 ID 获取工厂。 */
-        public static Factory get(String id) {
+        public static IFactory get(String id) {
             return factories.get(id);
         }
 
         /** 获取默认工厂（注册表中的第一个）。 */
-        public static Factory getDefault() {
+        public static IFactory getDefault() {
             return factories.isEmpty() ? null : factories.values().iterator().next();
         }
     }

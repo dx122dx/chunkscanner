@@ -25,7 +25,7 @@ import com.billy65536.chunkscanner.core.LocatedPosition;
  * return b.build();
  * }</pre>
  *
- * <p>每个单元格是 {@link CellContent} 的一个子类型：
+ * <p>每个单元格是 {@link IContentCell} 的一个子类型：
  * {@link PositionCell}（位置）、{@link TextCell}（文本）、{@link ItemCell}（物品图标）。
  * 所有单元格属性（颜色、tooltip、物品）统一存储于 CellContent 中，不再需要分离的 Map。</p>
  */
@@ -35,7 +35,7 @@ public class TableLayoutBuilder {
     private final int metaCount;
     private final String[] headers;
 
-    private final List<List<CellContent>> rows = new ArrayList<>();
+    private final List<List<IContentCell>> rows = new ArrayList<>();
 
     /**
      * @param tr        TextRenderer 实例
@@ -76,7 +76,7 @@ public class TableLayoutBuilder {
     public class RowBuilder {
 
         private final int rowIdx;
-        private final List<CellContent> cells = new ArrayList<>();
+        private final List<IContentCell> cells = new ArrayList<>();
         RowBuilder(int rowIdx) {
             this.rowIdx = rowIdx;
         }
