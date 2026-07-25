@@ -1,5 +1,5 @@
 plugins {
-    id 'fabric-loom' version '1.4-SNAPSHOT'
+    id 'fabric-loom' version '1.5.8'
     id 'maven-publish'
 }
 
@@ -53,13 +53,23 @@ dependencies {
     modCompileOnly "me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}"
     modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
 
-    // Test dependencies
+    // Test dependencies — fabric-loader-junit 提供 Minecraft 环境引导，支持在单元测试中使用 Minecraft 类
+    testImplementation "net.fabricmc:fabric-loader-junit:${project.loader_version}"
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    // Mockito 用于更灵活的 stub/mock 对象创建
+    testImplementation 'org.mockito:mockito-core:5.10.0'
+    testImplementation 'org.mockito:mockito-junit-jupiter:5.10.0'
 }
 
 test {
     useJUnitPlatform()
+    testLogging {
+        events "passed", "skipped", "failed"
+        exceptionFormat "full"
+        showStandardStreams = false
+    }
 }
 
 processResources {

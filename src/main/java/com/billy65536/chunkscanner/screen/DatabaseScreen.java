@@ -19,6 +19,7 @@ import net.minecraft.client.gui.screen.ConfirmScreen;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.item.ItemStack;
+import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
@@ -562,13 +563,12 @@ public class DatabaseScreen extends Screen {
 
             int color = hovered ? 0xFFFF55 : 0xFFFFFF;
 
-            String label = meta.scanId();
-            String aName = meta.analyzerId();
-            if (aName != null && !aName.isEmpty()) {
-                label = label + " [" + GuiUtil.getAnalyzerDisplayName(aName) + "]";
+            MutableText label = Text.literal(meta.scanId());
+            String analyzerId = meta.analyzerId();
+            if (analyzerId != null && !analyzerId.isEmpty()) {
+                label = label.append(" [").append(GuiUtil.getAnalyzerDisplayName(analyzerId)).append("]").formatted(Formatting.YELLOW);
             }
-            context.drawTextWithShadow(textRenderer,
-                    Text.literal(label).formatted(Formatting.YELLOW), x, rowY, color);
+            context.drawTextWithShadow(textRenderer, label, x, rowY, color);
             context.drawTextWithShadow(textRenderer,
                     Text.literal(GuiUtil.formatSize(meta.fileSize())).formatted(Formatting.GRAY),
                     x + 160, rowY, color);
