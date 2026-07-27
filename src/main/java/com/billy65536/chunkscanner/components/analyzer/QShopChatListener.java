@@ -13,7 +13,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
@@ -27,18 +26,29 @@ import com.billy65536.chunkscanner.core.IChunkDb;
  *   <li>在 {@link ClientTickEvents#START_CLIENT_TICK} 中手动追踪攻击键状态变化，
  *       检测玩家是否左键点击了 QShop 告示牌</li>
  *   <li>QShop 服务器发送聊天消息（Item 行）→ 本监听器从 HoverEvent 中提取 ItemStack 详情</li>
- *   <li>批量处理时，用记录的告示牌位置构造精确数据库键，直接查找并增强对应记录</li>
+ *   <li>处理时用记录的告示牌位置构造精确数据库键，直接查找并增强对应记录</li>
  * </ol>
  *
+ * <h3>即时密封处理模式</h3>
+ * <p>QShop 对点击的聊天响应是<b>即时</b>的（同一 server tick 内发送）。当用户点击
+ * 下一个告示牌时，上一个告示牌的所有 Item 行消息已经到达客户端。因此采用即时密封策略：</p>
+ * <ol>
+ *   <li>点击 QShop 告示牌 → 若有活跃组则立即密封并处理，然后创建新组</li>
+ *   <li>后续到达的消息自然归属于新的活跃组</li>
+ *   <li>空闲超时（1s）仅作为最后一个点击的安全兜底</li>
+ * </ol>
+ * <p>相比旧版排队机制，即时密封无需等待消息空闲窗口，支持极快速连续点击。
+ * 即使每秒点击 5 个告示牌，每个点击的消息-点击关联也是正确的。</p>
+ *
  * <h3>匹配策略</h3>
- * <p>通过追踪攻击键按下事件捕获点击位置，替代了之前基于物品译名的模糊匹配。
- * 即使同一维度的多个商店出售相同物品，也能精确匹配到被点击的那个告示牌。
- * 新点击会清空之前缓存的未处理消息和点击，确保消息与点击正确对应。</p>
+ * <p>通过追踪攻击键按下事件捕获点击位置，每次新点击立即密封前一组。
+ * 消息通过活跃组归属机制与对应点击关联。
+ * 即使同一维度的多个商店出售相同物品，也能通过坐标精确匹配到被点击的告示牌。</p>
  *
  * <h3>线程安全</h3>
  * <p>聊天消息回调（GAME 通道）和按键检测在渲染线程执行，
- * 但系统消息通过 Mixin 在网络线程注入。pendingMessages 和 pendingClicks
- * 通过同步块保护，确保网络线程与渲染线程之间的操作安全。</p>
+ * 但系统消息通过 Mixin 在网络线程注入。activeGroup
+ * 通过 {@code activeGroupLock} 同步块保护，确保网络线程与渲染线程之间的操作安全。</p>
  *
  * <h3>防发包频率</h3>
  * <p>本监听器<b>不发送任何数据包</b>，仅被动监听，不会触发服务器反作弊检测。</p>
@@ -47,25 +57,51 @@ public final class QShopChatListener {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("chunkscanner.components.qshop.chat");
 
-    /** 批量处理间隔（毫秒）。 */
-    private static final long PROCESS_INTERVAL_MS = 5000;
+    /** 定时处理检查间隔（毫秒）。仅用于最后一个点击的空闲兜底。 */
+    private static final long PROCESS_INTERVAL_MS = 250;
 
-    /** 单次批量处理最大消息数。 */
+    /** 单次批量处理最大消息数（用于单组消息限制）。 */
     private static final int MAX_BATCH_SIZE = 32;
 
-    /** 点击有效期限（毫秒），超过此时间的点击将被丢弃。 */
-    private static final long MAX_CLICK_AGE_MS = 15_000;
+    /** 消息空闲超时（毫秒）：最后一条消息后空闲这么久，密封并处理。仅作为最后一个点击的兜底。 */
+    private static final long MESSAGE_IDLE_TIMEOUT_MS = 1_000;
 
-    /** 待处理的消息队列。 */
-    private static final ConcurrentLinkedQueue<PendingMessage> pendingMessages = new ConcurrentLinkedQueue<>();
+    /** 无消息等待超时（毫秒）：点击后这么久无任何消息，视为无效点击并丢弃。 */
+    private static final long MAX_WAIT_NO_MESSAGES_MS = 5_000;
 
-    /** 待处理的点击队列。 */
-    private static final ConcurrentLinkedQueue<PendingClick> pendingClicks = new ConcurrentLinkedQueue<>();
+    // ==================== 内部数据记录 ====================
 
-    /** 保护 pendingMessages 和 pendingClicks 清理操作的锁（确保清空→入队的原子性）。 */
-    private static final Object pendingLock = new Object();
+    /** 缓存的聊天消息（含已提取的物品数据）。 */
+    private record PendingMessage(ChatItemExtractor.ExtractedItem item, long receivedAt) {}
 
-    /** 上次处理时间戳（毫秒）。 */
+    /** 缓存的告示牌点击信息。 */
+    private record PendingClick(String dimId, int x, int y, int z, long clickedAt) {}
+
+    /**
+     * 活跃点击组：一个点击及其关联的消息集合。
+     * <p>消息自然归属于当前活跃组。新点击到来时立即密封旧组并创建新组。</p>
+     */
+    private static final class ClickGroup {
+        final PendingClick click;
+        final List<PendingMessage> messages = new ArrayList<>();
+        volatile long lastMessageTime;
+        final long startedAt;
+
+        ClickGroup(PendingClick click) {
+            this.click = click;
+            this.startedAt = click.clickedAt();
+        }
+    }
+
+    // ==================== 流水线状态 ====================
+
+    /** 当前正在吸收消息的活跃点击组（null 表示无活跃点击）。 */
+    private static volatile ClickGroup activeGroup = null;
+
+    /** 保护 activeGroup 切换和消息入队的锁。 */
+    private static final Object activeGroupLock = new Object();
+
+    /** 上次处理检查时间戳（毫秒）。 */
     private static volatile long lastProcessTime = 0;
 
     /** 是否已注册监听器。 */
@@ -79,14 +115,6 @@ public final class QShopChatListener {
     private static final AtomicInteger totalEnhanced = new AtomicInteger(0);
 
     private QShopChatListener() {}
-
-    // ==================== 内部数据记录 ====================
-
-    /** 缓存的聊天消息（含已提取的物品数据）。 */
-    private record PendingMessage(ChatItemExtractor.ExtractedItem item, long receivedAt) {}
-
-    /** 缓存的告示牌点击信息。 */
-    private record PendingClick(String dimId, int x, int y, int z, long clickedAt) {}
 
     // ==================== 注册/注销 ====================
 
@@ -131,6 +159,10 @@ public final class QShopChatListener {
      * 每帧检测攻击键状态变化。
      * 使用 {@code isPressed()} 手动追踪状态转换（false→true），
      * 因为 {@code wasPressed()} 在 START_CLIENT_TICK 之前已被 Minecraft 内部消费。
+     *
+     * <p>检测到 QShop 告示牌点击时，立即密封前一个活跃组（如有），创建新组。
+     * QShop 对点击的聊天响应是即时的，前一组的所有消息在用户点击下一告示牌前已经到达，
+     * 因此即时密封不会丢失或错配消息。</p>
      */
     private static void detectSignClick(MinecraftClient client) {
         if (client.player == null || client.world == null) {
@@ -148,29 +180,42 @@ public final class QShopChatListener {
         if (!(client.crosshairTarget instanceof BlockHitResult hit)) return;
         BlockPos pos = hit.getBlockPos();
 
-        // 检查是否为 QShop 告示牌
+        // 检查是否为 QShop 告示牌（预先排除非 QShop 点击，不触发任何处理）
         BlockEntity be = client.world.getBlockEntity(pos);
         if (!(be instanceof SignBlockEntity sign)) return;
         if (!QShopAnalyzer.isQShopSign(sign)) return;
 
-        // 记录点击（使用同步块确保 clear 和 offer 操作的原子性，
-        // 避免网络线程在两次 clear() 之间插入新消息导致消息与点击错误关联）
+        // 记录点击
         String dimId = client.world.getRegistryKey().getValue().toString();
-        synchronized (pendingLock) {
-            pendingMessages.clear();
-            pendingClicks.clear();
-            pendingClicks.offer(new PendingClick(dimId, pos.getX(), pos.getY(), pos.getZ(),
-                    System.currentTimeMillis()));
+        PendingClick click = new PendingClick(dimId, pos.getX(), pos.getY(), pos.getZ(),
+                System.currentTimeMillis());
+
+        ClickGroup toProcess = null;
+
+        synchronized (activeGroupLock) {
+            if (activeGroup != null) {
+                // 密封旧活跃组（无论是否有消息，都移交处理）
+                toProcess = activeGroup;
+                LOGGER.debug("Sealing active group at ({}, {}, {}) on new click",
+                        activeGroup.click.x(), activeGroup.click.y(), activeGroup.click.z());
+            }
+            // 创建新活跃组
+            activeGroup = new ClickGroup(click);
+            LOGGER.info("QShop sign clicked at ({}, {}, {}) in {} [active]",
+                    pos.getX(), pos.getY(), pos.getZ(), dimId);
         }
 
-        LOGGER.info("QShop sign clicked at ({}, {}, {}) in {}", pos.getX(), pos.getY(), pos.getZ(), dimId);
+        // 在锁外处理已密封的组（避免阻塞网络线程的消息入队）
+        if (toProcess != null) {
+            processGroup(toProcess);
+        }
     }
 
     // ==================== 聊天消息处理 ====================
 
     /**
-     * 收到聊天消息时调用（在渲染线程）。
-     * 快速预检后将消息缓存，由定时批量处理。
+     * 收到聊天消息时调用（渲染线程或网络线程）。
+     * 快速预检后直接添加到当前活跃组。无活跃组时丢弃消息。
      */
     private static void onChatMessage(Text message) {
         if (message == null) return;
@@ -182,91 +227,110 @@ public final class QShopChatListener {
 
         totalDetected.incrementAndGet();
 
-        // 缓存到队列（与 detectSignClick 中的 clear 操作同步，防止竞态）
-        synchronized (pendingLock) {
-            pendingMessages.offer(new PendingMessage(item, System.currentTimeMillis()));
+        PendingMessage msg = new PendingMessage(item, System.currentTimeMillis());
 
-            // 限制队列大小，防止内存泄漏
-            while (pendingMessages.size() > 200) {
-                pendingMessages.poll();
+        synchronized (activeGroupLock) {
+            if (activeGroup == null) {
+                LOGGER.debug("No active click group, dropping QShop item: registryId={}", item.registryId());
+                return;
+            }
+
+            activeGroup.messages.add(msg);
+            activeGroup.lastMessageTime = msg.receivedAt();
+
+            // 限制单组消息数量，防止异常情况下的内存问题
+            while (activeGroup.messages.size() > MAX_BATCH_SIZE * 4) {
+                activeGroup.messages.remove(0);
             }
         }
 
-        LOGGER.debug("Detected QShop item: registryId={}, nbtHash={}",
-                item.registryId(), item.nbtHash());
+        LOGGER.debug("Detected QShop item: registryId={}, nbtHash={}", item.registryId(), item.nbtHash());
     }
 
     // ==================== 定时处理（由 ChunkScannerMod 在 END_CLIENT_TICK 调用） ====================
 
     /**
-     * 每 tick 调用，检查是否需要批量处理缓存的消息。
+     * 每 tick 调用，检查最后一个活跃组是否需要密封处理（空闲兜底）。
      * 由 {@link ChunkScannerMod} 在 END_CLIENT_TICK 中调用。
      */
     public static void tick() {
         long now = System.currentTimeMillis();
         if (now - lastProcessTime < PROCESS_INTERVAL_MS) return;
-        if (pendingMessages.isEmpty()) return;
 
         lastProcessTime = now;
-        processBatch();
+        checkIdleSeal(now);
     }
 
     /**
-     * 批量处理缓存的消息。
-     * 收集消息、去重，然后通过记录的点击位置精确查找数据库记录并增强。
+     * 检查当前活跃组是否空闲超时，作为最后一个点击的兜底处理。
+     * <ul>
+     *   <li>活跃组有消息且空闲超时 → 密封处理</li>
+     *   <li>活跃组无消息且超过最大等待 → 丢弃（无效点击）</li>
+     * </ul>
+     *
+     * @param now 当前时间戳
      */
-    private static void processBatch() {
-        // 收集消息（限制批量大小）
-        List<PendingMessage> batch = new ArrayList<>(MAX_BATCH_SIZE);
-        PendingMessage msg;
-        while (batch.size() < MAX_BATCH_SIZE && (msg = pendingMessages.poll()) != null) {
-            batch.add(msg);
-        }
+    private static void checkIdleSeal(long now) {
+        ClickGroup toProcess = null;
 
-        if (batch.isEmpty()) return;
+        synchronized (activeGroupLock) {
+            if (activeGroup == null) return;
 
-        // 获取有效的点击
-        long now = System.currentTimeMillis();
-        List<PendingClick> clicks = new ArrayList<>();
-        PendingClick click;
-        while ((click = pendingClicks.poll()) != null) {
-            if (now - click.clickedAt() <= MAX_CLICK_AGE_MS) {
-                clicks.add(click);
+            if (!activeGroup.messages.isEmpty()
+                    && now - activeGroup.lastMessageTime > MESSAGE_IDLE_TIMEOUT_MS) {
+                // 消息流结束：密封处理
+                toProcess = activeGroup;
+                activeGroup = null;
+                LOGGER.debug("Active group sealed (idle timeout)");
+            } else if (activeGroup.messages.isEmpty()
+                    && now - activeGroup.startedAt > MAX_WAIT_NO_MESSAGES_MS) {
+                // 无效点击：丢弃
+                LOGGER.debug("Active group at ({}, {}, {}) expired without messages, discarding",
+                        activeGroup.click.x(), activeGroup.click.y(), activeGroup.click.z());
+                activeGroup = null;
             }
         }
 
-        if (clicks.isEmpty()) {
-            LOGGER.debug("No valid sign click for {} chat messages, skipping enhancement", batch.size());
-            return;
+        if (toProcess != null) {
+            processGroup(toProcess);
         }
+    }
 
-        // 去重：同一物品注册名 + 附魔列表相同的消息只处理一次
+    /**
+     * 处理一个已密封的点击组。
+     * <p>对组内消息去重后，通过坐标精确查找数据库记录并增强。</p>
+     *
+     * @param group 已密封的点击组
+     */
+    private static void processGroup(ClickGroup group) {
+        if (group.messages.isEmpty()) return;
+
+        // 去重：同一物品注册名 + NBT 哈希相同的消息只处理一次
         Map<String, ChatItemExtractor.ExtractedItem> uniqueItems = new LinkedHashMap<>();
-        for (PendingMessage pm : batch) {
+        for (PendingMessage pm : group.messages) {
             ChatItemExtractor.ExtractedItem item = pm.item();
             if (item == null) continue;
             String dedupKey = item.registryId() + "|" + item.nbtHash();
             uniqueItems.putIfAbsent(dedupKey, item);
         }
 
-        LOGGER.debug("Processing {} chat messages ({} unique, {} clicks)",
-                batch.size(), uniqueItems.size(), clicks.size());
+        LOGGER.debug("Processing click group at ({}, {}, {}): {} messages, {} unique",
+                group.click.x(), group.click.y(), group.click.z(),
+                group.messages.size(), uniqueItems.size());
 
         // 获取当前活跃的扫描会话
         var scanner = ChunkScannerMod.getScanner();
         if (scanner == null) return;
 
         int enhanced = 0;
-        for (PendingClick c : clicks) {
-            for (ChatItemExtractor.ExtractedItem item : uniqueItems.values()) {
-                try {
-                    if (enhanceRecordAt(scanner, c, item)) {
-                        enhanced++;
-                    }
-                } catch (Exception e) {
-                    LOGGER.warn("Failed to enhance record at ({}, {}, {}): {}",
-                            c.x(), c.y(), c.z(), e.getMessage());
+        for (ChatItemExtractor.ExtractedItem item : uniqueItems.values()) {
+            try {
+                if (enhanceRecordAt(scanner, group.click, item)) {
+                    enhanced++;
                 }
+            } catch (Exception e) {
+                LOGGER.warn("Failed to enhance record at ({}, {}, {}): {}",
+                        group.click.x(), group.click.y(), group.click.z(), e.getMessage());
             }
         }
 
@@ -296,6 +360,9 @@ public final class QShopChatListener {
      * <p>增强数据仅写入子数据库（id=1），不修改主数据库，避免触发主数据库全量刷写。
      * 重访区块时主数据库记录会被清除重建，但子数据库的增强数据不受影响。</p>
      *
+     * <p><b>总是更新增强数据</b>：不检查是否已有增强记录，每次点击都覆盖更新，
+     * 确保物品数据始终是最新的（例如玩家更换了商店中的物品）。</p>
+     *
      * @param scanner 扫描器实例
      * @param click   记录的点击信息（维度、坐标）
      * @param item    从聊天消息提取的物品数据
@@ -319,12 +386,7 @@ public final class QShopChatListener {
                 continue;
             }
 
-            if (adapter.hasEnhanced(click.dimId(), cx, cz, click.x(), click.y(), click.z())) {
-                LOGGER.debug("Enhanced data already exists for ({}, {}, {}), skipping",
-                        click.x(), click.y(), click.z());
-                return false;
-            }
-
+            // 总是写入增强数据，不检查是否已存在（支持更新）
             adapter.enhanceRecord(click.dimId(), cx, cz, click.x(), click.y(), click.z(),
                     item.registryId(),
                     item.isBook(), item.isShulkerExpanded(),
