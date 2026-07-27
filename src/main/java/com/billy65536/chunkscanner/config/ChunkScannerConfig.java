@@ -20,6 +20,20 @@ package com.billy65536.chunkscanner.config;
  */
 public class ChunkScannerConfig {
 
+    /**
+     * 增强匹配隔离模式。
+     * <ul>
+     *   <li>{@link #STRICT} — 时间窗口 + 商品名双重匹配（默认）</li>
+     *   <li>{@link #TIME_ONLY} — 仅时间窗口匹配，不检查商品名</li>
+     *   <li>{@link #DISABLED} — 禁用增强匹配</li>
+     * </ul>
+     */
+    public enum EnhanceMatchMode {
+        STRICT,
+        TIME_ONLY,
+        DISABLED
+    }
+
     // ==================== 扫描默认值 ====================
 
     /** 最小重访间隔（秒）。默认 60。 */
@@ -72,6 +86,15 @@ public class ChunkScannerConfig {
     /** 是否启用 QShop 告示牌高亮边框。默认 false。 */
     public boolean qshopHighlightEnabled = false;
 
+    /** 高亮范围（chunk 环数，0 表示仅当前 chunk）。默认 1。 */
+    public int qshopHighlightRadius = 1;
+
+    /** 高亮颜色渐变时长（毫秒）。增强数据在此时间内从绿色渐变到黄色。默认 86400000（1 天）。 */
+    public long qshopHighlightGradientMs = 86400_000L;
+
+    /** 增强匹配隔离模式。默认 STRICT。 */
+    public EnhanceMatchMode qshopEnhanceMatchMode = EnhanceMatchMode.STRICT;
+
     // ==================== 路径点默认值 ====================
 
     /** 路径点名称。默认 "选中的坐标点"。 */
@@ -101,6 +124,9 @@ public class ChunkScannerConfig {
         c.qshopSellKeyword = this.qshopSellKeyword;
         c.qshopBuyKeyword = this.qshopBuyKeyword;
         c.qshopHighlightEnabled = this.qshopHighlightEnabled;
+        c.qshopHighlightRadius = this.qshopHighlightRadius;
+        c.qshopHighlightGradientMs = this.qshopHighlightGradientMs;
+        c.qshopEnhanceMatchMode = this.qshopEnhanceMatchMode;
         c.waypointName = this.waypointName;
         c.waypointInitials = this.waypointInitials;
         c.waypointGroup = this.waypointGroup;

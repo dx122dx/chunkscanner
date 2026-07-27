@@ -99,6 +99,12 @@ public class ConfigLoader {
                 config.qshopBuyKeyword = defaults.get("qshopBuyKeyword").getAsString();
             if (defaults.has("qshopHighlightEnabled"))
                 config.qshopHighlightEnabled = defaults.get("qshopHighlightEnabled").getAsBoolean();
+            if (defaults.has("qshopHighlightRadius"))
+                config.qshopHighlightRadius = defaults.get("qshopHighlightRadius").getAsInt();
+            if (defaults.has("qshopHighlightGradientMs"))
+                config.qshopHighlightGradientMs = defaults.get("qshopHighlightGradientMs").getAsLong();
+            if (defaults.has("qshopEnhanceMatchMode"))
+                config.qshopEnhanceMatchMode = parseEnhanceMatchMode(defaults.get("qshopEnhanceMatchMode").getAsString());
 
             // 读取路径点默认值
             if (json.has("waypoint")) {
@@ -137,6 +143,9 @@ public class ConfigLoader {
             defaults.addProperty("qshopSellKeyword", config.qshopSellKeyword);
             defaults.addProperty("qshopBuyKeyword", config.qshopBuyKeyword);
             defaults.addProperty("qshopHighlightEnabled", config.qshopHighlightEnabled);
+            defaults.addProperty("qshopHighlightRadius", config.qshopHighlightRadius);
+            defaults.addProperty("qshopHighlightGradientMs", config.qshopHighlightGradientMs);
+            defaults.addProperty("qshopEnhanceMatchMode", config.qshopEnhanceMatchMode.name());
             json.add("defaults", defaults);
 
             // 路径点默认值
@@ -150,6 +159,16 @@ public class ConfigLoader {
             ChunkScannerMod.LOGGER.info("Config saved to: {}", path);
         } catch (IOException e) {
             ChunkScannerMod.LOGGER.error("Failed to save config: {}", e.getMessage());
+        }
+    }
+
+    /** 安全解析增强匹配模式字符串，无法识别时回退默认值。 */
+    private static ChunkScannerConfig.EnhanceMatchMode parseEnhanceMatchMode(String s) {
+        try {
+            return ChunkScannerConfig.EnhanceMatchMode.valueOf(s);
+        } catch (IllegalArgumentException e) {
+            ChunkScannerMod.LOGGER.warn("Unknown enhance match mode '{}', falling back to STRICT", s);
+            return ChunkScannerConfig.EnhanceMatchMode.STRICT;
         }
     }
 }

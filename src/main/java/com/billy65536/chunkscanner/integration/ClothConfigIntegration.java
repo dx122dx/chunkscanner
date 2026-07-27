@@ -1,6 +1,7 @@
 package com.billy65536.chunkscanner.integration;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
+import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.ConfigLoader;
 
 import net.fabricmc.loader.api.FabricLoader;
@@ -138,6 +139,31 @@ public class ClothConfigIntegration {
                 .setDefaultValue(false)
                 .setTooltip(Text.literal("开启后在玩家周围高亮显示 QShop 告示牌边框。红色=无增强信息，绿色→黄色=增强信息新鲜度渐变"))
                 .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopHighlightEnabled = v)
+                .build());
+
+        qshop.addEntry(builder.entryBuilder()
+                .startIntSlider(Text.literal("高亮范围"),
+                        ChunkScannerMod.CONFIG.qshopHighlightRadius, 0, 8)
+                .setDefaultValue(1)
+                .setTooltip(Text.literal("高亮显示的 chunk 环数。0 = 仅当前 chunk，1 = 周围 1 环"))
+                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopHighlightRadius = v)
+                .build());
+
+        qshop.addEntry(builder.entryBuilder()
+                .startLongField(Text.literal("高亮渐变时长（毫秒）"),
+                        ChunkScannerMod.CONFIG.qshopHighlightGradientMs)
+                .setDefaultValue(86400_000L).setMin(0L).setMax(604800_000L)
+                .setTooltip(Text.literal("增强数据在此时间内从绿色渐变到黄色。86400000 = 1 天，0 = 始终绿色"))
+                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopHighlightGradientMs = v)
+                .build());
+
+        qshop.addEntry(builder.entryBuilder()
+                .startEnumSelector(Text.literal("增强匹配隔离模式"),
+                        ChunkScannerConfig.EnhanceMatchMode.class,
+                        ChunkScannerMod.CONFIG.qshopEnhanceMatchMode)
+                .setDefaultValue(ChunkScannerConfig.EnhanceMatchMode.STRICT)
+                .setTooltip(Text.literal("STRICT=时间窗口+商品名双重匹配（最严格），TIME_ONLY=仅时间窗口匹配，DISABLED=禁用增强匹配"))
+                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopEnhanceMatchMode = v)
                 .build());
 
         // === 路径点分类 ===

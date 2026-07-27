@@ -28,8 +28,6 @@ public final class QShopHighlightRenderer {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("chunkscanner.components.qshop.highlight");
 
-    private static final int HIGHLIGHT_CHUNK_RING = 1;
-    private static final long HIGHLIGHT_GRADIENT_MS = 86400_000L; // 1天渐变
     private static final long CACHE_TTL_MS = 2000;
 
     private static List<HighlightEntry> cachedEntries = Collections.emptyList();
@@ -162,6 +160,7 @@ public final class QShopHighlightRenderer {
         int playerCZ = playerPos.getZ() >> 4;
         String playerDim = client.world.getRegistryKey().getValue().toString();
 
+        int highlightRadius = ChunkScannerMod.CONFIG.qshopHighlightRadius;
         List<HighlightEntry> entries = new ArrayList<>();
         List<ScanSession> sessions = new ArrayList<>(scanner.getActiveSessions());
 
@@ -181,8 +180,8 @@ public final class QShopHighlightRenderer {
                 if (!playerDim.equals(rec.dimId())) continue;
                 int rcCX = rec.x() >> 4;
                 int rcCZ = rec.z() >> 4;
-                if (Math.abs(rcCX - playerCX) > HIGHLIGHT_CHUNK_RING
-                        || Math.abs(rcCZ - playerCZ) > HIGHLIGHT_CHUNK_RING) continue;
+                if (Math.abs(rcCX - playerCX) > highlightRadius
+                        || Math.abs(rcCZ - playerCZ) > highlightRadius) continue;
 
                 entries.add(new HighlightEntry(rec.x(), rec.y(), rec.z(), rec.enhancementTimestamp()));
             }
@@ -199,9 +198,11 @@ public final class QShopHighlightRenderer {
 
     private static int computeColor(long enhancementTimestamp, long now) {
         if (enhancementTimestamp <= 0) return 0xFFFF0000;
+        long gradientMs = ChunkScannerMod.CONFIG.qshopHighlightGradientMs;
+        if (gradientMs <= 0) return 0xFF00FF00; // 无渐变，始终绿色
         long ageMs = now - enhancementTimestamp;
-        if (ageMs >= HIGHLIGHT_GRADIENT_MS) return 0xFFFFFF00;
-        float t = Math.min(1.0f, (float) ageMs / HIGHLIGHT_GRADIENT_MS);
+        if (ageMs >= gradientMs) return 0xFFFFFF00;
+        float t = Math.min(1.0f, (float) ageMs / gradientMs);
         int r = (int) (255 * t);
         int g = 255;
         return 0xFF000000 | (r << 16) | (g << 8);

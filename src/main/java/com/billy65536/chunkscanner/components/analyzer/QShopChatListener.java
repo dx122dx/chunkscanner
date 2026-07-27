@@ -17,6 +17,7 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
+import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.core.IChunkDb;
 
 /**
@@ -297,12 +298,19 @@ public final class QShopChatListener {
     private static void onChatMessage(Text message) {
         if (message == null) return;
 
+        // 增强匹配已禁用，直接跳过
+        ChunkScannerConfig.EnhanceMatchMode mode = ChunkScannerMod.CONFIG.qshopEnhanceMatchMode;
+        if (mode == ChunkScannerConfig.EnhanceMatchMode.DISABLED) return;
+
         ChatItemExtractor.ExtractedItem item = ChatItemExtractor.extract(message);
         if (item == null) return;
 
         totalDetected.incrementAndGet();
 
         PendingMessage msg = new PendingMessage(item, System.currentTimeMillis());
+
+        // TIME_ONLY 模式：仅用时间窗口匹配，跳过商品名校验
+        boolean checkItemName = (mode == ChunkScannerConfig.EnhanceMatchMode.STRICT);
 
         synchronized (pipelineLock) {
             // 优先匹配排水组（从新到旧遍历）
@@ -311,7 +319,7 @@ public final class QShopChatListener {
                 if (dg.isDraining()
                         && msg.receivedAt() >= dg.startedAt
                         && msg.receivedAt() <= dg.drainUntil) {
-                    if (matchesSignItem(message, dg.click.signItemName())) {
+                    if (!checkItemName || matchesSignItem(message, dg.click.signItemName())) {
                         dg.messages.add(msg);
                         dg.lastMessageTime = msg.receivedAt();
                         limitGroupSize(dg);
@@ -329,7 +337,7 @@ public final class QShopChatListener {
             if (activeGroup != null) {
                 long age = msg.receivedAt() - activeGroup.startedAt;
                 if (age >= 0 && age <= MAX_MESSAGE_AGE_MS) {
-                    if (matchesSignItem(message, activeGroup.click.signItemName())) {
+                    if (!checkItemName || matchesSignItem(message, activeGroup.click.signItemName())) {
                         activeGroup.messages.add(msg);
                         activeGroup.lastMessageTime = msg.receivedAt();
                         limitGroupSize(activeGroup);
