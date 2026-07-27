@@ -14,6 +14,8 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -24,19 +26,23 @@ import java.util.List;
  */
 public final class QShopHighlightRenderer {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger("chunkscanner.components.qshop.highlight");
+
     private static final int HIGHLIGHT_CHUNK_RING = 1;
     private static final long HIGHLIGHT_GRADIENT_MS = 86400_000L; // 1天渐变
     private static final long CACHE_TTL_MS = 2000;
 
     private static List<HighlightEntry> cachedEntries = Collections.emptyList();
     private static long lastCacheTime = 0;
+    private static int lastEntryCount = -1;
 
     private record HighlightEntry(int x, int y, int z, long enhancementTimestamp) {}
 
     private QShopHighlightRenderer() {}
 
     public static void initialize() {
-        WorldRenderEvents.AFTER_TRANSLUCENT.register(QShopHighlightRenderer::doRender);
+        LOGGER.info("QShop highlight renderer initialized, enabled={}",
+                ChunkScannerMod.CONFIG.qshopHighlightEnabled);
         WorldRenderEvents.LAST.register(QShopHighlightRenderer::doRender);
     }
 
@@ -51,7 +57,10 @@ public final class QShopHighlightRenderer {
             lastCacheTime = now;
         }
 
-        if (!ChunkScannerMod.CONFIG.qshopHighlightEnabled) return;
+        if (!ChunkScannerMod.CONFIG.qshopHighlightEnabled) {
+            LOGGER.debug("Highlight disabled by config, skipping render");
+            return;
+        }
         if (cachedEntries.isEmpty()) return;
 
         renderHighlights(context, now);
@@ -127,16 +136,14 @@ public final class QShopHighlightRenderer {
             }
 
             tessellator.draw();
-
+        } catch (Exception e) {
+            LOGGER.error("RENDER ERROR: {}", e.getMessage(), e);
+        } finally {
             RenderSystem.lineWidth(1.0f);
             RenderSystem.enableDepthTest();
             RenderSystem.depthMask(true);
             RenderSystem.disableBlend();
-
             restoreMatrices();
-        } catch (Exception e) {
-            System.err.println("[CS-Highlight] RENDER ERROR: " + e.getMessage());
-            e.printStackTrace();
         }
     }
 
@@ -166,6 +173,7 @@ public final class QShopHighlightRenderer {
             try {
                 records = adapter.getAllRecords();
             } catch (Exception e) {
+                LOGGER.error("Failed to read records from DB: {}", e.getMessage(), e);
                 continue;
             }
 
@@ -180,6 +188,12 @@ public final class QShopHighlightRenderer {
             }
         }
 
+        if (entries.size() != lastEntryCount) {
+            LOGGER.debug("Highlight entries refreshed: count={}, playerChunk=({},{})",
+                    entries.size(), playerCX, playerCZ);
+            lastEntryCount = entries.size();
+        }
+
         return entries;
     }
 
@@ -187,7 +201,7 @@ public final class QShopHighlightRenderer {
         if (enhancementTimestamp <= 0) return 0xFFFF0000;
         long ageMs = now - enhancementTimestamp;
         if (ageMs >= HIGHLIGHT_GRADIENT_MS) return 0xFFFFFF00;
-        float t = (float) ageMs / HIGHLIGHT_GRADIENT_MS;
+        float t = Math.min(1.0f, (float) ageMs / HIGHLIGHT_GRADIENT_MS);
         int r = (int) (255 * t);
         int g = 255;
         return 0xFF000000 | (r << 16) | (g << 8);
@@ -199,7 +213,7 @@ public final class QShopHighlightRenderer {
         int b = color & 0xFF;
         int a = (color >> 24) & 0xFF;
 
-        double margin = 0.00; // 边框不变大或缩小
+        double margin = 0.005; // 微偏移避免 z-fighting
         double x1 = bx - margin, y1 = by - margin, z1 = bz - margin;
         double x2 = bx + 1.0 + margin, y2 = by + 1.0 + margin, z2 = bz + 1.0 + margin;
 

@@ -34,7 +34,7 @@ import java.lang.reflect.Method;
  */
 public final class XaeroWaypointHelper {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger("ChunkScanner|Xaero");
+    private static final Logger LOGGER = LoggerFactory.getLogger("chunkscanner.integration.xaero");
 
     /** 默认路径点名称。 */
     private static final String DEFAULT_WAYPOINT_NAME = "选中的坐标点";
