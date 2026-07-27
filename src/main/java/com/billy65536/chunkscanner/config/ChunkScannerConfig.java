@@ -69,6 +69,9 @@ public class ChunkScannerConfig {
     /** 收购关键词，用于匹配 sellBuyPattern/infinitePattern 的 group(1)。 */
     public String qshopBuyKeyword = "收购";
 
+    /** 是否启用 QShop 告示牌高亮边框。默认 false。 */
+    public boolean qshopHighlightEnabled = false;
+
     // ==================== 路径点默认值 ====================
 
     /** 路径点名称。默认 "选中的坐标点"。 */
@@ -97,6 +100,7 @@ public class ChunkScannerConfig {
         c.qshopPricePattern = this.qshopPricePattern;
         c.qshopSellKeyword = this.qshopSellKeyword;
         c.qshopBuyKeyword = this.qshopBuyKeyword;
+        c.qshopHighlightEnabled = this.qshopHighlightEnabled;
         c.waypointName = this.waypointName;
         c.waypointInitials = this.waypointInitials;
         c.waypointGroup = this.waypointGroup;

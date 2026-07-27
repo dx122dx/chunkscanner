@@ -3,6 +3,7 @@ package com.billy65536.chunkscanner;
 import com.billy65536.chunkscanner.components.analyzer.ItemTranslator;
 import com.billy65536.chunkscanner.components.analyzer.QShopAnalyzer;
 import com.billy65536.chunkscanner.components.analyzer.QShopChatListener;
+import com.billy65536.chunkscanner.components.analyzer.QShopHighlightRenderer;
 import com.billy65536.chunkscanner.components.analyzer.SignAnalyzer;
 import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 import com.billy65536.chunkscanner.components.db.DbFileUtil;
@@ -158,6 +159,9 @@ public class ChunkScannerMod implements ClientModInitializer {
             dispatcher.register(buildCommands("chunkscanner"));
             dispatcher.register(buildCommands("cs"));
         });
+
+        // 初始化 QShop 告示牌高亮渲染器
+        QShopHighlightRenderer.initialize();
 
         // 注册客户端 tick 回调：每帧执行扫描调度 + QShop 聊天监听批量处理
         ClientTickEvents.END_CLIENT_TICK.register(client -> {

@@ -6,6 +6,7 @@ import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.block.entity.SignBlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import org.slf4j.Logger;
@@ -44,7 +45,7 @@ import com.billy65536.chunkscanner.core.IChunkDb;
  */
 public final class QShopChatListener {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger("chunkscanner.chat");
+    private static final Logger LOGGER = LoggerFactory.getLogger("chunkscanner.components.qshop.chat");
 
     /** 批量处理间隔（毫秒）。 */
     private static final long PROCESS_INTERVAL_MS = 5000;
@@ -273,6 +274,14 @@ public final class QShopChatListener {
             totalEnhanced.addAndGet(enhanced);
             LOGGER.info("Enhanced {} QShop records with chat data (total: {})",
                     enhanced, totalEnhanced.get());
+            // 发送消息通知玩家增强成功
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client.player != null) {
+                client.player.sendMessage(
+                        Text.translatable("chunkscanner.msg.qshop_enhanced", enhanced)
+                                .formatted(Formatting.GREEN),
+                        false);
+            }
         }
     }
 

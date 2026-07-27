@@ -42,7 +42,7 @@ import com.billy65536.chunkscanner.core.IChunkDb;
  */
 public final class QShopDbAdapter {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger("chunkscanner.adapter");
+    private static final Logger LOGGER = LoggerFactory.getLogger("chunkscanner.components.qshop.adapter");
 
     private final IChunkDb db;
     private final IChunkDb subDb;

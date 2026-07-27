@@ -37,6 +37,7 @@
     "chunkscanner.msg.db_deleted": "已删除数据库 \"%s\"。",
     "chunkscanner.msg.db_delete_failed": "删除数据库 \"%s\" 失败：%s",
     "chunkscanner.msg.db_file_using": "无法删除数据库 \"%s\": 该数据库文件正被活跃扫描会话 \"%s\" 使用，请先终止该扫描。",
+    "chunkscanner.msg.qshop_enhanced": "已为 %d 条 QShop 记录添加了增强信息。",
 
 
     "chunkscanner.status.title": "======== ChunkScanner 状态 ========",

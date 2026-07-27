@@ -32,14 +32,12 @@ public class ConfigLoader {
 
     public static void load(ChunkScannerConfig config) {
         ensureClothDetected();
-        if (!clothAvailable) {
-            loadFromJson(config);
-        }
+        // 始终从 JSON 加载基线配置（Cloth Config 存在时也会加载，确保默认值来自 JSON）
+        loadFromJson(config);
     }
 
     public static void save(ChunkScannerConfig config) {
-        // 如果 Cloth Config 管理配置，JSON 保存由 Cloth Config 的 setSavingRunnable 触发
-        if (clothAvailable) return;
+        // 始终写入 JSON，确保持久化（Cloth Config 也通过 setSavingRunnable 调用此方法）
         saveToJson(config);
     }
 
@@ -99,6 +97,8 @@ public class ConfigLoader {
                 config.qshopSellKeyword = defaults.get("qshopSellKeyword").getAsString();
             if (defaults.has("qshopBuyKeyword"))
                 config.qshopBuyKeyword = defaults.get("qshopBuyKeyword").getAsString();
+            if (defaults.has("qshopHighlightEnabled"))
+                config.qshopHighlightEnabled = defaults.get("qshopHighlightEnabled").getAsBoolean();
 
             // 读取路径点默认值
             if (json.has("waypoint")) {
@@ -136,6 +136,7 @@ public class ConfigLoader {
             defaults.addProperty("qshopPricePattern", config.qshopPricePattern);
             defaults.addProperty("qshopSellKeyword", config.qshopSellKeyword);
             defaults.addProperty("qshopBuyKeyword", config.qshopBuyKeyword);
+            defaults.addProperty("qshopHighlightEnabled", config.qshopHighlightEnabled);
             json.add("defaults", defaults);
 
             // 路径点默认值

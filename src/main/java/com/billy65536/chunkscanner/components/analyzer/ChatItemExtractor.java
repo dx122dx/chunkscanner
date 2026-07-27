@@ -37,7 +37,7 @@ import java.util.zip.CRC32;
  */
 public final class ChatItemExtractor {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger("chunkscanner.chat");
+    private static final Logger LOGGER = LoggerFactory.getLogger("chunkscanner.components.qshop.chat");
 
     /** 潜影盒注册名集合（含所有染色变种）。 */
     private static final Set<String> SHULKER_BOX_IDS = Set.of(

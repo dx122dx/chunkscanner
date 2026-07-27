@@ -132,6 +132,14 @@ public class ClothConfigIntegration {
                 .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopPricePattern = v)
                 .build());
 
+        qshop.addEntry(builder.entryBuilder()
+                .startBooleanToggle(Text.literal("告示牌高亮显示"),
+                        ChunkScannerMod.CONFIG.qshopHighlightEnabled)
+                .setDefaultValue(false)
+                .setTooltip(Text.literal("开启后在玩家周围高亮显示 QShop 告示牌边框。红色=无增强信息，绿色→黄色=增强信息新鲜度渐变"))
+                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopHighlightEnabled = v)
+                .build());
+
         // === 路径点分类 ===
         var waypoint = builder.getOrCreateCategory(Text.literal("路径点"));
 
