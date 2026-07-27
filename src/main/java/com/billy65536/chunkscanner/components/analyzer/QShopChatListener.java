@@ -61,6 +61,9 @@ public final class QShopChatListener {
     /** 待处理的点击队列。 */
     private static final ConcurrentLinkedQueue<PendingClick> pendingClicks = new ConcurrentLinkedQueue<>();
 
+    /** 保护 pendingMessages 和 pendingClicks 清理操作的锁（确保清空→入队的原子性）。 */
+    private static final Object pendingLock = new Object();
+
     /** 上次处理时间戳（毫秒）。 */
     private static volatile long lastProcessTime = 0;
 
@@ -152,7 +155,7 @@ public final class QShopChatListener {
         // 记录点击（使用同步块确保 clear 和 offer 操作的原子性，
         // 避免网络线程在两次 clear() 之间插入新消息导致消息与点击错误关联）
         String dimId = client.world.getRegistryKey().getValue().toString();
-        synchronized (pendingMessages) {
+        synchronized (pendingLock) {
             pendingMessages.clear();
             pendingClicks.clear();
             pendingClicks.offer(new PendingClick(dimId, pos.getX(), pos.getY(), pos.getZ(),
@@ -179,7 +182,7 @@ public final class QShopChatListener {
         totalDetected.incrementAndGet();
 
         // 缓存到队列（与 detectSignClick 中的 clear 操作同步，防止竞态）
-        synchronized (pendingMessages) {
+        synchronized (pendingLock) {
             pendingMessages.offer(new PendingMessage(item, System.currentTimeMillis()));
 
             // 限制队列大小，防止内存泄漏

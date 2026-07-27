@@ -5,6 +5,7 @@ import com.billy65536.chunkscanner.config.TaskConfig;
 import com.billy65536.chunkscanner.core.IChunkAnalyzer;
 import com.billy65536.chunkscanner.core.AnalyzerRegistry;
 import com.billy65536.chunkscanner.core.ChunkScanner;
+import com.billy65536.chunkscanner.core.ChunkStatusBreakdown;
 import com.billy65536.chunkscanner.core.ScanSession;
 import com.billy65536.chunkscanner.gui.GuiUtil;
 import com.billy65536.chunkscanner.gui.PlaceholderTextField;
@@ -272,7 +273,7 @@ public class ChunkScannerScreen extends Screen {
         if (hoveredSessionIdx >= 0 && hoveredSessionIdx < list.size()) {
             ScanSession s = list.get(hoveredSessionIdx);
             MinecraftClient client = MinecraftClient.getInstance();
-            ChunkScanner.ChunkStatusBreakdown bd = s.getStatusBreakdown(client);
+            ChunkStatusBreakdown bd = s.getStatusBreakdown(client);
             List<Text> tooltip = new ArrayList<>();
             tooltip.add(s.analyzer.getName().copy().append(" — ").append(s.scanId)
                     .formatted(Formatting.GOLD));
@@ -373,7 +374,7 @@ public class ChunkScannerScreen extends Screen {
 
         // --- 第 2 行：多彩状态条（按比例分段填充） ---
         MinecraftClient client = MinecraftClient.getInstance();
-        ChunkScanner.ChunkStatusBreakdown bd = s.getStatusBreakdown(client);
+        ChunkStatusBreakdown bd = s.getStatusBreakdown(client);
         int barY = y + 12;
         int barH = 4;
         int barW = SCROLLBAR_X_OFFSET - 8; // 留出滚动条空间

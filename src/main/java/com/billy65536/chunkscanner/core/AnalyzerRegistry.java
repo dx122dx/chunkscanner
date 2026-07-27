@@ -21,8 +21,12 @@ public final class AnalyzerRegistry {
 
     private AnalyzerRegistry() {}
 
-    /** 注册一个分析器。重复注册会覆盖之前同 ID 的分析器。 */
+    /** 注册一个分析器。重复注册会覆盖之前同 ID 的分析器。参数为 null 或 ID 为 null 时忽略。 */
     public static void register(IChunkAnalyzer analyzer) {
+        if (analyzer == null || analyzer.getId() == null) {
+            ChunkScannerMod.LOGGER.warn("Attempted to register null analyzer or analyzer with null ID, ignored");
+            return;
+        }
         analyzers.put(analyzer.getId(), analyzer);
         ChunkScannerMod.LOGGER.info("Registered analyzer: {}", analyzer.getId());
     }

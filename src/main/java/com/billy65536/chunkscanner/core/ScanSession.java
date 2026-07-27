@@ -14,7 +14,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.TaskConfig;
-import com.billy65536.chunkscanner.core.ChunkScanner.ChunkStatusBreakdown;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.math.BlockPos;
@@ -394,7 +393,7 @@ public class ScanSession {
             }
         }
 
-        ChunkStatusBreakdown bd = new ChunkScanner.ChunkStatusBreakdown(
+        ChunkStatusBreakdown bd = new ChunkStatusBreakdown(
                 pending, scannedNoFind, scannedFound,
                 pastRevisitNoFind, pastRevisitFound, error, foundError);
         cachedBreakdown = bd;

@@ -432,22 +432,13 @@ public class ChunkScanner {
     public int reloadConfig() {
         int count = 0;
         for (ScanSession s : sessions.values()) {
-            // 更新 sessionConfig 副本
-            ChunkScannerConfig defaults = ChunkScanner.this.config;
-            s.sessionConfig.minRevisitIntervalSec = defaults.minRevisitIntervalSec;
-            s.sessionConfig.maxTasksPerTick = defaults.maxTasksPerTick;
-            s.sessionConfig.initialTasksPerTick = defaults.initialTasksPerTick;
-            s.sessionConfig.targetTickNs = defaults.targetTickNs;
-            s.sessionConfig.flushIntervalTicks = defaults.flushIntervalTicks;
-            s.sessionConfig.workerThreads = defaults.workerThreads;
-            s.sessionConfig.scanRadiusMultiplier = defaults.scanRadiusMultiplier;
-            s.sessionConfig.waypointName = defaults.waypointName;
-            s.sessionConfig.waypointInitials = defaults.waypointInitials;
-            s.sessionConfig.waypointGroup = defaults.waypointGroup;
+            s.sessionConfig = (s.getTaskConfig() != null
+                    ? s.getTaskConfig().applyTo(this.config)
+                    : this.config.copy());
 
             // clamp 自适应速率到新范围
-            if (s.tasksPerTick > defaults.maxTasksPerTick) {
-                s.tasksPerTick = defaults.maxTasksPerTick;
+            if (s.tasksPerTick > s.sessionConfig.maxTasksPerTick) {
+                s.tasksPerTick = s.sessionConfig.maxTasksPerTick;
             }
             if (s.tasksPerTick < 1) {
                 s.tasksPerTick = 1;
@@ -589,19 +580,6 @@ public class ChunkScanner {
                     s.receiveChunk(dimId, cx, cz, nowSec);
                 }
             }
-        }
-    }
-
-    // ==================== 内部类: ScanSession ====================
-
-    /** 单个区块在可见范围内的状态分类（用于状态条渲染）。 */
-    public record ChunkStatusBreakdown(
-        int pending, int scannedNoFind, int scannedFound,
-        int pastRevisitNoFind, int pastRevisitFound, int error, int foundError
-    ) {
-        public int total() {
-            return pending + scannedNoFind + scannedFound
-                    + pastRevisitNoFind + pastRevisitFound + error + foundError;
         }
     }
 
