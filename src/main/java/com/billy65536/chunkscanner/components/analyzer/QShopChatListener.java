@@ -145,6 +145,14 @@ public final class QShopChatListener {
     private static final AtomicInteger totalDetected = new AtomicInteger(0);
     private static final AtomicInteger totalEnhanced = new AtomicInteger(0);
 
+    // ==================== Manual 模式状态 ====================
+
+    /** Manual 模式下最后一次从聊天消息中捕获的物品数据。 */
+    private static volatile ChatItemExtractor.ExtractedItem lastManualItem = null;
+
+    /** lastManualItem 的捕获时间戳（毫秒）。 */
+    private static volatile long lastManualItemTime = 0;
+
     private QShopChatListener() {}
 
     // ==================== 注册/注销 ====================
@@ -231,6 +239,14 @@ public final class QShopChatListener {
             return;
         }
 
+        // Manual/Disabled 模式不自动检测点击
+        ChunkScannerConfig.EnhanceMatchMode mode = ChunkScannerMod.CONFIG.qshopEnhanceMatchMode;
+        if (mode == ChunkScannerConfig.EnhanceMatchMode.Disabled
+                || mode == ChunkScannerConfig.EnhanceMatchMode.Manual) {
+            prevAttackPressed = false;
+            return;
+        }
+
         boolean nowPressed = client.options.attackKey.isPressed();
         boolean justPressed = nowPressed && !prevAttackPressed;
         prevAttackPressed = nowPressed;
@@ -300,17 +316,26 @@ public final class QShopChatListener {
 
         // 增强匹配已禁用，直接跳过
         ChunkScannerConfig.EnhanceMatchMode mode = ChunkScannerMod.CONFIG.qshopEnhanceMatchMode;
-        if (mode == ChunkScannerConfig.EnhanceMatchMode.DISABLED) return;
+        if (mode == ChunkScannerConfig.EnhanceMatchMode.Disabled) return;
 
         ChatItemExtractor.ExtractedItem item = ChatItemExtractor.extract(message);
         if (item == null) return;
 
         totalDetected.incrementAndGet();
 
+        // Manual 模式：仅捕获并存储最后一条物品消息，不自动匹配/增强
+        if (mode == ChunkScannerConfig.EnhanceMatchMode.Manual) {
+            lastManualItem = item;
+            lastManualItemTime = System.currentTimeMillis();
+            LOGGER.debug("Manual mode: captured item {} (total: {})",
+                    item.registryId(), totalDetected.get());
+            return;
+        }
+
         PendingMessage msg = new PendingMessage(item, System.currentTimeMillis());
 
-        // TIME_ONLY 模式：仅用时间窗口匹配，跳过商品名校验
-        boolean checkItemName = (mode == ChunkScannerConfig.EnhanceMatchMode.STRICT);
+        // TimeOnly 模式：仅用时间窗口匹配，跳过商品名校验
+        boolean checkItemName = (mode == ChunkScannerConfig.EnhanceMatchMode.Strict);
 
         synchronized (pipelineLock) {
             // 优先匹配排水组（从新到旧遍历）
@@ -480,7 +505,7 @@ public final class QShopChatListener {
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player != null) {
                 client.player.sendMessage(
-                        Text.translatable("chunkscanner.msg.qshop_enhanced", enhanced)
+                        Text.translatable("chunkscanner.msg.qshop.enhance.applied", enhanced)
                                 .formatted(Formatting.GREEN),
                         false);
             }
@@ -523,6 +548,90 @@ public final class QShopChatListener {
         }
 
         return false;
+    }
+
+    // ==================== Manual 模式命令 ====================
+
+    /**
+     * Manual 模式下，将最后捕获的物品增强到玩家准星指向的坐标。
+     *
+     * <p>流程：获取玩家准星目标方块 → 在同维度活跃 qshop 会话的 DB 中查找 →
+     * 用最后捕获的物品数据覆盖增强。</p>
+     *
+     * @param client Minecraft 客户端实例
+     * @return 操作结果消息（发送给玩家）
+     */
+    public static Text commitManualEnhance(MinecraftClient client) {
+        if (client.player == null || client.world == null) {
+            return Text.translatable("chunkscanner.msg.qshop.enhance.manual.no_world").formatted(Formatting.RED);
+        }
+
+        ChatItemExtractor.ExtractedItem item = lastManualItem;
+        if (item == null) {
+            return Text.translatable("chunkscanner.msg.qshop.enhance.manual.no_item").formatted(Formatting.RED);
+        }
+
+        // 检查物品是否过期
+        long expireMs = ChunkScannerMod.CONFIG.qshopManualEnhanceItemExpireMs;
+        long now = System.currentTimeMillis();
+        if (now - lastManualItemTime > expireMs) {
+            lastManualItem = null;
+            return Text.translatable("chunkscanner.msg.qshop.enhance.manual.item_expired", expireMs / 1000)
+                    .formatted(Formatting.RED);
+        }
+
+        // 获取准星目标方块
+        if (!(client.crosshairTarget instanceof net.minecraft.util.hit.BlockHitResult hit)) {
+            return Text.translatable("chunkscanner.msg.qshop.enhance.manual.no_block").formatted(Formatting.RED);
+        }
+
+        BlockPos targetPos = hit.getBlockPos();
+        String dimId = client.world.getRegistryKey().getValue().toString();
+
+        // 尝试在活跃 qshop 会话中增强
+        var scanner = ChunkScannerMod.getScanner();
+        if (scanner == null) {
+            return Text.translatable("chunkscanner.msg.qshop.enhance.manual.no_scanner").formatted(Formatting.RED);
+        }
+
+        for (var session : scanner.getActiveSessions()) {
+            if (!"qshop".equals(session.analyzer.getId())) continue;
+
+            IChunkDb db = session.db;
+            if (db == null) continue;
+
+            QShopDbAdapter adapter = new QShopDbAdapter(db);
+            int cx = targetPos.getX() >> 4;
+            int cz = targetPos.getZ() >> 4;
+
+            if (!adapter.hasRecord(dimId, cx, cz, targetPos.getX(), targetPos.getY(), targetPos.getZ())) {
+                continue;
+            }
+
+            adapter.enhanceRecord(dimId, cx, cz, targetPos.getX(), targetPos.getY(), targetPos.getZ(),
+                    item.registryId(),
+                    item.isBook(), item.isShulkerExpanded(),
+                    item.fullNbtString());
+
+            totalEnhanced.incrementAndGet();
+            LOGGER.info("Manual enhance: {} at ({}, {}, {}) flags={} (total: {})",
+                    item.registryId(), targetPos.getX(), targetPos.getY(), targetPos.getZ(),
+                    item.flags(), totalEnhanced.get());
+
+            return Text.translatable("chunkscanner.msg.qshop.enhance.manual.manual_enhanced",
+                    item.registryId(), targetPos.getX(), targetPos.getY(), targetPos.getZ())
+                    .formatted(Formatting.GREEN);
+        }
+
+        return Text.translatable("chunkscanner.msg.qshop.enhance.manual.not_found").formatted(Formatting.RED);
+    }
+
+    /**
+     * Manual 模式下是否有可用的缓存物品。
+     */
+    public static boolean hasLastManualItem() {
+        if (lastManualItem == null) return false;
+        return (System.currentTimeMillis() - lastManualItemTime) <= ChunkScannerMod.CONFIG.qshopManualEnhanceItemExpireMs;
     }
 
     // ==================== 统计信息 ====================

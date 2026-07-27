@@ -161,9 +161,17 @@ public class ClothConfigIntegration {
                 .startEnumSelector(Text.literal("增强匹配隔离模式"),
                         ChunkScannerConfig.EnhanceMatchMode.class,
                         ChunkScannerMod.CONFIG.qshopEnhanceMatchMode)
-                .setDefaultValue(ChunkScannerConfig.EnhanceMatchMode.STRICT)
-                .setTooltip(Text.literal("STRICT=时间窗口+商品名双重匹配（最严格），TIME_ONLY=仅时间窗口匹配，DISABLED=禁用增强匹配"))
+                .setDefaultValue(ChunkScannerConfig.EnhanceMatchMode.Strict)
+                .setTooltip(Text.literal("Strict=时间窗口+商品名匹配，TimeOnly=仅时间窗口，Manual=仅手动提交，Disabled=禁用增强"))
                 .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopEnhanceMatchMode = v)
+                .build());
+
+        qshop.addEntry(builder.entryBuilder()
+                .startLongField(Text.literal("Manual 模式物品过期时间（毫秒）"),
+                        ChunkScannerMod.CONFIG.qshopManualEnhanceItemExpireMs)
+                .setDefaultValue(30_000L).setMin(5_000L).setMax(300_000L)
+                .setTooltip(Text.literal("Manual 模式下缓存的聊天物品在此时间后过期。30000 = 30 秒"))
+                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopManualEnhanceItemExpireMs = v)
                 .build());
 
         // === 路径点分类 ===

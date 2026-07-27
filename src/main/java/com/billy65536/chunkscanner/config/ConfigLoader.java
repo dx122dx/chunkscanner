@@ -105,6 +105,8 @@ public class ConfigLoader {
                 config.qshopHighlightGradientMs = defaults.get("qshopHighlightGradientMs").getAsLong();
             if (defaults.has("qshopEnhanceMatchMode"))
                 config.qshopEnhanceMatchMode = parseEnhanceMatchMode(defaults.get("qshopEnhanceMatchMode").getAsString());
+            if (defaults.has("qshopManualEnhanceItemExpireMs"))
+                config.qshopManualEnhanceItemExpireMs = defaults.get("qshopManualEnhanceItemExpireMs").getAsLong();
 
             // 读取路径点默认值
             if (json.has("waypoint")) {
@@ -146,6 +148,7 @@ public class ConfigLoader {
             defaults.addProperty("qshopHighlightRadius", config.qshopHighlightRadius);
             defaults.addProperty("qshopHighlightGradientMs", config.qshopHighlightGradientMs);
             defaults.addProperty("qshopEnhanceMatchMode", config.qshopEnhanceMatchMode.name());
+            defaults.addProperty("qshopManualEnhanceItemExpireMs", config.qshopManualEnhanceItemExpireMs);
             json.add("defaults", defaults);
 
             // 路径点默认值
@@ -167,8 +170,8 @@ public class ConfigLoader {
         try {
             return ChunkScannerConfig.EnhanceMatchMode.valueOf(s);
         } catch (IllegalArgumentException e) {
-            ChunkScannerMod.LOGGER.warn("Unknown enhance match mode '{}', falling back to STRICT", s);
-            return ChunkScannerConfig.EnhanceMatchMode.STRICT;
+            ChunkScannerMod.LOGGER.warn("Unknown enhance match mode '{}', falling back to Strict", s);
+            return ChunkScannerConfig.EnhanceMatchMode.Strict;
         }
     }
 }

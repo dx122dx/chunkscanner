@@ -37,8 +37,7 @@
     "chunkscanner.msg.db_deleted": "Database \"%s\" deleted.",
     "chunkscanner.msg.db_delete_failed": "Failed to delete database \"%s\": %s",
     "chunkscanner.msg.db_file_using": "Unable to delete database \"%s\": The database file is being used by an active scan session \"%s\". Please terminate the scan first.",
-    "chunkscanner.msg.qshop_enhanced": "Enhanced %d QShop record(s) with chat data.",
-
+    
     "chunkscanner.status.title": "======== ChunkScanner Status ========",
     "chunkscanner.status.stop_hint": "Click to stop this scan",
     "chunkscanner.status.pause_hint": "Click to pause/resume this scan",
@@ -172,5 +171,13 @@
 
     "chunkscanner.qshop.infinite": "Unlimited",
     "chunkscanner.qshop.out_of_stock": "Out of Stock",
-    "chunkscanner.qshop.out_of_space": "Out of Space"
+    "chunkscanner.qshop.out_of_space": "Out of Space",
+    "chunkscanner.msg.qshop.enhance.applied": "Enhanced %d QShop record(s) with chat data.",
+    "chunkscanner.msg.qshop.enhance.manual.no_item": "No cached item available. Wait for a QShop chat item message in Manual mode first.",
+    "chunkscanner.msg.qshop.enhance.manual.item_expired": "Cached item expired (>%d s). Wait for a new QShop chat item message.",
+    "chunkscanner.msg.qshop.enhance.manual.manual_enhanced": "Enhanced record at (%d, %d, %d) with %s.",
+    "chunkscanner.msg.qshop.enhance.manual.no_world": "Cannot get world/player info.",
+    "chunkscanner.msg.qshop.enhance.manual.no_block": "Aim at a block before using /cs enhancement commit.",
+    "chunkscanner.msg.qshop.enhance.manual.no_scanner": "Scanner not initialized.",
+    "chunkscanner.msg.qshop.enhance.manual.not_found": "Target position not found in any scanned QShop record."
 }

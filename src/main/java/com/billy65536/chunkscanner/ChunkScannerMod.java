@@ -317,6 +317,16 @@ public class ChunkScannerMod implements ClientModInitializer {
 
         root.then(dbNode);
 
+        // ===== /cs enhancement =====
+        var enhancementNode = ClientCommandManager.literal("enhancement");
+        enhancementNode.then(ClientCommandManager.literal("commit")
+                .executes(ctx -> {
+                    Text result = QShopChatListener.commitManualEnhance(ctx.getSource().getClient());
+                    sendMsg(ctx.getSource().getClient(), result);
+                    return 1;
+                }));
+        root.then(enhancementNode);
+
         // /cs help
         root.then(ClientCommandManager.literal("help")
                 .executes(ctx -> { scanner.showHelp(ctx.getSource().getClient()); return 1; }));
