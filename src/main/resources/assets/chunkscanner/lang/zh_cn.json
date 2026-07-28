@@ -143,7 +143,7 @@
     "chunkscanner.qshop.out_of_stock": "缺货",
     "chunkscanner.qshop.out_of_space": "空间不足",
     "chunkscanner.msg.qshop.enhance.applied": "已为 %d 条 QShop 记录添加了增强信息。",
-    "chunkscanner.msg.qshop.enhance.manual.no_item": "没有可用的缓存物品。请先在 Manual 模式下等待聊天出现 QShop 物品信息。",
+    "chunkscanner.msg.qshop.enhance.manual.no_item": "没有可用的缓存物品。请先在 Non-Automatic / Semi-Automatic 模式下等待聊天出现 QShop 物品信息。",
     "chunkscanner.msg.qshop.enhance.manual.item_expired": "缓存物品已过期（超过 %d 秒）。请重新等待 QShop 聊天物品信息。",
     "chunkscanner.msg.qshop.enhance.manual.manual_enhanced": "已将 %s 增强到 (%d, %d, %d) 处的 QShop 记录。",
     "chunkscanner.msg.qshop.enhance.manual.no_world": "无法获取世界/玩家信息。",

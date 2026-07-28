@@ -21,18 +21,20 @@ package com.billy65536.chunkscanner.config;
 public class ChunkScannerConfig {
 
     /**
-     * 增强匹配隔离模式。
+     * 聊天增强信息获取模式。
      * <ul>
-     *   <li>{@link #Strict} — 时间窗口 + 商品名双重匹配（默认）</li>
-     *   <li>{@link #TimeOnly} — 仅时间窗口匹配，不检查商品名</li>
-     *   <li>{@link #Manual} — 从聊天捕获物品但不自动增强，由 /cs components qshop commitEnhancement 命令手动提交</li>
+     *   <li>{@link #StrictAutomatic} — 时间窗口 + 商品名双重匹配（默认）</li>
+     *   <li>{@link #WeakAutomatic} — 仅时间窗口匹配，不检查商品名</li>
+     *   <li>{@link #SemiAutomatic} — 从聊天捕获物品，收到消息后自动提交增强，不自动检测点击</li>
+     *   <li>{@link #NonAutomatic} — 从聊天捕获物品但不自动增强，由 /cs components qshop commitEnhancement 命令手动提交</li>
      *   <li>{@link #Disabled} — 禁用增强匹配</li>
      * </ul>
      */
     public enum EnhanceMatchMode {
-        Strict,
-        TimeOnly,
-        Manual,
+        StrictAutomatic,
+        WeakAutomatic,
+        SemiAutomatic,
+        NonAutomatic,
         Disabled
     }
 
@@ -94,10 +96,10 @@ public class ChunkScannerConfig {
     /** 高亮颜色渐变时长（毫秒）。增强数据在此时间内从绿色渐变到黄色。默认 86400000（1 天）。 */
     public long qshopHighlightGradientMs = 86400_000L;
 
-    /** 增强匹配隔离模式。默认 Strict。 */
-    public EnhanceMatchMode qshopEnhanceMatchMode = EnhanceMatchMode.Strict;
+    /** 聊天增强信息获取模式。默认 StrictAutomatic。 */
+    public EnhanceMatchMode qshopEnhanceMatchMode = EnhanceMatchMode.StrictAutomatic;
 
-    /** Manual 模式下缓存的聊天物品过期时间（毫秒）。默认 30000（30 秒）。 */
+    /** Non-Automatic / Semi-Automatic 模式下缓存的聊天物品过期时间（毫秒）。默认 30000（30 秒）。 */
     public long qshopManualEnhanceItemExpireMs = 30_000L;
 
     // ==================== 路径点默认值 ====================

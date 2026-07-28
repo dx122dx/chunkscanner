@@ -158,19 +158,19 @@ public class ClothConfigIntegration {
                 .build());
 
         qshop.addEntry(builder.entryBuilder()
-                .startEnumSelector(Text.literal("增强匹配隔离模式"),
+                .startEnumSelector(Text.literal("聊天增强信息获取模式"),
                         ChunkScannerConfig.EnhanceMatchMode.class,
                         ChunkScannerMod.CONFIG.qshopEnhanceMatchMode)
-                .setDefaultValue(ChunkScannerConfig.EnhanceMatchMode.Strict)
-                .setTooltip(Text.literal("Strict=时间窗口+商品名匹配，TimeOnly=仅时间窗口，Manual=仅手动提交，Disabled=禁用增强"))
+                .setDefaultValue(ChunkScannerConfig.EnhanceMatchMode.StrictAutomatic)
+                .setTooltip(Text.literal("StrictAutomatic=时间窗口+商品名匹配，WeakAutomatic=仅时间窗口，SemiAutomatic=捕获后自动提交，NonAutomatic=仅手动提交，Disabled=禁用增强"))
                 .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopEnhanceMatchMode = v)
                 .build());
 
         qshop.addEntry(builder.entryBuilder()
-                .startLongField(Text.literal("Manual 模式物品过期时间（毫秒）"),
+                .startLongField(Text.literal("Non-Automatic / Semi-Automatic 模式物品过期时间（毫秒）"),
                         ChunkScannerMod.CONFIG.qshopManualEnhanceItemExpireMs)
                 .setDefaultValue(30_000L).setMin(5_000L).setMax(300_000L)
-                .setTooltip(Text.literal("Manual 模式下缓存的聊天物品在此时间后过期。30000 = 30 秒"))
+                .setTooltip(Text.literal("Non-Automatic / Semi-Automatic 模式下缓存的聊天物品在此时间后过期。30000 = 30 秒"))
                 .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopManualEnhanceItemExpireMs = v)
                 .build());
 

@@ -170,8 +170,8 @@ public class ConfigLoader {
         try {
             return ChunkScannerConfig.EnhanceMatchMode.valueOf(s);
         } catch (IllegalArgumentException e) {
-            ChunkScannerMod.LOGGER.warn("Unknown enhance match mode '{}', falling back to Strict", s);
-            return ChunkScannerConfig.EnhanceMatchMode.Strict;
+            ChunkScannerMod.LOGGER.warn("Unknown enhance match mode '{}', falling back to StrictAutomatic", s);
+            return ChunkScannerConfig.EnhanceMatchMode.StrictAutomatic;
         }
     }
 }

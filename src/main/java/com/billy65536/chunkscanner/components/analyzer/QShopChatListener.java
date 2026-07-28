@@ -50,7 +50,12 @@ import com.billy65536.chunkscanner.core.IChunkDb;
  *
  * <h3>匹配策略</h3>
  * <p>通过追踪攻击键按下事件捕获点击位置。消息通过排水窗口 + 活跃组归属机制
- * 与对应点击关联，延迟消息不会错误归属到后续点击。</p>
+ * 与对应点击关联，延迟消息不会错误归属到后续点击。
+ * {@link com.billy65536.chunkscanner.config.ChunkScannerConfig.EnhanceMatchMode StrictAutomatic}
+ * 模式还通过商品名校验进一步过滤无关消息。</p>
+ *
+ * <p>Non-Automatic 和 Semi-Automatic 模式下不自动检测点击，而是从聊天捕获物品后
+ * 手动或自动提交增强。</p>
  *
  * <h3>线程安全</h3>
  * <p>聊天消息回调（GAME 通道）和按键检测在渲染线程执行，
@@ -145,9 +150,9 @@ public final class QShopChatListener {
     private static final AtomicInteger totalDetected = new AtomicInteger(0);
     private static final AtomicInteger totalEnhanced = new AtomicInteger(0);
 
-    // ==================== Manual 模式状态 ====================
+    // ==================== Non-Automatic / Semi-Automatic 模式状态 ====================
 
-    /** Manual 模式下最后一次从聊天消息中捕获的物品数据（不可变快照，消除 TOCTOU 竞态）。 */
+    /** Non-Automatic / Semi-Automatic 模式下最后一次从聊天消息中捕获的物品数据（不可变快照，消除 TOCTOU 竞态）。 */
     private static final class ManualItemSnapshot {
         final ChatItemExtractor.ExtractedItem item;
         final long capturedAt;
@@ -157,7 +162,7 @@ public final class QShopChatListener {
         }
     }
 
-    /** Manual 模式下最后一次从聊天消息中捕获的物品数据快照。写操作在回调线程，读操作在渲染线程。 */
+    /** Non-Automatic / Semi-Automatic 模式下最后一次从聊天消息中捕获的物品数据快照。写操作在回调线程，读操作在渲染线程。 */
     private static volatile ManualItemSnapshot lastManualSnapshot = null;
 
     private QShopChatListener() {}
@@ -246,10 +251,11 @@ public final class QShopChatListener {
             return;
         }
 
-        // Manual/Disabled 模式不自动检测点击
+        // NonAutomatic / SemiAutomatic / Disabled 模式不自动检测点击
         ChunkScannerConfig.EnhanceMatchMode mode = ChunkScannerMod.CONFIG.qshopEnhanceMatchMode;
         if (mode == ChunkScannerConfig.EnhanceMatchMode.Disabled
-                || mode == ChunkScannerConfig.EnhanceMatchMode.Manual) {
+                || mode == ChunkScannerConfig.EnhanceMatchMode.NonAutomatic
+                || mode == ChunkScannerConfig.EnhanceMatchMode.SemiAutomatic) {
             prevAttackPressed = false;
             return;
         }
@@ -330,18 +336,28 @@ public final class QShopChatListener {
 
         totalDetected.incrementAndGet();
 
-        // Manual 模式：仅捕获并存储最后一条物品消息，不自动匹配/增强
-        if (mode == ChunkScannerConfig.EnhanceMatchMode.Manual) {
+        // NonAutomatic 模式：仅捕获并存储最后一条物品消息，不自动匹配/增强
+        if (mode == ChunkScannerConfig.EnhanceMatchMode.NonAutomatic) {
             lastManualSnapshot = new ManualItemSnapshot(item, System.currentTimeMillis());
-            LOGGER.debug("Manual mode: captured item {} (total: {})",
+            LOGGER.debug("NonAutomatic mode: captured item {} (total: {})",
                     item.registryId(), totalDetected.get());
+            return;
+        }
+
+        // SemiAutomatic 模式：捕获物品并自动提交增强
+        if (mode == ChunkScannerConfig.EnhanceMatchMode.SemiAutomatic) {
+            lastManualSnapshot = new ManualItemSnapshot(item, System.currentTimeMillis());
+            LOGGER.debug("SemiAutomatic mode: captured item {}, auto-committing (total: {})",
+                    item.registryId(), totalDetected.get());
+            MinecraftClient client = MinecraftClient.getInstance();
+            client.execute(() -> commitManualEnhance(client));
             return;
         }
 
         PendingMessage msg = new PendingMessage(item, System.currentTimeMillis());
 
-        // TimeOnly 模式：仅用时间窗口匹配，跳过商品名校验
-        boolean checkItemName = (mode == ChunkScannerConfig.EnhanceMatchMode.Strict);
+        // WeakAutomatic 模式：仅用时间窗口匹配，跳过商品名校验
+        boolean checkItemName = (mode == ChunkScannerConfig.EnhanceMatchMode.StrictAutomatic);
 
         synchronized (pipelineLock) {
             // 优先匹配排水组（从新到旧遍历）
@@ -556,10 +572,10 @@ public final class QShopChatListener {
         return false;
     }
 
-    // ==================== Manual 模式命令 ====================
+    // ==================== Non-Automatic / Semi-Automatic 模式命令 ====================
 
     /**
-     * Manual 模式下，将最后捕获的物品增强到玩家准星指向的坐标。
+     * Non-Automatic / Semi-Automatic 模式下，将最后捕获的物品增强到玩家准星指向的坐标。
      *
      * <p>流程：获取玩家准星目标方块 → 在同维度活跃 qshop 会话的 DB 中查找 →
      * 用最后捕获的物品数据覆盖增强。</p>
@@ -633,7 +649,7 @@ public final class QShopChatListener {
     }
 
     /**
-     * Manual 模式下是否有可用的缓存物品。
+     * Non-Automatic / Semi-Automatic 模式下是否有可用的缓存物品。
      */
     public static boolean hasLastManualItem() {
         ManualItemSnapshot snapshot = lastManualSnapshot;

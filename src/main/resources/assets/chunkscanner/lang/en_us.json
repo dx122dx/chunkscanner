@@ -143,7 +143,7 @@
     "chunkscanner.qshop.out_of_stock": "Out of Stock",
     "chunkscanner.qshop.out_of_space": "Out of Space",
     "chunkscanner.msg.qshop.enhance.applied": "Enhanced %d QShop record(s) with chat data.",
-    "chunkscanner.msg.qshop.enhance.manual.no_item": "No cached item available. Wait for a QShop chat item message in Manual mode first.",
+    "chunkscanner.msg.qshop.enhance.manual.no_item": "No cached item available. Wait for a QShop chat item message in Non-Automatic / Semi-Automatic mode first.",
     "chunkscanner.msg.qshop.enhance.manual.item_expired": "Cached item expired (>%d s). Wait for a new QShop chat item message.",
     "chunkscanner.msg.qshop.enhance.manual.manual_enhanced": "Enhanced record at (%d, %d, %d) with %s.",
     "chunkscanner.msg.qshop.enhance.manual.no_world": "Cannot get world/player info.",
