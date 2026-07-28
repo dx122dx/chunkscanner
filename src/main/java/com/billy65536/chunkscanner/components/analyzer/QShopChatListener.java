@@ -634,6 +634,57 @@ public final class QShopChatListener {
         return (System.currentTimeMillis() - lastManualItemTime) <= ChunkScannerMod.CONFIG.qshopManualEnhanceItemExpireMs;
     }
 
+    /**
+     * 强制移除鼠标指向位置的所有 QShop 增强信息。
+     * <p>遍历所有活跃的 qshop 扫描会话，在子数据库中删除指向位置的增强记录。
+     * 不需要缓存物品，直接删除即可。
+     *
+     * @param client Minecraft 客户端实例
+     * @return 操作结果消息
+     */
+    public static Text commitManualRemoveEnhance(MinecraftClient client) {
+        if (client.player == null || client.world == null) {
+            return Text.translatable("chunkscanner.msg.qshop.enhance.manual.no_world").formatted(Formatting.RED);
+        }
+
+        // 获取准星目标方块
+        if (!(client.crosshairTarget instanceof net.minecraft.util.hit.BlockHitResult hit)) {
+            return Text.translatable("chunkscanner.msg.qshop.enhance.manual.no_block").formatted(Formatting.RED);
+        }
+
+        BlockPos targetPos = hit.getBlockPos();
+        String dimId = client.world.getRegistryKey().getValue().toString();
+
+        var scanner = ChunkScannerMod.getScanner();
+        if (scanner == null) {
+            return Text.translatable("chunkscanner.msg.qshop.enhance.manual.no_scanner").formatted(Formatting.RED);
+        }
+
+        boolean removedAny = false;
+        for (var session : scanner.getActiveSessions()) {
+            if (!"qshop".equals(session.analyzer.getId())) continue;
+
+            IChunkDb db = session.db;
+            if (db == null) continue;
+
+            QShopDbAdapter adapter = new QShopDbAdapter(db);
+            int cx = targetPos.getX() >> 4;
+            int cz = targetPos.getZ() >> 4;
+
+            if (adapter.removeEnhancement(dimId, cx, cz, targetPos.getX(), targetPos.getY(), targetPos.getZ())) {
+                removedAny = true;
+            }
+        }
+
+        if (removedAny) {
+            return Text.translatable("chunkscanner.msg.qshop.enhance.manual.removed",
+                            targetPos.getX(), targetPos.getY(), targetPos.getZ())
+                    .formatted(Formatting.GREEN);
+        }
+
+        return Text.translatable("chunkscanner.msg.qshop.enhance.manual.not_found").formatted(Formatting.RED);
+    }
+
     // ==================== 统计信息 ====================
 
     public static int getTotalDetected() {

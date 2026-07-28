@@ -1,25 +1,7 @@
 {
     "category.chunkscanner.main": "Chunk Scanner",
-
-    "chunkscanner.command.start.usage": "/cs task begin <name> [id] [config...]",
-    "chunkscanner.command.start.config.hint": "Config format: key=value ... (revisit=60 tasks=16 radius=1.0 wpName=Shop wpInit=$ wpGroup=shops)",
-    "chunkscanner.command.stop.usage": "/cs task stop <id>",
-    "chunkscanner.command.pause.usage": "/cs task pause <id>",
-    "chunkscanner.command.resume.usage": "/cs task resume <id>",
-    "chunkscanner.command.stopall.usage": "/cs task stopall",
-    "chunkscanner.command.status.usage": "/cs task status",
-    "chunkscanner.command.list.usage": "/cs task list",
-    "chunkscanner.command.help.usage": "/cs help",
-    "chunkscanner.command.config_gui.usage": "/cs config gui",
-    "chunkscanner.command.config_reload.usage": "/cs config reload [quick]",
-    "chunkscanner.command.task_gui.usage": "/cs task gui",
-    "chunkscanner.command.components_qshop_commit_enhancement.usage": "/cs components qshop commitEnhancement",
-    "chunkscanner.command.db_gui.usage": "/cs db gui",
-    "chunkscanner.command.db_open.usage": "/cs db open [id]",
-    "chunkscanner.command.db_delete.usage": "/cs db delete <id>",
-    "chunkscanner.command.db_reboot.usage": "/cs db reboot <id>",
-    "chunkscanner.command.db_list.usage": "/cs db list",
-
+    "chunkscanner.help.title": "======== ChunkScanner Help ========",
+    "chunkscanner.help.content": "ChunkScanner — Asynchronous progressive chunk scanner\n\nCommands:\n  /cs task begin <name> [id] [config...]  Start scan\n  /cs task stop <id>                     Stop scan\n  /cs task pause <id>                    Pause scan\n  /cs task resume <id>                   Resume scan\n  /cs task stopall                       Stop all\n  /cs task status                        View status\n  /cs task list                          List analyzers\n  /cs task gui                           Open task GUI\n  /cs task help                          Command help\n  /cs db gui                             Open database\n  /cs db open [id]                       Open specific DB\n  /cs db delete <id>                     Delete database\n  /cs db reboot <id>                     Reboot scan from DB\n  /cs db list                            List databases\n  /cs config gui                         Open config GUI\n  /cs config reload [quick]              Reload config\n  /cs components qshop commitEnhancement Commit QShop enhancement\n  /cs components qshop removeEnhancement Remove QShop enhancement\n  /cs help                               Help\n\nShortcut alias:\n  /csc qshop commitEnhancement          (= /cs components qshop commitEnhancement)\n  /csc qshop removeEnhancement          (= /cs components qshop removeEnhancement)\n\nConfig format (begin): key=value ... (revisit=60 tasks=16 radius=1.0 wpName=Shop wpInit=$ wpGroup=shops)\nID/name parameters support double-quoted values, e.g. \"my scan id\".",
     "chunkscanner.msg.not_in_world": "Cannot start: not in a world.",
     "chunkscanner.msg.unknown_analyzer": "Unknown analyzer: %s. Use /cs task list to see available.",
     "chunkscanner.msg.scan_exists": "Scan id \"%s\" already exists. Use /cs task stop %s first.",
@@ -39,7 +21,6 @@
     "chunkscanner.msg.db_deleted": "Database \"%s\" deleted.",
     "chunkscanner.msg.db_delete_failed": "Failed to delete database \"%s\": %s",
     "chunkscanner.msg.db_file_using": "Unable to delete database \"%s\": The database file is being used by an active scan session \"%s\". Please terminate the scan first.",
-    
     "chunkscanner.status.title": "======== ChunkScanner Status ========",
     "chunkscanner.status.stop_hint": "Click to stop this scan",
     "chunkscanner.status.pause_hint": "Click to pause/resume this scan",
@@ -50,15 +31,11 @@
     "chunkscanner.status.errors": "errors",
     "chunkscanner.status.rate": "rate",
     "chunkscanner.status.db": "records",
-
     "chunkscanner.list.title": "===== Registered Analyzers =====",
-    "chunkscanner.help.title": "======== ChunkScanner Help ========",
-
     "chunkscanner.analyzer.sign.name": "Sign Scanner",
     "chunkscanner.analyzer.sign.desc": "Scans all sign block entities in the chunk and records their text content.",
     "chunkscanner.analyzer.qshop.name": "QShop Scanner",
     "chunkscanner.analyzer.qshop.desc": "Scans QShop-format signs attached to containers (chests, barrels, etc.) and records owner, buy/sell mode, item, and price.",
-
     "chunkscanner.dbview.raw.name": "Raw Data",
     "chunkscanner.dbview.raw.desc": "Display all KV data in raw hexadecimal format. Works with all analyzers.",
     "chunkscanner.dbview.sign.name": "Sign View",
@@ -67,7 +44,6 @@
     "chunkscanner.dbview.qshop.desc": "Parse QShop data and display structured table with owner, buy/sell mode, item, and price. Only for QShop analyzer.",
     "chunkscanner.dbview.error.title": "Database parsing failed",
     "chunkscanner.dbview.error.msg": "An exception occurred while parsing the current database, possibly due to database corruption or an unreported error. Please contact the developer for assistance and provide the following exception information.",
-
     "chunkscanner.gui.title": "ChunkScanner Tasks",
     "chunkscanner.gui.id_hint": "Scan ID (auto-generated if empty)",
     "chunkscanner.gui.create": "Create",
@@ -79,7 +55,6 @@
     "chunkscanner.gui.scanned": "scanned",
     "chunkscanner.gui.found": "found",
     "chunkscanner.gui.errors": "errors",
-
     "chunkscanner.gui.database.title": "ChunkScanner Database",
     "chunkscanner.gui.database.file": "File",
     "chunkscanner.gui.database.size": "Size",
@@ -94,9 +69,7 @@
     "chunkscanner.gui.database.kv_title": "Database: %s",
     "chunkscanner.gui.database.records": "KV: %d  |  Chunk Meta: %d  |  Analyzer: %s  |  View: %s",
     "chunkscanner.gui.database.no_kv": "No KV records.",
-
     "chunkscanner.gui.filter.tooltip": "Open filter",
-
     "chunkscanner.filter.qshop.title": "QShop Filter",
     "chunkscanner.filter.apply": "Apply",
     "chunkscanner.filter.reset": "Reset",
@@ -113,14 +86,12 @@
     "chunkscanner.filter.sort.price_desc": "Price↓",
     "chunkscanner.filter.sort.qty_asc": "Qty↑",
     "chunkscanner.filter.sort.qty_desc": "Qty↓",
-
     "chunkscanner.confirm.stop.title": "Stop Scan",
     "chunkscanner.confirm.stop.message": "Are you sure you want to stop scan \"%s\"?",
     "chunkscanner.confirm.stop_all.title": "Stop All Scans",
     "chunkscanner.confirm.stop_all.message": "Are you sure you want to stop all scans?",
     "chunkscanner.confirm.delete_db.title": "Delete Database",
     "chunkscanner.confirm.delete_db.message": "Are you sure you want to delete database \"%s\"? This cannot be undone.",
-
     "chunkscanner.task_config.title": "Task Configuration",
     "chunkscanner.task_config.back": "<",
     "chunkscanner.task_config.start": "Start Scan",
@@ -138,17 +109,14 @@
     "chunkscanner.task_config.field.wpName": "WP Name:",
     "chunkscanner.task_config.field.wpInit": "WP Initials:",
     "chunkscanner.task_config.field.wpGroup": "WP Group:",
-
     "chunkscanner.label.id": "id",
     "chunkscanner.label.analyzer": "analyzer",
     "chunkscanner.label.revisit": "revisit",
     "chunkscanner.label.none": "(none)",
     "chunkscanner.label.paused": "[PAUSED]",
     "chunkscanner.label.rebooted": "(rebooted)",
-
     "chunkscanner.tooltip.create_waypoint": "Click to create Xaero waypoint",
     "chunkscanner.tooltip.print_coords": "Click to print coordinates to chat",
-
     "chunkscanner.tooltip.session.pending": "Pending: %d",
     "chunkscanner.tooltip.session.scanned": "Scanned: %d (No find: %d, Found: %d)",
     "chunkscanner.tooltip.session.past_revisit": "Past revisit: %d (No find: %d, Found: %d)",
@@ -156,21 +124,17 @@
     "chunkscanner.tooltip.session.total": "Total scanned: %d  |  Total found: %d  |  Total errors: %d",
     "chunkscanner.tooltip.session.db_rate": "Records: %d  |  Rate: %d/tick",
     "chunkscanner.tooltip.session.db_rate_paused": "Records: %d  |  Rate: %d/tick  [PAUSED]",
-
     "chunkscanner.waypoint.coordinates": "Coordinates: %s",
     "chunkscanner.waypoint.created": "Waypoint \"%s\" created → %s",
-
     "chunkscanner.filter.placeholder.dimension": "Dimension...",
     "chunkscanner.filter.placeholder.owner": "Owner...",
     "chunkscanner.filter.placeholder.item": "Item...",
-
     "chunkscanner.qshop.flag.id_recovered": "R - Item ID recovered via translation mapping",
     "chunkscanner.qshop.flag.enhanced": "E - Enhanced data extracted from chat",
     "chunkscanner.qshop.flag.shulker_expanded": "S - Shulker box expanded",
     "chunkscanner.qshop.flag.book": "B - Written book",
     "chunkscanner.qshop.shulker_unit_price": "Unit price ~ %s",
     "chunkscanner.qshop.enhancement_update_time": "Enhancement update time: %s",
-
     "chunkscanner.qshop.infinite": "Unlimited",
     "chunkscanner.qshop.out_of_stock": "Out of Stock",
     "chunkscanner.qshop.out_of_space": "Out of Space",
@@ -182,5 +146,6 @@
     "chunkscanner.msg.cloth_config_not_available": "Cloth Config API mod is not installed. Please install it to use the config GUI.",
     "chunkscanner.msg.qshop.enhance.manual.no_block": "Aim at a block before using /cs components qshop commitEnhancement.",
     "chunkscanner.msg.qshop.enhance.manual.no_scanner": "Scanner not initialized.",
-    "chunkscanner.msg.qshop.enhance.manual.not_found": "Target position not found in any scanned QShop record."
+    "chunkscanner.msg.qshop.enhance.manual.not_found": "Target position not found in any scanned QShop record.",
+    "chunkscanner.msg.qshop.enhance.manual.removed": "Removed QShop enhancement at (%d, %d, %d)."
 }

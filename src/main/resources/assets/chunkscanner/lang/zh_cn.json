@@ -1,25 +1,7 @@
 {
     "category.chunkscanner.main": "区块扫描器",
-
-    "chunkscanner.command.start.usage": "/cs task begin <分析器> [id] [配置...]",
-    "chunkscanner.command.start.config.hint": "配置格式: key=value ... (revisit=60 tasks=16 radius=1.0 wpName=商店 wpInit=¥ wpGroup=shops)",
-    "chunkscanner.command.stop.usage": "/cs task stop <id>",
-    "chunkscanner.command.pause.usage": "/cs task pause <id>",
-    "chunkscanner.command.resume.usage": "/cs task resume <id>",
-    "chunkscanner.command.stopall.usage": "/cs task stopall",
-    "chunkscanner.command.status.usage": "/cs task status",
-    "chunkscanner.command.list.usage": "/cs task list",
-    "chunkscanner.command.help.usage": "/cs help",
-    "chunkscanner.command.config_gui.usage": "/cs config gui",
-    "chunkscanner.command.config_reload.usage": "/cs config reload [quick]",
-    "chunkscanner.command.task_gui.usage": "/cs task gui",
-    "chunkscanner.command.components_qshop_commit_enhancement.usage": "/cs components qshop commitEnhancement",
-    "chunkscanner.command.db_gui.usage": "/cs db gui",
-    "chunkscanner.command.db_open.usage": "/cs db open [id]",
-    "chunkscanner.command.db_delete.usage": "/cs db delete <id>",
-    "chunkscanner.command.db_reboot.usage": "/cs db reboot <id>",
-    "chunkscanner.command.db_list.usage": "/cs db list",
-
+    "chunkscanner.help.title": "======== ChunkScanner 帮助 ========",
+    "chunkscanner.help.content": "ChunkScanner —— 异步渐进式区块扫描模组\n\n命令列表：\n  /cs task begin <分析器> [id] [配置...]  开始扫描\n  /cs task stop <id>                     停止扫描\n  /cs task pause <id>                    暂停扫描\n  /cs task resume <id>                   恢复扫描\n  /cs task stopall                       停止全部\n  /cs task status                        查看状态\n  /cs task list                          列出分析器\n  /cs task gui                           打开任务界面\n  /cs task help                          命令帮助\n  /cs db gui                             打开数据库\n  /cs db open [id]                       打开指定数据库\n  /cs db delete <id>                     删除数据库\n  /cs db reboot <id>                     从数据库恢复扫描\n  /cs db list                            列出数据库\n  /cs config gui                         打开配置界面\n  /cs config reload [quick]              重载配置\n  /cs components qshop commitEnhancement 提交QShop增强\n  /cs components qshop removeEnhancement 移除QShop增强\n  /cs help                               帮助\n\n快捷别名：\n  /csc qshop commitEnhancement           (= /cs components qshop commitEnhancement)\n  /csc qshop removeEnhancement           (= /cs components qshop removeEnhancement)\n\n配置格式 (begin): key=value ... (revisit=60 tasks=16 radius=1.0 wpName=商店 wpInit=¥ wpGroup=shops)\n参数中的 id/name 支持双引号包裹，如 \"my scan id\"。",
     "chunkscanner.msg.not_in_world": "无法启动：不在世界中。",
     "chunkscanner.msg.unknown_analyzer": "未知分析器：%s。使用 /cs task list 查看可用分析器。",
     "chunkscanner.msg.scan_exists": "扫描 id \"%s\" 已存在。请先使用 /cs task stop %s。",
@@ -39,7 +21,6 @@
     "chunkscanner.msg.db_deleted": "已删除数据库 \"%s\"。",
     "chunkscanner.msg.db_delete_failed": "删除数据库 \"%s\" 失败：%s",
     "chunkscanner.msg.db_file_using": "无法删除数据库 \"%s\": 该数据库文件正被活跃扫描会话 \"%s\" 使用，请先终止该扫描。",
-
     "chunkscanner.status.title": "======== ChunkScanner 状态 ========",
     "chunkscanner.status.stop_hint": "点击停止此扫描任务",
     "chunkscanner.status.pause_hint": "点击暂停/恢复此扫描任务",
@@ -50,15 +31,11 @@
     "chunkscanner.status.errors": "错误",
     "chunkscanner.status.rate": "速率",
     "chunkscanner.status.db": "记录",
-
     "chunkscanner.list.title": "========== 已注册的分析器 ==========",
-    "chunkscanner.help.title": "======== ChunkScanner 帮助 ========",
-
     "chunkscanner.analyzer.sign.name": "告示牌扫描",
     "chunkscanner.analyzer.sign.desc": "扫描区块内所有告示牌方块实体，记录告示牌文本内容。",
     "chunkscanner.analyzer.qshop.name": "QShop 商店扫描",
     "chunkscanner.analyzer.qshop.desc": "扫描贴在箱子/木桶等容器上的 QShop 格式告示牌，记录商店所有者、买卖模式、商品、价格等信息。",
-
     "chunkscanner.dbview.raw.name": "原始数据",
     "chunkscanner.dbview.raw.desc": "以原始十六进制格式展示所有 KV 数据。适用于所有分析器。",
     "chunkscanner.dbview.sign.name": "告示牌视图",
@@ -67,7 +44,6 @@
     "chunkscanner.dbview.qshop.desc": "解析 QShop 商店数据，以结构化表格展示所有者、买卖模式、商品、价格等信息。仅适用于 QShop 分析器。",
     "chunkscanner.dbview.error.title": "数据库解析失败",
     "chunkscanner.dbview.error.msg": "解析当前数据库时发生异常，可能是由于数据库损坏或尚未报告的错误。请联系开发者以获取帮助，并提供下列异常信息。",
-
     "chunkscanner.gui.title": "ChunkScanner 任务视图",
     "chunkscanner.gui.id_hint": "扫描 ID（留空则自动生成）",
     "chunkscanner.gui.create": "创建",
@@ -79,7 +55,6 @@
     "chunkscanner.gui.scanned": "已扫描",
     "chunkscanner.gui.found": "已发现",
     "chunkscanner.gui.errors": "错误",
-
     "chunkscanner.gui.database.title": "ChunkScanner 数据库",
     "chunkscanner.gui.database.file": "文件",
     "chunkscanner.gui.database.size": "大小",
@@ -94,9 +69,7 @@
     "chunkscanner.gui.database.kv_title": "数据库：%s",
     "chunkscanner.gui.database.records": "KV：%d  |  Chunk 元数据：%d  |  分析器：%s  |  视图：%s",
     "chunkscanner.gui.database.no_kv": "没有 KV 记录。",
-
     "chunkscanner.gui.filter.tooltip": "打开筛选条件",
-
     "chunkscanner.filter.qshop.title": "QShop 筛选",
     "chunkscanner.filter.apply": "应用",
     "chunkscanner.filter.reset": "重置",
@@ -113,14 +86,12 @@
     "chunkscanner.filter.sort.price_desc": "价格↓",
     "chunkscanner.filter.sort.qty_asc": "数量↑",
     "chunkscanner.filter.sort.qty_desc": "数量↓",
-
     "chunkscanner.confirm.stop.title": "停止扫描任务",
     "chunkscanner.confirm.stop.message": "确定要停止扫描任务 \"%s\" 吗？",
     "chunkscanner.confirm.stop_all.title": "停止全部扫描",
     "chunkscanner.confirm.stop_all.message": "确定要停止全部扫描任务吗？",
     "chunkscanner.confirm.delete_db.title": "删除数据库",
     "chunkscanner.confirm.delete_db.message": "确定要删除数据库 \"%s\" 吗？此操作不可撤销。",
-
     "chunkscanner.task_config.title": "任务配置",
     "chunkscanner.task_config.back": "<",
     "chunkscanner.task_config.start": "开始扫描",
@@ -138,17 +109,14 @@
     "chunkscanner.task_config.field.wpName": "路径点名:",
     "chunkscanner.task_config.field.wpInit": "路径点缩写:",
     "chunkscanner.task_config.field.wpGroup": "路径点组:",
-
     "chunkscanner.label.id": "id",
     "chunkscanner.label.analyzer": "analyzer",
     "chunkscanner.label.revisit": "revisit",
     "chunkscanner.label.none": "(无)",
     "chunkscanner.label.paused": "[已暂停]",
     "chunkscanner.label.rebooted": "(已恢复)",
-
     "chunkscanner.tooltip.create_waypoint": "点击创建 Xaero 路径点",
     "chunkscanner.tooltip.print_coords": "点击打印坐标到聊天框",
-
     "chunkscanner.tooltip.session.pending": "待扫描: %d",
     "chunkscanner.tooltip.session.scanned": "已扫描: %d (无发现: %d, 有发现: %d)",
     "chunkscanner.tooltip.session.past_revisit": "超重访: %d (无发现: %d, 有发现: %d)",
@@ -156,21 +124,17 @@
     "chunkscanner.tooltip.session.total": "累计已扫描: %d  |  累计发现: %d  |  累计错误: %d",
     "chunkscanner.tooltip.session.db_rate": "记录: %d  |  速率: %d/tick",
     "chunkscanner.tooltip.session.db_rate_paused": "记录: %d  |  速率: %d/tick  [已暂停]",
-
     "chunkscanner.waypoint.coordinates": "坐标: %s",
     "chunkscanner.waypoint.created": "已创建路径点 \"%s\" → %s",
-
     "chunkscanner.filter.placeholder.dimension": "维度...",
     "chunkscanner.filter.placeholder.owner": "所有者...",
     "chunkscanner.filter.placeholder.item": "商品...",
-
     "chunkscanner.qshop.flag.id_recovered": "R - 通过译名映射表恢复的物品ID",
     "chunkscanner.qshop.flag.enhanced": "E - 通过聊天提取的增强数据",
     "chunkscanner.qshop.flag.shulker_expanded": "S - 已展开的潜影盒",
     "chunkscanner.qshop.flag.book": "B - 成书",
     "chunkscanner.qshop.shulker_unit_price": "单价约 %s",
     "chunkscanner.qshop.enhancement_update_time": "增强信息更新时间：%s",
-
     "chunkscanner.qshop.infinite": "无限",
     "chunkscanner.qshop.out_of_stock": "缺货",
     "chunkscanner.qshop.out_of_space": "空间不足",
@@ -182,6 +146,6 @@
     "chunkscanner.msg.cloth_config_not_available": "未安装 Cloth Config API 模组，请先安装以使用配置 GUI。",
     "chunkscanner.msg.qshop.enhance.manual.no_block": "请对准一个方块再执行 /cs components qshop commitEnhancement。",
     "chunkscanner.msg.qshop.enhance.manual.no_scanner": "扫描器未初始化。",
-    "chunkscanner.msg.qshop.enhance.manual.not_found": "目标位置在已扫描的 QShop 记录中未找到。"
-
+    "chunkscanner.msg.qshop.enhance.manual.not_found": "目标位置在已扫描的 QShop 记录中未找到。",
+    "chunkscanner.msg.qshop.enhance.manual.removed": "已移除 (%d, %d, %d) 处的 QShop 增强信息。"
 }

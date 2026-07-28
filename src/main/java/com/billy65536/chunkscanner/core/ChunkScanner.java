@@ -105,24 +105,7 @@ public class ChunkScanner {
 
     private static final String KEY_LIST_TITLE       = PREFIX + ".list.title";
     private static final String KEY_HELP_TITLE       = PREFIX + ".help.title";
-
-    private static final String KEY_CMD_START_USAGE  = PREFIX + ".command.start.usage";
-    private static final String KEY_CMD_STOP_USAGE   = PREFIX + ".command.stop.usage";
-    private static final String KEY_CMD_STOPALL_USAGE= PREFIX + ".command.stopall.usage";
-    private static final String KEY_CMD_STATUS_USAGE = PREFIX + ".command.status.usage";
-    private static final String KEY_CMD_LIST_USAGE   = PREFIX + ".command.list.usage";
-    private static final String KEY_CMD_HELP_USAGE   = PREFIX + ".command.help.usage";
-    private static final String KEY_CMD_CONFIG_GUI_USAGE = PREFIX + ".command.config_gui.usage";
-    private static final String KEY_CMD_CONFIG_RELOAD_USAGE = PREFIX + ".command.config_reload.usage";
-    private static final String KEY_CMD_PAUSE_USAGE  = PREFIX + ".command.pause.usage";
-    private static final String KEY_CMD_RESUME_USAGE = PREFIX + ".command.resume.usage";
-    private static final String KEY_CMD_DB_GUI_USAGE  = PREFIX + ".command.db_gui.usage";
-    private static final String KEY_CMD_DB_OPEN_USAGE = PREFIX + ".command.db_open.usage";
-    private static final String KEY_CMD_DB_DELETE_USAGE=PREFIX + ".command.db_delete.usage";
-    private static final String KEY_CMD_DB_REBOOT_USAGE=PREFIX + ".command.db_reboot.usage";
-    private static final String KEY_CMD_DB_LIST_USAGE = PREFIX + ".command.db_list.usage";
-    private static final String KEY_CMD_TASK_GUI_USAGE= PREFIX + ".command.task_gui.usage";
-    private static final String KEY_CMD_COMPONENTS_QSHOP_COMMIT_USAGE = PREFIX + ".command.components_qshop_commit_enhancement.usage";
+    private static final String KEY_HELP_CONTENT     = PREFIX + ".help.content";
 
     // ==================== 命令接口 ====================
 
@@ -401,31 +384,7 @@ public class ChunkScanner {
     public void showHelp(MinecraftClient client) {
         CoreUtil.sendMsg(client, Text.translatable(KEY_HELP_TITLE)
                 .formatted(Formatting.GOLD, Formatting.BOLD));
-
-        String[][] helpLines = {
-            { KEY_CMD_START_USAGE,    "YELLOW" },
-            { KEY_CMD_STOP_USAGE,     "YELLOW" },
-            { KEY_CMD_PAUSE_USAGE,    "YELLOW" },
-            { KEY_CMD_RESUME_USAGE,   "YELLOW" },
-            { KEY_CMD_STOPALL_USAGE,  "YELLOW" },
-            { KEY_CMD_STATUS_USAGE,   "YELLOW" },
-            { KEY_CMD_LIST_USAGE,     "YELLOW" },
-            { KEY_CMD_TASK_GUI_USAGE, "YELLOW" },
-            { KEY_CMD_DB_GUI_USAGE,   "YELLOW" },
-            { KEY_CMD_DB_OPEN_USAGE,  "YELLOW" },
-            { KEY_CMD_DB_DELETE_USAGE,"YELLOW" },
-            { KEY_CMD_DB_REBOOT_USAGE,"YELLOW" },
-            { KEY_CMD_DB_LIST_USAGE,  "YELLOW" },
-            { KEY_CMD_CONFIG_GUI_USAGE,       "YELLOW" },
-            { KEY_CMD_CONFIG_RELOAD_USAGE,    "YELLOW" },
-            { KEY_CMD_COMPONENTS_QSHOP_COMMIT_USAGE, "YELLOW" },
-            { KEY_CMD_HELP_USAGE,     "YELLOW" },
-        };
-
-        for (String[] entry : helpLines) {
-            Formatting fmt = entry[1].equals("YELLOW") ? Formatting.YELLOW : Formatting.GRAY;
-            CoreUtil.sendMsg(client, Text.translatable(entry[0]).formatted(fmt));
-        }
+        CoreUtil.sendMsg(client, Text.translatable(KEY_HELP_CONTENT).formatted(Formatting.YELLOW));
     }
 
     // ==================== 热重载 ====================

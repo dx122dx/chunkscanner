@@ -212,7 +212,7 @@ public final class QShopHighlightRenderer {
         int b = color & 0xFF;
         int a = (color >> 24) & 0xFF;
 
-        double margin = 0.000; // 微偏移避免 z-fighting
+        double margin = -0.001; // 微偏移避免 z-fighting
         double x1 = bx - margin, y1 = by - margin, z1 = bz - margin;
         double x2 = bx + 1.0 + margin, y2 = by + 1.0 + margin, z2 = bz + 1.0 + margin;
 

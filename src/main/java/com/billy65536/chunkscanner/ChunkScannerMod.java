@@ -156,10 +156,11 @@ public class ChunkScannerMod implements ClientModInitializer {
         DbViewProviderRegistry.register(new SignDbViewProvider.Type());
         DbViewProviderRegistry.register(new QShopDbViewProvider.Type());
 
-        // 注册命令（/chunkscanner 和 /cs 两个别名）
+        // 注册命令（/chunkscanner 和 /cs 两个别名，/csc 作为 /cs components 的快捷入口）
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
             dispatcher.register(buildCommands("chunkscanner"));
             dispatcher.register(buildCommands("cs"));
+            dispatcher.register(buildCscCommands("csc"));
         });
 
         // 初始化 QShop 告示牌高亮渲染器
@@ -210,9 +211,9 @@ public class ChunkScannerMod implements ClientModInitializer {
         // config 格式: key=value [key=value ...]
         // 支持的键: revisit, tasks, initTasks, targetNs, flush, threads, radius
         taskNode.then(ClientCommandManager.literal("begin")
-                .then(ClientCommandManager.argument("analyzer", StringArgumentType.word())
+                .then(ClientCommandManager.argument("analyzer", StringArgumentType.string())
                         .suggests(ANALYZER_SUGGESTIONS)
-                        .then(ClientCommandManager.argument("id", StringArgumentType.word())
+                        .then(ClientCommandManager.argument("id", StringArgumentType.string())
                                 .then(ClientCommandManager.argument("config", StringArgumentType.string())
                                         .executes(ctx -> {
                                             String analyzerId = StringArgumentType.getString(ctx, "analyzer");
@@ -274,14 +275,14 @@ public class ChunkScannerMod implements ClientModInitializer {
         // /cs db open [id]
         dbNode.then(ClientCommandManager.literal("open")
                 .executes(ctx -> openDbGui(ctx.getSource().getClient(), null))
-                .then(ClientCommandManager.argument("id", StringArgumentType.word())
+                .then(ClientCommandManager.argument("id", StringArgumentType.string())
                         .suggests(DB_FILE_ID_SUGGESTIONS)
                         .executes(ctx -> openDbGui(ctx.getSource().getClient(),
                                 StringArgumentType.getString(ctx, "id")))));
 
         // /cs db delete <id>
         dbNode.then(ClientCommandManager.literal("delete")
-                .then(ClientCommandManager.argument("id", StringArgumentType.word())
+                .then(ClientCommandManager.argument("id", StringArgumentType.string())
                         .suggests(DB_FILE_ID_SUGGESTIONS)
                         .executes(ctx -> {
                             String id = StringArgumentType.getString(ctx, "id");
@@ -291,7 +292,7 @@ public class ChunkScannerMod implements ClientModInitializer {
 
         // /cs db reboot <id>
         dbNode.then(ClientCommandManager.literal("reboot")
-                .then(ClientCommandManager.argument("id", StringArgumentType.word())
+                .then(ClientCommandManager.argument("id", StringArgumentType.string())
                         .suggests(DB_FILE_ID_SUGGESTIONS)
                         .executes(ctx -> {
                             String id = StringArgumentType.getString(ctx, "id");
@@ -337,6 +338,12 @@ public class ChunkScannerMod implements ClientModInitializer {
                     sendMsg(ctx.getSource().getClient(), result);
                     return 1;
                 }));
+        qshopComponentNode.then(ClientCommandManager.literal("removeEnhancement")
+                .executes(ctx -> {
+                    Text result = QShopChatListener.commitManualRemoveEnhance(ctx.getSource().getClient());
+                    sendMsg(ctx.getSource().getClient(), result);
+                    return 1;
+                }));
         componentsNode.then(qshopComponentNode);
 
         root.then(componentsNode);
@@ -348,6 +355,31 @@ public class ChunkScannerMod implements ClientModInitializer {
         return root;
     }
 
+    // ==================== /csc 快捷命令 ====================
+
+    /** 构建 /csc 别名命令（等同于 /cs components）。 */
+    private com.mojang.brigadier.builder.LiteralArgumentBuilder<FabricClientCommandSource> buildCscCommands(String name) {
+        var root = ClientCommandManager.literal(name);
+
+        // /csc qshop commitEnhancement
+        var qshopNode = ClientCommandManager.literal("qshop");
+        qshopNode.then(ClientCommandManager.literal("commitEnhancement")
+                .executes(ctx -> {
+                    Text result = QShopChatListener.commitManualEnhance(ctx.getSource().getClient());
+                    sendMsg(ctx.getSource().getClient(), result);
+                    return 1;
+                }));
+        qshopNode.then(ClientCommandManager.literal("removeEnhancement")
+                .executes(ctx -> {
+                    Text result = QShopChatListener.commitManualRemoveEnhance(ctx.getSource().getClient());
+                    sendMsg(ctx.getSource().getClient(), result);
+                    return 1;
+                }));
+        root.then(qshopNode);
+
+        return root;
+    }
+
     // ==================== 命令辅助 ====================
 
     /** 简化带 id 参数的命令注册。 */
@@ -355,7 +387,7 @@ public class ChunkScannerMod implements ClientModInitializer {
             String literal, SuggestionProvider<FabricClientCommandSource> suggestions,
             java.util.function.BiConsumer<MinecraftClient, String> action) {
         return ClientCommandManager.literal(literal)
-                .then(ClientCommandManager.argument("id", StringArgumentType.word())
+                .then(ClientCommandManager.argument("id", StringArgumentType.string())
                         .suggests(suggestions)
                         .executes(ctx -> {
                             action.accept(ctx.getSource().getClient(),

@@ -269,6 +269,20 @@ public final class QShopDbAdapter {
         return results;
     }
 
+    /**
+     * 移除指定位置的聊天增强数据。
+     * <p>仅删除子数据库（id=1）中的增强记录，不影响主数据库。
+     *
+     * @return 存在增强数据并被删除时为 true
+     */
+    public boolean removeEnhancement(String dimId, int cx, int cz, int x, int y, int z) {
+        byte[] key = makeKey(dimId, cx, cz, x, y, z);
+        if (subDb.get(key) == null) return false;
+        subDb.remove(key);
+        LOGGER.info("QShopDbAdapter: removed enhancement at ({}, {}, {})", x, y, z);
+        return true;
+    }
+
     /** @return 底层主数据库实例（id=0） */
     public IChunkDb getMainDb() {
         return db;
