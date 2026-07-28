@@ -147,11 +147,18 @@ public final class QShopChatListener {
 
     // ==================== Manual 模式状态 ====================
 
-    /** Manual 模式下最后一次从聊天消息中捕获的物品数据。 */
-    private static volatile ChatItemExtractor.ExtractedItem lastManualItem = null;
+    /** Manual 模式下最后一次从聊天消息中捕获的物品数据（不可变快照，消除 TOCTOU 竞态）。 */
+    private static final class ManualItemSnapshot {
+        final ChatItemExtractor.ExtractedItem item;
+        final long capturedAt;
+        ManualItemSnapshot(ChatItemExtractor.ExtractedItem item, long capturedAt) {
+            this.item = item;
+            this.capturedAt = capturedAt;
+        }
+    }
 
-    /** lastManualItem 的捕获时间戳（毫秒）。 */
-    private static volatile long lastManualItemTime = 0;
+    /** Manual 模式下最后一次从聊天消息中捕获的物品数据快照。写操作在回调线程，读操作在渲染线程。 */
+    private static volatile ManualItemSnapshot lastManualSnapshot = null;
 
     private QShopChatListener() {}
 
@@ -325,8 +332,7 @@ public final class QShopChatListener {
 
         // Manual 模式：仅捕获并存储最后一条物品消息，不自动匹配/增强
         if (mode == ChunkScannerConfig.EnhanceMatchMode.Manual) {
-            lastManualItem = item;
-            lastManualItemTime = System.currentTimeMillis();
+            lastManualSnapshot = new ManualItemSnapshot(item, System.currentTimeMillis());
             LOGGER.debug("Manual mode: captured item {} (total: {})",
                     item.registryId(), totalDetected.get());
             return;
@@ -566,16 +572,16 @@ public final class QShopChatListener {
             return Text.translatable("chunkscanner.msg.qshop.enhance.manual.no_world").formatted(Formatting.RED);
         }
 
-        ChatItemExtractor.ExtractedItem item = lastManualItem;
-        if (item == null) {
+        ManualItemSnapshot snapshot = lastManualSnapshot;
+        if (snapshot == null || snapshot.item == null) {
             return Text.translatable("chunkscanner.msg.qshop.enhance.manual.no_item").formatted(Formatting.RED);
         }
 
-        // 检查物品是否过期
+        // 检查物品是否过期（快照保证时间戳与物品引用一致）
+        ChatItemExtractor.ExtractedItem item = snapshot.item;
         long expireMs = ChunkScannerMod.CONFIG.qshopManualEnhanceItemExpireMs;
         long now = System.currentTimeMillis();
-        if (now - lastManualItemTime > expireMs) {
-            lastManualItem = null;
+        if (now - snapshot.capturedAt > expireMs) {
             return Text.translatable("chunkscanner.msg.qshop.enhance.manual.item_expired", expireMs / 1000)
                     .formatted(Formatting.RED);
         }
@@ -630,8 +636,9 @@ public final class QShopChatListener {
      * Manual 模式下是否有可用的缓存物品。
      */
     public static boolean hasLastManualItem() {
-        if (lastManualItem == null) return false;
-        return (System.currentTimeMillis() - lastManualItemTime) <= ChunkScannerMod.CONFIG.qshopManualEnhanceItemExpireMs;
+        ManualItemSnapshot snapshot = lastManualSnapshot;
+        if (snapshot == null || snapshot.item == null) return false;
+        return (System.currentTimeMillis() - snapshot.capturedAt) <= ChunkScannerMod.CONFIG.qshopManualEnhanceItemExpireMs;
     }
 
     /**

@@ -25,7 +25,7 @@ public class ChunkScannerConfig {
      * <ul>
      *   <li>{@link #Strict} — 时间窗口 + 商品名双重匹配（默认）</li>
      *   <li>{@link #TimeOnly} — 仅时间窗口匹配，不检查商品名</li>
-     *   <li>{@link #Manual} - 从聊天捕获物品但不自动增强，由 /cs enhance commit 命令手动提交</li>
+     *   <li>{@link #Manual} — 从聊天捕获物品但不自动增强，由 /cs components qshop commitEnhancement 命令手动提交</li>
      *   <li>{@link #Disabled} — 禁用增强匹配</li>
      * </ul>
      */
