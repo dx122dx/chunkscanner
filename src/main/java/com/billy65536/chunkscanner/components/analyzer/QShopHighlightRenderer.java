@@ -45,8 +45,10 @@ public final class QShopHighlightRenderer {
     }
 
     private static void doRender(WorldRenderContext context) {
+        if (!ChunkScannerMod.CONFIG.qshopHighlightEnabled) return;
+
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.world == null) return;
+        if (client == null || client.player == null || client.world == null) return;
 
         long now = System.currentTimeMillis();
 
@@ -55,10 +57,6 @@ public final class QShopHighlightRenderer {
             lastCacheTime = now;
         }
 
-        if (!ChunkScannerMod.CONFIG.qshopHighlightEnabled) {
-            LOGGER.debug("Highlight disabled by config, skipping render");
-            return;
-        }
         if (cachedEntries.isEmpty()) return;
 
         renderHighlights(context, now);
@@ -214,7 +212,7 @@ public final class QShopHighlightRenderer {
         int b = color & 0xFF;
         int a = (color >> 24) & 0xFF;
 
-        double margin = 0.005; // 微偏移避免 z-fighting
+        double margin = 0.000; // 微偏移避免 z-fighting
         double x1 = bx - margin, y1 = by - margin, z1 = bz - margin;
         double x2 = bx + 1.0 + margin, y2 = by + 1.0 + margin, z2 = bz + 1.0 + margin;
 

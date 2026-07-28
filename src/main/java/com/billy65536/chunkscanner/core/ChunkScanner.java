@@ -20,7 +20,7 @@ import com.billy65536.chunkscanner.config.TaskConfig;
  * 异步渐进式区块扫描引擎 —— 支持同时运行多个独立扫描任务。
  *
  * 命令：
- *   /cs task begin [name] [id]
+ *   /cs task begin [name] [id] [config...]
  *   /cs task stop [id]
  *   /cs task pause [id]
  *   /cs task resume [id]
@@ -34,6 +34,10 @@ import com.billy65536.chunkscanner.config.TaskConfig;
  *   /cs db delete [id]
  *   /cs db reboot [id]
  *   /cs db list
+ *   /cs config gui
+ *   /cs config reload [quick]
+ *   /cs components qshop commitEnhancement
+ *   /cs help
  */
 public class ChunkScanner {
     final ChunkScannerConfig config;
@@ -108,7 +112,8 @@ public class ChunkScanner {
     private static final String KEY_CMD_STATUS_USAGE = PREFIX + ".command.status.usage";
     private static final String KEY_CMD_LIST_USAGE   = PREFIX + ".command.list.usage";
     private static final String KEY_CMD_HELP_USAGE   = PREFIX + ".command.help.usage";
-    private static final String KEY_CMD_RELOAD_USAGE = PREFIX + ".command.reload.usage";
+    private static final String KEY_CMD_CONFIG_GUI_USAGE = PREFIX + ".command.config_gui.usage";
+    private static final String KEY_CMD_CONFIG_RELOAD_USAGE = PREFIX + ".command.config_reload.usage";
     private static final String KEY_CMD_PAUSE_USAGE  = PREFIX + ".command.pause.usage";
     private static final String KEY_CMD_RESUME_USAGE = PREFIX + ".command.resume.usage";
     private static final String KEY_CMD_DB_GUI_USAGE  = PREFIX + ".command.db_gui.usage";
@@ -117,6 +122,7 @@ public class ChunkScanner {
     private static final String KEY_CMD_DB_REBOOT_USAGE=PREFIX + ".command.db_reboot.usage";
     private static final String KEY_CMD_DB_LIST_USAGE = PREFIX + ".command.db_list.usage";
     private static final String KEY_CMD_TASK_GUI_USAGE= PREFIX + ".command.task_gui.usage";
+    private static final String KEY_CMD_COMPONENTS_QSHOP_COMMIT_USAGE = PREFIX + ".command.components_qshop_commit_enhancement.usage";
 
     // ==================== 命令接口 ====================
 
@@ -410,7 +416,9 @@ public class ChunkScanner {
             { KEY_CMD_DB_DELETE_USAGE,"YELLOW" },
             { KEY_CMD_DB_REBOOT_USAGE,"YELLOW" },
             { KEY_CMD_DB_LIST_USAGE,  "YELLOW" },
-            { KEY_CMD_RELOAD_USAGE,   "YELLOW" },
+            { KEY_CMD_CONFIG_GUI_USAGE,       "YELLOW" },
+            { KEY_CMD_CONFIG_RELOAD_USAGE,    "YELLOW" },
+            { KEY_CMD_COMPONENTS_QSHOP_COMMIT_USAGE, "YELLOW" },
             { KEY_CMD_HELP_USAGE,     "YELLOW" },
         };
 
@@ -479,7 +487,9 @@ public class ChunkScanner {
             if (analyzer == null) continue;
             ScanSession session = new ScanSession(this, si.scanId, analyzer, si.taskConfig);
             sessions.put(si.scanId, session);
-            session.start(client);
+            if (client != null) {
+                session.start(client);
+            }
             restarted++;
         }
 

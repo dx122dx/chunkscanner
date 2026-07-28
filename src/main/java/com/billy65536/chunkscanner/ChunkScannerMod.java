@@ -18,6 +18,7 @@ import com.billy65536.chunkscanner.core.IChunkAnalyzer;
 import com.billy65536.chunkscanner.core.IChunkDb;
 import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
+import com.billy65536.chunkscanner.integration.ClothConfigIntegration;
 import com.billy65536.chunkscanner.screen.ChunkScannerScreen;
 import com.billy65536.chunkscanner.screen.DatabaseScreen;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -30,6 +31,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import org.slf4j.Logger;
@@ -198,26 +200,22 @@ public class ChunkScannerMod implements ClientModInitializer {
     private com.mojang.brigadier.builder.LiteralArgumentBuilder<FabricClientCommandSource> buildCommands(String name) {
         var root = ClientCommandManager.literal(name);
 
-        // /cs gui → 打开任务视图 GUI（不放在 root executes 以避免 [<args>] 提示）
-        root.then(ClientCommandManager.literal("gui")
-                .executes(ctx -> openTaskGui(ctx.getSource().getClient())));
-
         // ===== /cs task =====
         var taskNode = ClientCommandManager.literal("task");
 
         taskNode.then(ClientCommandManager.literal("gui")
                 .executes(ctx -> openTaskGui(ctx.getSource().getClient())));
 
-        // /cs task begin <name> [id] [config...]
+        // /cs task begin <analyzer> [id] [config...]
         // config 格式: key=value [key=value ...]
         // 支持的键: revisit, tasks, initTasks, targetNs, flush, threads, radius
         taskNode.then(ClientCommandManager.literal("begin")
-                .then(ClientCommandManager.argument("name", StringArgumentType.word())
+                .then(ClientCommandManager.argument("analyzer", StringArgumentType.word())
                         .suggests(ANALYZER_SUGGESTIONS)
                         .then(ClientCommandManager.argument("id", StringArgumentType.word())
                                 .then(ClientCommandManager.argument("config", StringArgumentType.string())
                                         .executes(ctx -> {
-                                            String analyzerId = StringArgumentType.getString(ctx, "id");
+                                            String analyzerId = StringArgumentType.getString(ctx, "analyzer");
                                             String scanId = StringArgumentType.getString(ctx, "id");
                                             String configStr = StringArgumentType.getString(ctx, "config");
                                             TaskConfig taskConfig = TaskConfig.parse(configStr);
@@ -265,13 +263,6 @@ public class ChunkScannerMod implements ClientModInitializer {
         taskNode.then(ClientCommandManager.literal("help")
                 .executes(ctx -> { scanner.showHelp(ctx.getSource().getClient()); return 1; }));
 
-        // /cs task reload [restart]
-        var taskReloadNode = ClientCommandManager.literal("reload")
-                .executes(ctx -> reloadConfig(ctx.getSource().getClient(), false));
-        taskReloadNode.then(ClientCommandManager.literal("restart")
-                .executes(ctx -> reloadConfig(ctx.getSource().getClient(), true)));
-        taskNode.then(taskReloadNode);
-
         root.then(taskNode);
 
         // ===== /cs db =====
@@ -317,26 +308,42 @@ public class ChunkScannerMod implements ClientModInitializer {
 
         root.then(dbNode);
 
-        // ===== /cs enhancement =====
-        var enhancementNode = ClientCommandManager.literal("enhancement");
-        enhancementNode.then(ClientCommandManager.literal("commit")
+        // ===== /cs config =====
+        var configNode = ClientCommandManager.literal("config");
+
+        // /cs config gui → 打开 Cloth Config 界面或提示未安装
+        configNode.then(ClientCommandManager.literal("gui")
+                .executes(ctx -> openConfigGui(ctx.getSource().getClient())));
+
+        // /cs config reload → 完全重启（重载配置 + 重建所有会话）
+        var configReloadNode = ClientCommandManager.literal("reload")
+                .executes(ctx -> reloadConfig(ctx.getSource().getClient(), true));
+        // /cs config reload quick → 轻量热重载
+        configReloadNode.then(ClientCommandManager.literal("quick")
+                .executes(ctx -> reloadConfig(ctx.getSource().getClient(), false)));
+        configNode.then(configReloadNode);
+
+        root.then(configNode);
+
+        // ===== /cs components =====
+        // 可扩展的组件命令入口：/cs components <componentName> <action> [args...]
+        var componentsNode = ClientCommandManager.literal("components");
+
+        // /cs components qshop commitEnhancement
+        var qshopComponentNode = ClientCommandManager.literal("qshop");
+        qshopComponentNode.then(ClientCommandManager.literal("commitEnhancement")
                 .executes(ctx -> {
                     Text result = QShopChatListener.commitManualEnhance(ctx.getSource().getClient());
                     sendMsg(ctx.getSource().getClient(), result);
                     return 1;
                 }));
-        root.then(enhancementNode);
+        componentsNode.then(qshopComponentNode);
+
+        root.then(componentsNode);
 
         // /cs help
         root.then(ClientCommandManager.literal("help")
                 .executes(ctx -> { scanner.showHelp(ctx.getSource().getClient()); return 1; }));
-
-        // /cs reload [restart]
-        var reloadNode = ClientCommandManager.literal("reload")
-                .executes(ctx -> reloadConfig(ctx.getSource().getClient(), false));
-        reloadNode.then(ClientCommandManager.literal("restart")
-                .executes(ctx -> reloadConfig(ctx.getSource().getClient(), true)));
-        root.then(reloadNode);
 
         return root;
     }
@@ -364,6 +371,17 @@ public class ChunkScannerMod implements ClientModInitializer {
 
     private static int openDbGui(MinecraftClient client, String scanId) {
         client.send(() -> client.setScreen(new DatabaseScreen(scanId)));
+        return 1;
+    }
+
+    private static int openConfigGui(MinecraftClient client) {
+        Screen configScreen = ClothConfigIntegration.createConfigScreen(client.currentScreen);
+        if (configScreen == null) {
+            sendMsg(client, Text.translatable("chunkscanner.msg.cloth_config_not_available")
+                    .formatted(Formatting.RED));
+        } else {
+            client.send(() -> client.setScreen(configScreen));
+        }
         return 1;
     }
 

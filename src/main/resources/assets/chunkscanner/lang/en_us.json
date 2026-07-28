@@ -10,8 +10,10 @@
     "chunkscanner.command.status.usage": "/cs task status",
     "chunkscanner.command.list.usage": "/cs task list",
     "chunkscanner.command.help.usage": "/cs help",
-    "chunkscanner.command.reload.usage": "/cs task reload [restart]",
+    "chunkscanner.command.config_gui.usage": "/cs config gui",
+    "chunkscanner.command.config_reload.usage": "/cs config reload [quick]",
     "chunkscanner.command.task_gui.usage": "/cs task gui",
+    "chunkscanner.command.components_qshop_commit_enhancement.usage": "/cs components qshop commitEnhancement",
     "chunkscanner.command.db_gui.usage": "/cs db gui",
     "chunkscanner.command.db_open.usage": "/cs db open [id]",
     "chunkscanner.command.db_delete.usage": "/cs db delete <id>",
@@ -177,7 +179,8 @@
     "chunkscanner.msg.qshop.enhance.manual.item_expired": "Cached item expired (>%d s). Wait for a new QShop chat item message.",
     "chunkscanner.msg.qshop.enhance.manual.manual_enhanced": "Enhanced record at (%d, %d, %d) with %s.",
     "chunkscanner.msg.qshop.enhance.manual.no_world": "Cannot get world/player info.",
-    "chunkscanner.msg.qshop.enhance.manual.no_block": "Aim at a block before using /cs enhancement commit.",
+    "chunkscanner.msg.cloth_config_not_available": "Cloth Config API mod is not installed. Please install it to use the config GUI.",
+    "chunkscanner.msg.qshop.enhance.manual.no_block": "Aim at a block before using /cs components qshop commitEnhancement.",
     "chunkscanner.msg.qshop.enhance.manual.no_scanner": "Scanner not initialized.",
     "chunkscanner.msg.qshop.enhance.manual.not_found": "Target position not found in any scanned QShop record."
 }

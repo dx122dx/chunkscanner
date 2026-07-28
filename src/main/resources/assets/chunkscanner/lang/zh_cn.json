@@ -10,8 +10,10 @@
     "chunkscanner.command.status.usage": "/cs task status",
     "chunkscanner.command.list.usage": "/cs task list",
     "chunkscanner.command.help.usage": "/cs help",
-    "chunkscanner.command.reload.usage": "/cs task reload [restart]",
+    "chunkscanner.command.config_gui.usage": "/cs config gui",
+    "chunkscanner.command.config_reload.usage": "/cs config reload [quick]",
     "chunkscanner.command.task_gui.usage": "/cs task gui",
+    "chunkscanner.command.components_qshop_commit_enhancement.usage": "/cs components qshop commitEnhancement",
     "chunkscanner.command.db_gui.usage": "/cs db gui",
     "chunkscanner.command.db_open.usage": "/cs db open [id]",
     "chunkscanner.command.db_delete.usage": "/cs db delete <id>",
@@ -177,7 +179,8 @@
     "chunkscanner.msg.qshop.enhance.manual.item_expired": "缓存物品已过期（超过 %d 秒）。请重新等待 QShop 聊天物品信息。",
     "chunkscanner.msg.qshop.enhance.manual.manual_enhanced": "已将 %s 增强到 (%d, %d, %d) 处的 QShop 记录。",
     "chunkscanner.msg.qshop.enhance.manual.no_world": "无法获取世界/玩家信息。",
-    "chunkscanner.msg.qshop.enhance.manual.no_block": "请对准一个方块再执行 /cs enhancement commit。",
+    "chunkscanner.msg.cloth_config_not_available": "未安装 Cloth Config API 模组，请先安装以使用配置 GUI。",
+    "chunkscanner.msg.qshop.enhance.manual.no_block": "请对准一个方块再执行 /cs components qshop commitEnhancement。",
     "chunkscanner.msg.qshop.enhance.manual.no_scanner": "扫描器未初始化。",
     "chunkscanner.msg.qshop.enhance.manual.not_found": "目标位置在已扫描的 QShop 记录中未找到。"
 
