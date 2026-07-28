@@ -38,6 +38,23 @@ public class ChunkScannerConfig {
         Disabled
     }
 
+    /**
+     * 聊天消息拦截方式，决定 QuickShop 物品消息通过哪个通道被捕获。
+     * <ul>
+     *   <li>{@link #SYSTEM_MIXIN} — 仅拦截系统聊天包（{@code ClientboundSystemChatPacket}，通过 Mixin）</li>
+     *   <li>{@link #GAME_EVENT} — 仅通过 Fabric {@code ClientReceiveMessageEvents.GAME} 事件</li>
+     *   <li>{@link #BOTH} — 双通道同时启用（默认，兼容旧行为）</li>
+     * </ul>
+     *
+     * <p>当服务器配置导致同一消息通过两个通道重复捕获时（如 Semi-Automatic 模式
+     * 重复提交增强），可切换为单一通道解决。</p>
+     */
+    public enum ChatInterceptionMethod {
+        SYSTEM_MIXIN,
+        GAME_EVENT,
+        BOTH
+    }
+
     // ==================== 扫描默认值 ====================
 
     /** 最小重访间隔（秒）。默认 60。 */
@@ -102,6 +119,9 @@ public class ChunkScannerConfig {
     /** Non-Automatic / Semi-Automatic 模式下缓存的聊天物品过期时间（毫秒）。默认 30000（30 秒）。 */
     public long qshopManualEnhanceItemExpireMs = 30_000L;
 
+    /** 聊天消息拦截方式。默认 BOTH（双通道）。 */
+    public ChatInterceptionMethod qshopChatInterceptionMethod = ChatInterceptionMethod.BOTH;
+
     // ==================== 路径点默认值 ====================
 
     /** 路径点名称。默认 "选中的坐标点"。 */
@@ -135,6 +155,7 @@ public class ChunkScannerConfig {
         c.qshopHighlightGradientMs = this.qshopHighlightGradientMs;
         c.qshopEnhanceMatchMode = this.qshopEnhanceMatchMode;
         c.qshopManualEnhanceItemExpireMs = this.qshopManualEnhanceItemExpireMs;
+        c.qshopChatInterceptionMethod = this.qshopChatInterceptionMethod;
         c.waypointName = this.waypointName;
         c.waypointInitials = this.waypointInitials;
         c.waypointGroup = this.waypointGroup;

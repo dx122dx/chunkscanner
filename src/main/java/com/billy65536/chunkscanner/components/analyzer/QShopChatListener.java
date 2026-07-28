@@ -51,7 +51,7 @@ import com.billy65536.chunkscanner.core.IChunkDb;
  * <h3>匹配策略</h3>
  * <p>通过追踪攻击键按下事件捕获点击位置。消息通过排水窗口 + 活跃组归属机制
  * 与对应点击关联，延迟消息不会错误归属到后续点击。
- * {@link com.billy65536.chunkscanner.config.ChunkScannerConfig.EnhanceMatchMode StrictAutomatic}
+ * {@link com.billy65536.chunkscanner.config.ChunkScannerConfig.EnhanceMatchMode#StrictAutomatic StrictAutomatic}
  * 模式还通过商品名校验进一步过滤无关消息。</p>
  *
  * <p>Non-Automatic 和 Semi-Automatic 模式下不自动检测点击，而是从聊天捕获物品后
@@ -178,19 +178,23 @@ public final class QShopChatListener {
         registered = true;
 
         // 系统消息（QuickShop 通过 Bukkit player.sendMessage() 发送，走 ClientboundSystemChatPacket）
-        // 通过 SystemChatMixin 注入拦截，此处无需额外注册
+        // 通过 SystemChatMixin 注入拦截（根据 qshopChatInterceptionMethod 配置决定是否转发）
 
-        // GAME 消息作为兜底（某些服务器配置下 QuickShop 可能走此通道）
-        ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
-            onChatMessage(message);
-        });
+        // GAME 消息通道：仅在 GAME_EVENT 或 BOTH 模式下注册
+        ChunkScannerConfig.ChatInterceptionMethod method = ChunkScannerMod.CONFIG.qshopChatInterceptionMethod;
+        if (method == ChunkScannerConfig.ChatInterceptionMethod.GAME_EVENT
+                || method == ChunkScannerConfig.ChatInterceptionMethod.BOTH) {
+            ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
+                onChatMessage(message);
+            });
+        }
 
         // 在 START_CLIENT_TICK 检测攻击键按下（wasPressed 已被 MC 消费，手动追踪 isPressed 状态变化）
         ClientTickEvents.START_CLIENT_TICK.register(client -> {
             detectSignClick(client);
         });
 
-        LOGGER.info("QShop chat listener registered (system chat via mixin + game msg + key press detection)");
+        LOGGER.info("QShop chat listener registered (interception: {}, key press detection)", method);
     }
 
     /**

@@ -107,6 +107,8 @@ public class ConfigLoader {
                 config.qshopEnhanceMatchMode = parseEnhanceMatchMode(defaults.get("qshopEnhanceMatchMode").getAsString());
             if (defaults.has("qshopManualEnhanceItemExpireMs"))
                 config.qshopManualEnhanceItemExpireMs = defaults.get("qshopManualEnhanceItemExpireMs").getAsLong();
+            if (defaults.has("qshopChatInterceptionMethod"))
+                config.qshopChatInterceptionMethod = parseChatInterceptionMethod(defaults.get("qshopChatInterceptionMethod").getAsString());
 
             // 读取路径点默认值
             if (json.has("waypoint")) {
@@ -149,6 +151,7 @@ public class ConfigLoader {
             defaults.addProperty("qshopHighlightGradientMs", config.qshopHighlightGradientMs);
             defaults.addProperty("qshopEnhanceMatchMode", config.qshopEnhanceMatchMode.name());
             defaults.addProperty("qshopManualEnhanceItemExpireMs", config.qshopManualEnhanceItemExpireMs);
+            defaults.addProperty("qshopChatInterceptionMethod", config.qshopChatInterceptionMethod.name());
             json.add("defaults", defaults);
 
             // 路径点默认值
@@ -165,13 +168,37 @@ public class ConfigLoader {
         }
     }
 
-    /** 安全解析增强匹配模式字符串，无法识别时回退默认值。 */
+    /** 安全解析增强匹配模式字符串，无法识别时回退默认值。兼容旧版枚举名。 */
     private static ChunkScannerConfig.EnhanceMatchMode parseEnhanceMatchMode(String s) {
+        if (s == null) {
+            ChunkScannerMod.LOGGER.warn("Enhance match mode is null, falling back to StrictAutomatic");
+            return ChunkScannerConfig.EnhanceMatchMode.StrictAutomatic;
+        }
+        // 向后兼容：映射旧枚举名到新枚举名
+        switch (s) {
+            case "Strict": return ChunkScannerConfig.EnhanceMatchMode.StrictAutomatic;
+            case "TimeOnly": return ChunkScannerConfig.EnhanceMatchMode.WeakAutomatic;
+            case "Manual": return ChunkScannerConfig.EnhanceMatchMode.NonAutomatic;
+        }
         try {
             return ChunkScannerConfig.EnhanceMatchMode.valueOf(s);
         } catch (IllegalArgumentException e) {
             ChunkScannerMod.LOGGER.warn("Unknown enhance match mode '{}', falling back to StrictAutomatic", s);
             return ChunkScannerConfig.EnhanceMatchMode.StrictAutomatic;
+        }
+    }
+
+    /** 安全解析聊天拦截方式字符串，无法识别时回退默认值。 */
+    private static ChunkScannerConfig.ChatInterceptionMethod parseChatInterceptionMethod(String s) {
+        if (s == null) {
+            ChunkScannerMod.LOGGER.warn("Chat interception method is null, falling back to BOTH");
+            return ChunkScannerConfig.ChatInterceptionMethod.BOTH;
+        }
+        try {
+            return ChunkScannerConfig.ChatInterceptionMethod.valueOf(s);
+        } catch (IllegalArgumentException e) {
+            ChunkScannerMod.LOGGER.warn("Unknown chat interception method '{}', falling back to BOTH", s);
+            return ChunkScannerConfig.ChatInterceptionMethod.BOTH;
         }
     }
 }

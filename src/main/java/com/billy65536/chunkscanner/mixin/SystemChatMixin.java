@@ -1,6 +1,8 @@
 package com.billy65536.chunkscanner.mixin;
 
+import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.components.analyzer.QShopChatListener;
+import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.network.packet.s2c.play.ChatMessageS2CPacket;
 import net.minecraft.text.Text;
@@ -23,6 +25,10 @@ public class SystemChatMixin {
 
     @Inject(method = "onChatMessage", at = @At("HEAD"))
     private void chunkscanner$onSystemChatMessage(ChatMessageS2CPacket packet, CallbackInfo ci) {
+        // 仅在 SYSTEM_MIXIN 或 BOTH 模式下转发
+        ChunkScannerConfig.ChatInterceptionMethod method = ChunkScannerMod.CONFIG.qshopChatInterceptionMethod;
+        if (method == ChunkScannerConfig.ChatInterceptionMethod.GAME_EVENT) return;
+
         Text text = packet.unsignedContent();
         if (text == null && packet.body() != null) {
             text = Text.literal(packet.body().content());

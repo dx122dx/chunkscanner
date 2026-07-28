@@ -167,6 +167,15 @@ public class ClothConfigIntegration {
                 .build());
 
         qshop.addEntry(builder.entryBuilder()
+                .startEnumSelector(Text.literal("聊天消息拦截方式"),
+                        ChunkScannerConfig.ChatInterceptionMethod.class,
+                        ChunkScannerMod.CONFIG.qshopChatInterceptionMethod)
+                .setDefaultValue(ChunkScannerConfig.ChatInterceptionMethod.BOTH)
+                .setTooltip(Text.literal("SYSTEM_MIXIN=仅Mixin拦截系统聊天包，GAME_EVENT=仅Fabric事件，BOTH=双通道。若消息被重复捕获可切换为单一通道"))
+                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopChatInterceptionMethod = v)
+                .build());
+
+        qshop.addEntry(builder.entryBuilder()
                 .startLongField(Text.literal("Non-Automatic / Semi-Automatic 模式物品过期时间（毫秒）"),
                         ChunkScannerMod.CONFIG.qshopManualEnhanceItemExpireMs)
                 .setDefaultValue(30_000L).setMin(5_000L).setMax(300_000L)
