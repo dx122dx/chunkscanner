@@ -1,5 +1,6 @@
 package com.billy65536.chunkscanner.gui.layout;
 
+import net.minecraft.client.font.TextRenderer;
 import net.minecraft.item.ItemStack;
 
 /**
@@ -10,4 +11,5 @@ import net.minecraft.item.ItemStack;
  */
 public record ItemCell(ItemStack stack) implements IContentCell {
     public static ItemCell of(ItemStack stack) { return new ItemCell(stack); }
+    public int cellWidth(TextRenderer renderer) { return 18; }
 }

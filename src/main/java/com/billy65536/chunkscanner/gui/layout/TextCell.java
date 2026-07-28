@@ -2,6 +2,7 @@ package com.billy65536.chunkscanner.gui.layout;
 
 import java.util.Arrays;
 
+import net.minecraft.client.font.TextRenderer;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
@@ -39,4 +40,6 @@ public record TextCell(Text text, Text[] tooltip, int color) implements IContent
     public static TextCell of(String string) {
         return TextCell.of(Text.literal(string));
     }
+
+    public int cellWidth(TextRenderer renderer) { return renderer.getWidth(text); }
 }

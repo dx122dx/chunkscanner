@@ -14,7 +14,8 @@ import net.minecraft.util.Formatting;
  * 筛选条件：
  *   - 模式：全部 / 出售 / 收购
  *   - 排序：无 / 价格↑↓ / 数量↑↓
- *   - 维度、所有者、商品名：子串匹配（留空 = 不筛选）
+ *   - 维度、所有者、商品名、物品ID：子串匹配（留空 = 不筛选）
+ *   - 条目标志：R/E/S/B 字符匹配（留空 = 不筛选）
  *   - 价格范围：最小/最大（整数，留空 = 不限制）
  *   - 数量范围：最小/最大（整数，留空 = 不限制）
  *
@@ -28,7 +29,7 @@ public class QShopFilterScreen extends Screen {
     // ==================== 布局常量 ====================
 
     private static final int DIALOG_W = 268;
-    private static final int DIALOG_H = 208;
+    private static final int DIALOG_H = 240;
     private static final int FIELD_W = 124;
     private static final int FIELD_H = 16;
     private static final int MODE_BTN_W = 18;
@@ -43,6 +44,8 @@ public class QShopFilterScreen extends Screen {
     private PlaceholderTextField dimField;
     private PlaceholderTextField ownerField;
     private PlaceholderTextField itemField;
+    private PlaceholderTextField itemIdField;
+    private PlaceholderTextField flagsField;
     private PlaceholderTextField priceMinField;
     private PlaceholderTextField priceMaxField;
     private PlaceholderTextField qtyMinField;
@@ -51,6 +54,8 @@ public class QShopFilterScreen extends Screen {
     private ButtonWidget dimModeButton;
     private ButtonWidget ownerModeButton;
     private ButtonWidget itemModeButton;
+    private ButtonWidget itemIdModeButton;
+    private ButtonWidget flagsModeButton;
 
     // ==================== 状态 ====================
 
@@ -59,9 +64,13 @@ public class QShopFilterScreen extends Screen {
     private String dimFilter;
     private String ownerFilter;
     private String itemFilter;
+    private String itemIdFilter;
+    private String flagsFilter;
     private int dimFilterMode;
     private int ownerFilterMode;
     private int itemFilterMode;
+    private int itemIdFilterMode;
+    private int flagsFilterMode;
     private String priceMinStr;
     private String priceMaxStr;
     private String qtyMinStr;
@@ -78,9 +87,13 @@ public class QShopFilterScreen extends Screen {
         this.dimFilter = provider.getDimFilter() != null ? provider.getDimFilter() : "";
         this.ownerFilter = provider.getOwnerFilter() != null ? provider.getOwnerFilter() : "";
         this.itemFilter = provider.getItemFilter() != null ? provider.getItemFilter() : "";
+        this.itemIdFilter = provider.getItemIdFilter() != null ? provider.getItemIdFilter() : "";
+        this.flagsFilter = provider.getFlagsFilter() != null ? provider.getFlagsFilter() : "";
         this.dimFilterMode = provider.getDimFilterMode();
         this.ownerFilterMode = provider.getOwnerFilterMode();
         this.itemFilterMode = provider.getItemFilterMode();
+        this.itemIdFilterMode = provider.getItemIdFilterMode();
+        this.flagsFilterMode = provider.getFlagsFilterMode();
         this.priceMinStr = priceToDisplayString(provider.getPriceMinFilter());
         this.priceMaxStr = priceToDisplayString(provider.getPriceMaxFilter());
         this.qtyMinStr = provider.getQtyMinFilter() != null
@@ -141,6 +154,22 @@ public class QShopFilterScreen extends Screen {
                 }).dimensions(modeBtnX, fy + ROW_SPACING * 2, MODE_BTN_W, FIELD_H).build();
         addDrawableChild(itemModeButton);
 
+        itemIdModeButton = ButtonWidget.builder(
+                getPatternModeText(itemIdFilterMode),
+                btn -> {
+                    itemIdFilterMode = (itemIdFilterMode + 1) % 4;
+                    btn.setMessage(getPatternModeText(itemIdFilterMode));
+                }).dimensions(modeBtnX, fy + ROW_SPACING * 3, MODE_BTN_W, FIELD_H).build();
+        addDrawableChild(itemIdModeButton);
+
+        flagsModeButton = ButtonWidget.builder(
+                getFlagsModeText(flagsFilterMode),
+                btn -> {
+                    flagsFilterMode = (flagsFilterMode + 1) % 3;
+                    btn.setMessage(getFlagsModeText(flagsFilterMode));
+                }).dimensions(modeBtnX, fy + ROW_SPACING * 4, MODE_BTN_W, FIELD_H).build();
+        addDrawableChild(flagsModeButton);
+
         // 文本输入字段
         dimField = createTextField(fieldX, fy, dimFilter,
                 Text.translatable("chunkscanner.filter.placeholder.dimension").getString());
@@ -148,13 +177,21 @@ public class QShopFilterScreen extends Screen {
                 Text.translatable("chunkscanner.filter.placeholder.owner").getString());
         itemField = createTextField(fieldX, fy + ROW_SPACING * 2, itemFilter,
                 Text.translatable("chunkscanner.filter.placeholder.item").getString());
+        itemIdField = createTextField(fieldX, fy + ROW_SPACING * 3, itemIdFilter,
+                Text.translatable("chunkscanner.filter.placeholder.item_id").getString());
+        flagsField = createTextField(fieldX, fy + ROW_SPACING * 4, flagsFilter,
+                Text.translatable("chunkscanner.filter.placeholder.flags").getString());
+        flagsField.setMaxLength(8);
+        flagsField.setTextPredicate(t -> t.matches("[RESBresb]*"));
 
         addDrawableChild(dimField);
         addDrawableChild(ownerField);
         addDrawableChild(itemField);
+        addDrawableChild(itemIdField);
+        addDrawableChild(flagsField);
 
         // === 价格范围（两个小字段，用 "~" 分隔） ===
-        int rangeY = fy + ROW_SPACING * 3;
+        int rangeY = fy + ROW_SPACING * 5;
         int rangeFieldRight = dialogLeft + DIALOG_W - LEFT_MARGIN;
         priceMinField = createNumberField(rangeFieldRight - RANGE_FIELD_W * 2 - 16, rangeY,
                 RANGE_FIELD_W, priceMinStr);
@@ -258,6 +295,19 @@ public class QShopFilterScreen extends Screen {
         };
     }
 
+    /** flags 筛选模式（3 种：含/除/全，无正则）。 */
+    private Text getFlagsModeText(int mode) {
+        return switch (mode) {
+            case QShopDbViewProvider.PATTERN_CONTAINS ->
+                    Text.literal("含").formatted(Formatting.WHITE);
+            case QShopDbViewProvider.PATTERN_EXCLUDE ->
+                    Text.literal("除").formatted(Formatting.RED);
+            case QShopDbViewProvider.PATTERN_EXACT ->
+                    Text.literal("全").formatted(Formatting.YELLOW);
+            default -> Text.literal("?").formatted(Formatting.GRAY);
+        };
+    }
+
     // ==================== 渲染 ====================
 
     @Override
@@ -286,16 +336,18 @@ public class QShopFilterScreen extends Screen {
         drawLabel(context, "chunkscanner.filter.field.dimension", labelX, labelY);
         drawLabel(context, "chunkscanner.filter.field.owner", labelX, labelY + ROW_SPACING);
         drawLabel(context, "chunkscanner.filter.field.item", labelX, labelY + ROW_SPACING * 2);
-        drawLabel(context, "chunkscanner.filter.field.price_range", labelX, labelY + ROW_SPACING * 3);
-        drawLabel(context, "chunkscanner.filter.field.qty_range", labelX, labelY + ROW_SPACING * 4);
+        drawLabel(context, "chunkscanner.filter.field.item_id", labelX, labelY + ROW_SPACING * 3);
+        drawLabel(context, "chunkscanner.filter.field.flags", labelX, labelY + ROW_SPACING * 4);
+        drawLabel(context, "chunkscanner.filter.field.price_range", labelX, labelY + ROW_SPACING * 5);
+        drawLabel(context, "chunkscanner.filter.field.qty_range", labelX, labelY + ROW_SPACING * 6);
 
         // 范围的 "~" 分隔符
         int rangeFieldRight = dialogLeft + DIALOG_W - LEFT_MARGIN;
         int tildeX = rangeFieldRight - RANGE_FIELD_W - 14;
         context.drawTextWithShadow(textRenderer, Text.literal("~"),
-                tildeX, labelY + ROW_SPACING * 3, 0xFFAAAAAA);
+                tildeX, labelY + ROW_SPACING * 5, 0xFFAAAAAA);
         context.drawTextWithShadow(textRenderer, Text.literal("~"),
-                tildeX, labelY + ROW_SPACING * 4, 0xFFAAAAAA);
+                tildeX, labelY + ROW_SPACING * 6, 0xFFAAAAAA);
 
         super.render(context, mouseX, mouseY, delta);
     }
@@ -316,6 +368,10 @@ public class QShopFilterScreen extends Screen {
         provider.setOwnerFilterMode(ownerFilterMode);
         provider.setItemFilter(trimToNull(itemField.getText()));
         provider.setItemFilterMode(itemFilterMode);
+        provider.setItemIdFilter(trimToNull(itemIdField.getText()));
+        provider.setItemIdFilterMode(itemIdFilterMode);
+        provider.setFlagsFilter(trimToNull(flagsField.getText()));
+        provider.setFlagsFilterMode(flagsFilterMode);
 
         // 价格范围：解析浮点数并乘以 100 存储（内部以货币最小单位表示）
         provider.setPriceMinFilter(parsePriceInt(priceMinField.getText()));
@@ -338,6 +394,10 @@ public class QShopFilterScreen extends Screen {
         ownerFilterMode = QShopDbViewProvider.PATTERN_CONTAINS;
         itemField.setText("");
         itemFilterMode = QShopDbViewProvider.PATTERN_CONTAINS;
+        itemIdField.setText("");
+        itemIdFilterMode = QShopDbViewProvider.PATTERN_CONTAINS;
+        flagsField.setText("");
+        flagsFilterMode = QShopDbViewProvider.PATTERN_CONTAINS;
         priceMinField.setText("");
         priceMaxField.setText("");
         qtyMinField.setText("");
@@ -347,6 +407,8 @@ public class QShopFilterScreen extends Screen {
         if (dimModeButton != null) dimModeButton.setMessage(getPatternModeText(dimFilterMode));
         if (ownerModeButton != null) ownerModeButton.setMessage(getPatternModeText(ownerFilterMode));
         if (itemModeButton != null) itemModeButton.setMessage(getPatternModeText(itemFilterMode));
+        if (itemIdModeButton != null) itemIdModeButton.setMessage(getPatternModeText(itemIdFilterMode));
+        if (flagsModeButton != null) flagsModeButton.setMessage(getFlagsModeText(flagsFilterMode));
     }
 
     @Override

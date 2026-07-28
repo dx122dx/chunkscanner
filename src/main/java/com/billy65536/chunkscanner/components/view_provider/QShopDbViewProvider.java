@@ -81,16 +81,21 @@ public class QShopDbViewProvider implements IDbViewProvider {
     private String dimFilter = null;
     private String ownerFilter = null;
     private String itemFilter = null;
+    private String itemIdFilter = null;
+    private String flagsFilter = null;
 
     /** 各文本筛选字段的匹配模式。 */
     private int dimFilterMode = PATTERN_CONTAINS;
     private int ownerFilterMode = PATTERN_CONTAINS;
     private int itemFilterMode = PATTERN_CONTAINS;
+    private int itemIdFilterMode = PATTERN_CONTAINS;
+    private int flagsFilterMode = PATTERN_CONTAINS; // 对 flag: 含=任一匹配, 除=全不匹配, 全=全匹配
 
     /** 预编译的正则 Pattern 缓存（仅在 PATTERN_REGEX 模式下非 null）。 */
     private Pattern compiledDimPattern = null;
     private Pattern compiledOwnerPattern = null;
     private Pattern compiledItemPattern = null;
+    private Pattern compiledItemIdPattern = null;
 
     /** 价格范围筛选（null = 不限制）。内部以货币最小单位存储（乘以 100）。 */
     private Integer priceMinFilter = null;
@@ -125,7 +130,8 @@ public class QShopDbViewProvider implements IDbViewProvider {
     @Override
     public boolean isFilterActive() {
         return modeFilter != 0 || dimFilter != null || ownerFilter != null
-                || itemFilter != null || sortMode != SORT_NONE
+                || itemFilter != null || itemIdFilter != null || flagsFilter != null
+                || sortMode != SORT_NONE
                 || priceMinFilter != null || priceMaxFilter != null
                 || qtyMinFilter != null || qtyMaxFilter != null;
     }
@@ -165,12 +171,23 @@ public class QShopDbViewProvider implements IDbViewProvider {
     public int getSortMode() { return sortMode; }
     public void setSortMode(int v) { sortMode = v; }
 
+    public String getItemIdFilter() { return itemIdFilter; }
+    public void setItemIdFilter(String v) { itemIdFilter = v; }
+    public int getItemIdFilterMode() { return itemIdFilterMode; }
+    public void setItemIdFilterMode(int v) { itemIdFilterMode = v; }
+
+    public String getFlagsFilter() { return flagsFilter; }
+    public void setFlagsFilter(String v) { flagsFilter = v; }
+    public int getFlagsFilterMode() { return flagsFilterMode; }
+    public void setFlagsFilterMode(int v) { flagsFilterMode = Math.max(0, Math.min(2, v)); }
+
     /** 筛选条件变更后使缓存失效，并预编译正则 Pattern。 */
     public void invalidateCache() {
         filteredCacheValid = false;
         compiledDimPattern = compileIfNeeded(dimFilter, dimFilterMode);
         compiledOwnerPattern = compileIfNeeded(ownerFilter, ownerFilterMode);
         compiledItemPattern = compileIfNeeded(itemFilter, itemFilterMode);
+        compiledItemIdPattern = compileIfNeeded(itemIdFilter, itemIdFilterMode);
     }
 
     private static Pattern compileIfNeeded(String filter, int mode) {
@@ -442,6 +459,10 @@ public class QShopDbViewProvider implements IDbViewProvider {
         if (!matchesPattern(r.dimId(), dimFilter, dimFilterMode, compiledDimPattern)) return false;
         if (!matchesPattern(r.owner(), ownerFilter, ownerFilterMode, compiledOwnerPattern)) return false;
         if (!matchesPattern(r.itemName(), itemFilter, itemFilterMode, compiledItemPattern)) return false;
+        if (!matchesPattern(r.itemId(), itemIdFilter, itemIdFilterMode, compiledItemIdPattern)) return false;
+
+        // flags 筛选
+        if (!matchesFlags(r.flags(), flagsFilter, flagsFilterMode)) return false;
 
         // 价格范围筛选
         if (priceMinFilter != null || priceMaxFilter != null) {
@@ -474,6 +495,46 @@ public class QShopDbViewProvider implements IDbViewProvider {
             case PATTERN_EXCLUDE -> !field.toLowerCase().contains(filter.toLowerCase());
             case PATTERN_EXACT -> field.equalsIgnoreCase(filter);
             case PATTERN_REGEX -> compiledPattern != null && compiledPattern.matcher(field).find();
+            default -> true;
+        };
+    }
+
+    /**
+     * 检查记录 flags 是否满足筛选条件。
+     *
+     * <p>flagsFilter 为用户输入的标志字符（如 "RE"），依次尝试解析每个字符为 flag 位：
+     * <ul>
+     *   <li>'R' → FLAG_ID_RECOVERED</li>
+     *   <li>'E' → FLAG_ENHANCED_DATA</li>
+     *   <li>'S' → FLAG_SHULKER_EXPANDED</li>
+     *   <li>'B' → FLAG_BOOK</li>
+     * </ul>
+     * 忽略无效字符。若 flagsFilter 中无有效标志，直接通过。
+     *
+     * @param recordFlags  记录的 flags 整型值
+     * @param flagsFilter  用户输入的标志过滤字符串
+     * @param mode         匹配模式：PATTERN_CONTAINS=任一匹配，PATTERN_EXCLUDE=全不匹配，PATTERN_EXACT=全部匹配
+     * @return true 表示通过筛选
+     */
+    static boolean matchesFlags(int recordFlags, String flagsFilter, int mode) {
+        if (flagsFilter == null || flagsFilter.isEmpty()) return true;
+
+        int mask = 0;
+        for (int i = 0; i < flagsFilter.length(); i++) {
+            mask |= switch (flagsFilter.charAt(i)) {
+                case 'R', 'r' -> QShopAnalyzer.FLAG_ID_RECOVERED;
+                case 'E', 'e' -> QShopAnalyzer.FLAG_ENHANCED_DATA;
+                case 'S', 's' -> QShopAnalyzer.FLAG_SHULKER_EXPANDED;
+                case 'B', 'b' -> QShopAnalyzer.FLAG_BOOK;
+                default -> 0;
+            };
+        }
+        if (mask == 0) return true;
+
+        return switch (mode) {
+            case PATTERN_CONTAINS -> (recordFlags & mask) != 0;
+            case PATTERN_EXCLUDE -> (recordFlags & mask) == 0;
+            case PATTERN_EXACT -> (recordFlags & mask) == mask;
             default -> true;
         };
     }

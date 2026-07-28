@@ -2,6 +2,8 @@ package com.billy65536.chunkscanner.gui.layout;
 
 import com.billy65536.chunkscanner.core.LocatedPosition;
 
+import net.minecraft.client.font.TextRenderer;
+
 /**
  * 世界位置单元格。
  *
@@ -10,4 +12,5 @@ import com.billy65536.chunkscanner.core.LocatedPosition;
  */
 public record PositionCell(LocatedPosition pos) implements IContentCell {
     public static PositionCell of(LocatedPosition pos) { return new PositionCell(pos); }
+    public int cellWidth(TextRenderer renderer) { return renderer.getWidth(pos.toString()); }
 }

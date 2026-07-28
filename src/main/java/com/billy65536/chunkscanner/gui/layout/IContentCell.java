@@ -1,5 +1,6 @@
 package com.billy65536.chunkscanner.gui.layout;
 
+import net.minecraft.client.font.TextRenderer;
 
 /**
  * 表格单元格内容的密封接口。
@@ -13,4 +14,6 @@ package com.billy65536.chunkscanner.gui.layout;
  *
  * <p>渲染时通过 {@code instanceof} 分派到对应渲染逻辑。</p>
  */
-public sealed interface IContentCell permits TextCell, PositionCell, ItemCell {}
+public sealed interface IContentCell permits TextCell, PositionCell, ItemCell {
+    public int cellWidth(TextRenderer renderer);
+}

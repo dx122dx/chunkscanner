@@ -42,12 +42,12 @@ public class TableLayout implements ILayout {
     // ==================== 构造 ====================
 
     TableLayout(TextRenderer tr, String[] headers, List<List<IContentCell>> rows,
-                int metaCount) {
+                int metaCount, int[] colWidths) {
         this.textRenderer = tr;
         this.headers = headers;
         this.rows = rows;
         this.metaCount = metaCount;
-        this.colWidths = calcColWidths();
+        this.colWidths = colWidths;
     }
 
     // ==================== ViewLayout 实现 ====================
@@ -202,40 +202,5 @@ public class TableLayout implements ILayout {
         if (cell instanceof PositionCell pc) return pc.pos().toString();
         if (cell instanceof ItemCell ic) return ic.stack().getName().getString();
         return "";
-    }
-
-    /** 计算任意 CellContent 的文本像素宽度。 */
-    private int cellTextWidth(IContentCell cell) {
-        return textRenderer.getWidth(cellToText(cell));
-    }
-
-    /** 计算各列像素宽度。 */
-    private int[] calcColWidths() {
-        int cols = headers.length;
-        int[] widths = new int[cols];
-        // 以表头宽度为基准
-        for (int c = 0; c < cols; c++) {
-            widths[c] = textRenderer.getWidth(headers[c]);
-        }
-        // 采样最多 200 行获取实际数据宽度
-        int sampleSize = Math.min(rows.size(), 200);
-        for (int i = 0; i < sampleSize; i++) {
-            List<IContentCell> row = rows.get(i);
-            for (int c = 0; c < row.size() && c < cols; c++) {
-                int w = cellTextWidth(row.get(c));
-                if (w > widths[c]) widths[c] = w;
-            }
-        }
-        // 有 ItemCell 的列最小宽度为 ITEM_ICON_SIZE + 2
-        for (int c = 0; c < cols; c++) {
-            for (int i = 0; i < sampleSize; i++) {
-                if (i < rows.size() && c < rows.get(i).size()
-                        && rows.get(i).get(c) instanceof ItemCell) {
-                    widths[c] = Math.max(widths[c], ITEM_ICON_SIZE + 2);
-                    break;
-                }
-            }
-        }
-        return widths;
     }
 }

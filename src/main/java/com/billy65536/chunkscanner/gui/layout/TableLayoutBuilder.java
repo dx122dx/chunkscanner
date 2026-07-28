@@ -33,9 +33,10 @@ public class TableLayoutBuilder {
 
     private final TextRenderer textRenderer;
     private final int metaCount;
+    private final int colCount;
     private final String[] headers;
-
-    private final List<List<IContentCell>> rows = new ArrayList<>();
+    private final List<List<IContentCell>> rows;
+    private final int[] colWidths;
 
     /**
      * @param tr        TextRenderer 实例
@@ -45,7 +46,10 @@ public class TableLayoutBuilder {
     public TableLayoutBuilder(TextRenderer tr, int metaCount, String[] headers) {
         this.textRenderer = tr;
         this.metaCount = metaCount;
+        this.colCount = headers.length;
         this.headers = headers;
+        this.rows = new ArrayList<>();
+        this.colWidths = new int[this.colCount];
     }
 
     /** 开始构建一行。返回的 {@link RowBuilder} 用于逐列填充数据。 */
@@ -55,7 +59,7 @@ public class TableLayoutBuilder {
 
     /** 构建并返回 {@link TableLayout} 实例。 */
     public TableLayout build() {
-        return new TableLayout(textRenderer, headers, rows, metaCount);
+        return new TableLayout(textRenderer, headers, rows, metaCount, colWidths);
     }
 
     // ==================== RowBuilder ====================
@@ -88,24 +92,29 @@ public class TableLayoutBuilder {
             return this.text(Text.empty());
         }
 
+        private void addCell(IContentCell cell) {
+            cells.add(cell);
+            colWidths[cells.size() - 1] = Math.max(colWidths[cells.size() - 1], cell.cellWidth(textRenderer));
+        }
+
         /**
          * 为此行设置世界位置，并在当前位置添加一个 {@link PositionCell}。
          * 位置列对应的文本显示由 {@link PositionCell} 自动处理。
          */
         public RowBuilder position(LocatedPosition pos) {
-            cells.add(PositionCell.of(pos));
+            addCell(PositionCell.of(pos));
             return this;
         }
 
         /** 填充一个白色无 tooltip 的文本列。 */
         public RowBuilder text(String text) {
-            cells.add(TextCell.of(text != null ? text : ""));
+            addCell(TextCell.of(text != null ? text : ""));
             return this;
         }
 
         /** 填充一个白色无 tooltip 的文本列。 */
         public RowBuilder text(Text text) {
-            cells.add(TextCell.of(text));
+            addCell(TextCell.of(text));
             return this;
         }
 
@@ -170,7 +179,9 @@ public class TableLayoutBuilder {
          */
         public RowBuilder item(ItemStack stack) {
             if (stack != null && !stack.isEmpty()) {
-                cells.add(ItemCell.of(stack));
+                addCell(ItemCell.of(stack));
+            } else {
+                return this.blank();
             }
             return this;
         }
