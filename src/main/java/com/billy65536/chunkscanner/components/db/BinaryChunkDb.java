@@ -34,6 +34,10 @@ import com.billy65536.chunkscanner.config.TaskConfig;
  * │   analyzerIdLen: u16 (2)                       │
  * │   analyzerId: UTF-8 (analyzerLen)           │
  * ├──────────────────────────────────────────────┤
+ * │ TaskConfig (v4+)                             │
+ * │   configLen: u16 (2)                         │
+ * │   config: UTF-8 JSON (configLen)             │
+ * ├──────────────────────────────────────────────┤
  * │ String Pool                                  │
  * │   count: u32                                 │
  * │   for each (v3+): id:u32 | len:u32 | data    │
@@ -58,7 +62,7 @@ public class BinaryChunkDb implements IChunkDb {
     static final long MAGIC = 0x4E4143534B4E4843L; // "CHNKSCAN" (little-endian)
     /** 当前二进制文件格式版本。 */
     private static final int CURRENT_VERSION = 4;
-    /** 任务配置元数据键（存储在 KV store 中，JSON 序列化）。 */
+    /** 任务配置元数据键（仅用于 v1-v3 兼容读取）。 */
     private static final byte[] TASK_CONFIG_KEY = "__taskConfig__".getBytes(StandardCharsets.UTF_8);
 
     /** 数据库目录路径（根据当前游戏上下文动态确定）。 */
@@ -85,6 +89,9 @@ public class BinaryChunkDb implements IChunkDb {
 
     /** 通用 KV 存储：byte[] 键 → byte[] 值。使用 ByteArrayKey 包装器确保正确的 hashCode/equals。 */
     private final Map<ByteArrayKey, byte[]> kvStore;
+
+    /** 任务配置（v4+ 独立存储于 Header 之后）。 */
+    private TaskConfig taskConfig;
 
     /** Chunk 扫描时间戳：packedChunkKey → 毫秒时间戳。 */
     private final Map<Long, Long> chunkScanTime;
@@ -249,22 +256,22 @@ public class BinaryChunkDb implements IChunkDb {
 
     /**
      * 获取存储的任务配置。如果未设置或无法解析，返回 null。
+     * v4+ 直接从独立字段读取，v1-v3 兼容从 KV store 读取并自动迁移。
      */
     public TaskConfig getTaskConfig() {
+        if (taskConfig != null) return taskConfig;
+        // fallback: v1-v3 兼容 — 从 KV Store 读取
         byte[] data = kvStore.get(new ByteArrayKey(TASK_CONFIG_KEY));
         if (data == null) return null;
-        return TaskConfig.fromJson(new String(data, StandardCharsets.UTF_8));
+        this.taskConfig = TaskConfig.fromJson(new String(data, StandardCharsets.UTF_8));
+        return this.taskConfig;
     }
 
     /**
      * 存储任务配置。传入 null 表示清除配置。
      */
     public void setTaskConfig(TaskConfig config) {
-        if (config == null) {
-            kvStore.remove(new ByteArrayKey(TASK_CONFIG_KEY));
-        } else {
-            kvStore.put(new ByteArrayKey(TASK_CONFIG_KEY), config.toJson().getBytes(StandardCharsets.UTF_8));
-        }
+        this.taskConfig = config;
         dirty = true;
     }
 
@@ -305,11 +312,12 @@ public class BinaryChunkDb implements IChunkDb {
      *
      * 读取流程（对应文件格式）：
      * 1. 验证 magic 魔数
-     * 2. 读取 version，根据版本解析 header（v2+ 含 analyzerId）
-     * 3. 加载字符串池（v3+ 每条记录带显式 ID，v1/v2 按顺序）
-     * 4. 加载 Chunk Meta（含 dimPoolId，需通过字符串池还原维度名）
-     * 5. 加载 KV 记录
-     * 6. v4+: 验证文件末尾 CRC32 校验和
+     * 2. 读取 version，根据版本解析 header（v2+ 含 analyzerId，v4+ 含 taskConfig）
+     * 3. v4+: 读取独立 taskConfig 段
+     * 4. 加载字符串池（v3+ 每条记录带显式 ID，v1/v2 按顺序）
+     * 5. 加载 Chunk Meta
+     * 6. 加载 KV 记录（v1-v3 自动迁移 taskConfig 到独立字段）
+     * 7. v4+: 验证 CRC32 校验和
      *
      * 使用 FileChannel + DirectByteBuffer 减少 GC 压力。
      * 单次最多分配 32KB 缓冲，大文件分多次 readFully。
@@ -349,6 +357,18 @@ public class BinaryChunkDb implements IChunkDb {
                     byte[] analyzerBytes = new byte[analyzerLen];
                     readFully(ch, ByteBuffer.wrap(analyzerBytes), analyzerLen);
                     this.analyzerId = new String(analyzerBytes, StandardCharsets.UTF_8);
+                }
+            }
+
+            // taskConfig (version >= 4)
+            if (version >= 4) {
+                buf.clear(); readFully(ch, buf, 2); buf.flip();
+                int configLen = buf.getShort() & 0xFFFF;
+                buf.clear();
+                if (configLen > 0) {
+                    byte[] configBytes = new byte[configLen];
+                    readFully(ch, ByteBuffer.wrap(configBytes), configLen);
+                    this.taskConfig = TaskConfig.fromJson(new String(configBytes, StandardCharsets.UTF_8));
                 }
             }
 
@@ -418,6 +438,14 @@ public class BinaryChunkDb implements IChunkDb {
                 readFully(ch, ByteBuffer.wrap(val), valLen);
 
                 kvStore.put(new ByteArrayKey(key), val);
+            }
+
+            // Migrate task config from KV (v1-v3 compat)
+            if (version < 4) {
+                byte[] tcData = kvStore.remove(new ByteArrayKey(TASK_CONFIG_KEY));
+                if (tcData != null) {
+                    this.taskConfig = TaskConfig.fromJson(new String(tcData, StandardCharsets.UTF_8));
+                }
             }
 
             // CRC32 verification (version >= 4)
@@ -504,6 +532,10 @@ public class BinaryChunkDb implements IChunkDb {
                 buf.putShort((short) analyzerBytes.length);
                 buf.put(analyzerBytes);
                 buf.flip(); ch.write(buf);
+
+                // Task config (v4+)
+                byte[] tcBytes = taskConfig != null ? taskConfig.toJson().getBytes(StandardCharsets.UTF_8) : new byte[0];
+                buf.clear(); buf.putShort((short) tcBytes.length); buf.put(tcBytes); buf.flip(); ch.write(buf);
 
                 // String pool — 保存全部（池很小，避免 scanIntsIn 误判）
                 // 使用快照避免并发 intern() 导致迭代期间遗漏新条目
