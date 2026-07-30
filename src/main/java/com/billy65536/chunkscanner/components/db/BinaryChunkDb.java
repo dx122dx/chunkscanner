@@ -61,7 +61,7 @@ public class BinaryChunkDb implements IChunkDb {
     private final String scanId;
     /** 安全文件名主干：chunkscanner_{hash}（不含扩展名）。 */
     private final String fileStem;
-    /** 数据库扩展标识（由 Factory 指定，如 "bin4"）。 */
+    /** 数据库扩展标识（由 Factory 指定）。 */
     private final String dbExt;
     /** 创建该数据库的分析器 ID。 */
     private String analyzerId;
@@ -109,7 +109,7 @@ public class BinaryChunkDb implements IChunkDb {
      * @param metadataOnly 若为 true，只存储元数据不加载文件内容，用于文件列表浏览。
      */
     public BinaryChunkDb(String scanId, String analyzerId, boolean metadataOnly) {
-        this(scanId, analyzerId, metadataOnly, ChunkScannerMod.getDbDir(), "bin4", 0);
+        this(scanId, analyzerId, metadataOnly, ChunkScannerMod.getDbDir(), "bin", 0);
     }
 
     /**
@@ -118,7 +118,7 @@ public class BinaryChunkDb implements IChunkDb {
      *
      * @param metadataOnly 若为 true，只存储元数据不加载文件内容，用于文件列表浏览。
      * @param dbDir 数据库目录，若为 null 则使用当前上下文默认路径。
-     * @param dbExt  数据库扩展标识（如 "bin4"），决定文件扩展名。
+     * @param dbExt  数据库扩展标识（如 "bin"），决定文件扩展名。
      * @param subId 子数据库 ID，0 表示主数据库。子数据库使用 .sub_{subId}. 文件名段。
      */
     public BinaryChunkDb(String scanId, String analyzerId, boolean metadataOnly, Path dbDir, String dbExt, int subId) {
@@ -600,7 +600,7 @@ public class BinaryChunkDb implements IChunkDb {
         public String getId() { return "binary"; }
 
         @Override
-        public String getExt() { return "bin4"; }
+        public String getExt() { return "bin"; }
 
         @Override
         public IChunkDb create(String scanId, String analyzerId, Path dbDir) {

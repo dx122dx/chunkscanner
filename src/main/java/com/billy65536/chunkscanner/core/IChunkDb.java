@@ -162,7 +162,7 @@ public interface IChunkDb {
 
         /**
          * 数据库文件扩展标识符，由实现自行指定。
-         * 推荐使用 id + 版本号形式，如: “bin4”
+         * 推荐使用 id + 版本号形式，如: “bin”
          */
         String getExt();
 
