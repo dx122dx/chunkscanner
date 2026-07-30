@@ -65,6 +65,8 @@
     "chunkscanner.gui.database.task_view": "Tasks",
     "chunkscanner.gui.database.open_folder": "Open Folder",
     "chunkscanner.gui.database.save_as": "Save As",
+    "chunkscanner.gui.database.export_tsv": "Export as TSV",
+    "chunkscanner.gui.database.export_db": "Export DB",
     "chunkscanner.gui.database.no_files": "No database files found.",
     "chunkscanner.gui.database.kv_title": "Database: %s",
     "chunkscanner.gui.database.records": "KV: %d  |  Chunk Meta: %d  |  Analyzer: %s  |  View: %s",

@@ -2,6 +2,8 @@ package com.billy65536.chunkscanner.screen;
 
 import java.awt.Desktop;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -9,6 +11,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Stream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import javax.swing.JFileChooser;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -333,10 +338,15 @@ public class DatabaseScreen extends Screen {
         }
 
         int bottomY = this.height - 30;
+        int btnWidth = (WIDTH - 12) / 2;
         addDrawableChild(ButtonWidget.builder(
-                Text.translatable("chunkscanner.gui.database.save_as"),
-                btn -> saveAs())
-                .dimensions(leftX + 4, bottomY, WIDTH - 8, 20).build());
+                Text.translatable("chunkscanner.gui.database.export_tsv"),
+                btn -> exportAsTsv())
+                .dimensions(leftX + 4, bottomY, btnWidth, 20).build());
+        addDrawableChild(ButtonWidget.builder(
+                Text.translatable("chunkscanner.gui.database.export_db"),
+                btn -> exportDatabase())
+                .dimensions(leftX + 4 + btnWidth + 4, bottomY, btnWidth, 20).build());
     }
 
     // ==================== 导航 ====================
@@ -372,7 +382,7 @@ public class DatabaseScreen extends Screen {
         }
     }
 
-    private void saveAs() {
+    private void exportAsTsv() {
         if (rawChunkDb == null) return;
         Path dir = ChunkScannerMod.getDbRoot();
 
@@ -380,9 +390,9 @@ public class DatabaseScreen extends Screen {
         new Thread(() -> {
             try {
                 final JFileChooser chooser = new JFileChooser();
-                chooser.setDialogTitle(Text.translatable("chunkscanner.gui.database.save_as").getString());
-                chooser.setSelectedFile(new File(rawChunkDb.getScanId() + "_export.txt"));
-                chooser.setFileFilter(new FileNameExtensionFilter("Text Files (*.txt)", "txt"));
+                chooser.setDialogTitle(Text.translatable("chunkscanner.gui.database.export_tsv").getString());
+                chooser.setSelectedFile(new File(rawChunkDb.getScanId() + "_export.tsv"));
+                chooser.setFileFilter(new FileNameExtensionFilter("TSV Files (*.tsv)", "tsv"));
 
                 // 设置默认目录
                 if (Files.exists(dir)) {
@@ -395,21 +405,104 @@ public class DatabaseScreen extends Screen {
                 });
                 if (returnVal[0] == JFileChooser.APPROVE_OPTION) {
                     Path outPath = chooser.getSelectedFile().toPath();
-                    // 确保扩展名为 .txt
+                    // 确保扩展名为 .tsv
                     if (!outPath.getFileName().toString().contains(".")) {
-                        outPath = outPath.resolveSibling(outPath.getFileName() + ".txt");
+                        outPath = outPath.resolveSibling(outPath.getFileName() + ".tsv");
                     }
                     try {
+                        rawChunkDb.flush(); // 确保数据最新
                         Files.createDirectories(outPath.getParent());
                         exportToFile(outPath);
                     } catch (Exception e) {
-                        ChunkScannerMod.LOGGER.warn("Failed to export database: {}", e.getMessage());
+                        ChunkScannerMod.LOGGER.warn("Failed to export TSV: {}", e.getMessage());
                     }
                 }
             } catch (Exception e) {
                 ChunkScannerMod.LOGGER.warn("File save dialog failed: {}", e.getMessage());
             }
         }, "ChunkScanner-FileSave").start();
+    }
+
+    private void exportDatabase() {
+        if (rawChunkDb == null) return;
+        final IChunkDb db = rawChunkDb;
+        Path mainFile = db.getFilePath();
+        if (mainFile == null || !Files.exists(mainFile)) {
+            ChunkScannerMod.LOGGER.warn("Cannot export: database file not found.");
+            return;
+        }
+
+        // 计算文件前缀（不含扩展名），用于匹配主文件和子数据库
+        String fileName = mainFile.getFileName().toString();
+        int lastDot = fileName.lastIndexOf('.');
+        String prefix = lastDot > 0 ? fileName.substring(0, lastDot) : fileName;
+        Path parent = mainFile.getParent();
+
+        // JFileChooser 选择保存路径
+        new Thread(() -> {
+            try {
+                final JFileChooser chooser = new JFileChooser();
+                chooser.setDialogTitle(Text.translatable("chunkscanner.gui.database.export_db").getString());
+                chooser.setSelectedFile(new File(db.getScanId() + "_db.zip"));
+                chooser.setFileFilter(new FileNameExtensionFilter("ZIP Archives (*.zip)", "zip"));
+
+                Path dir = ChunkScannerMod.getDbRoot();
+                if (Files.exists(dir)) {
+                    chooser.setCurrentDirectory(dir.toFile());
+                }
+
+                final int[] returnVal = new int[1];
+                javax.swing.SwingUtilities.invokeAndWait(() -> {
+                    returnVal[0] = chooser.showSaveDialog(null);
+                });
+                if (returnVal[0] == JFileChooser.APPROVE_OPTION) {
+                    Path outPath = chooser.getSelectedFile().toPath();
+                    if (!outPath.getFileName().toString().contains(".")) {
+                        outPath = outPath.resolveSibling(outPath.getFileName() + ".zip");
+                    }
+                    try {
+                        db.flush(); // 先刷写，确保子数据库等新文件已落盘
+                        Files.createDirectories(outPath.getParent());
+                        // flush 后再收集文件，确保包含所有新产生的文件
+                        List<Path> relatedFiles;
+                        try (Stream<Path> files = Files.list(parent)) {
+                            relatedFiles = files
+                                    .filter(p -> p.getFileName().toString().startsWith(prefix))
+                                    .sorted()
+                                    .toList();
+                        }
+                        if (relatedFiles.isEmpty()) {
+                            ChunkScannerMod.LOGGER.warn("No files found for export.");
+                            return;
+                        }
+                        zipFiles(relatedFiles, parent, outPath);
+                        ChunkScannerMod.LOGGER.info("Database exported to: {}", outPath);
+                    } catch (Exception e) {
+                        ChunkScannerMod.LOGGER.warn("Failed to export database: {}", e.getMessage());
+                    }
+                }
+            } catch (Exception e) {
+                ChunkScannerMod.LOGGER.warn("Export dialog failed: {}", e.getMessage());
+            }
+        }, "ChunkScanner-FileSave").start();
+    }
+
+    /** 将文件列表打包为 ZIP，保留相对路径。 */
+    private static void zipFiles(List<Path> files, Path baseDir, Path zipPath) throws IOException {
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zipPath.toFile()))) {
+            byte[] buffer = new byte[8192];
+            for (Path file : files) {
+                String entryName = baseDir.relativize(file).toString();
+                zos.putNextEntry(new ZipEntry(entryName));
+                try (FileInputStream fis = new FileInputStream(file.toFile())) {
+                    int len;
+                    while ((len = fis.read(buffer)) > 0) {
+                        zos.write(buffer, 0, len);
+                    }
+                }
+                zos.closeEntry();
+            }
+        }
     }
 
     private void exportToFile(Path path) throws IOException {

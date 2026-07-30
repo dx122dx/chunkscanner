@@ -65,6 +65,8 @@
     "chunkscanner.gui.database.task_view": "任务视图",
     "chunkscanner.gui.database.open_folder": "打开文件夹",
     "chunkscanner.gui.database.save_as": "另存为",
+    "chunkscanner.gui.database.export_tsv": "导出为TSV",
+    "chunkscanner.gui.database.export_db": "导出数据库",
     "chunkscanner.gui.database.no_files": "未找到数据库文件。",
     "chunkscanner.gui.database.kv_title": "数据库：%s",
     "chunkscanner.gui.database.records": "KV：%d  |  Chunk 元数据：%d  |  分析器：%s  |  视图：%s",

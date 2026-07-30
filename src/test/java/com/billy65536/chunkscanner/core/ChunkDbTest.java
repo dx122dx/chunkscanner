@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.nio.file.Path;
+
 /**
  * IChunkDb 辅助类型及默认方法单元测试。
  */
@@ -171,6 +173,7 @@ class ChunkDbTest {
             @Override public void open() {}
             @Override public void flush() {}
             @Override public void close() {}
+            @Override public Path getFilePath() { return null; }
         };
 
         @Test

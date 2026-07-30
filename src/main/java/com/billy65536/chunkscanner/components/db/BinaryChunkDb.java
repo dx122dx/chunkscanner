@@ -630,7 +630,8 @@ public class BinaryChunkDb implements IChunkDb {
     // ==================== 公共访问方法（供 RawDbProvider 等使用） ====================
 
     /** 数据库文件路径。 */
-    public Path filePath() {
+    @Override
+    public Path getFilePath() {
         return dataPath();
     }
 
