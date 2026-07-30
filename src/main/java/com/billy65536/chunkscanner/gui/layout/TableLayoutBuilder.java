@@ -50,6 +50,10 @@ public class TableLayoutBuilder {
         this.headers = headers;
         this.rows = new ArrayList<>();
         this.colWidths = new int[this.colCount];
+
+        for (int i = 0; i < this.colCount; i++) {
+            this.colWidths[i] = this.textRenderer.getWidth(headers[i]);
+        }
     }
 
     /** 开始构建一行。返回的 {@link RowBuilder} 用于逐列填充数据。 */

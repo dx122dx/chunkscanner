@@ -215,6 +215,7 @@ public class QShopDbViewProvider implements IDbViewProvider {
 
         TableLayoutBuilder b = new TableLayoutBuilder(textRenderer, metaCount, HEADERS);
         for (QShopDbAdapter.Record r : matched) {
+            boolean shulker = (r.flags() & QShopAnalyzer.FLAG_SHULKER_EXPANDED) != 0;
             Text modeText;
             Text quantityText;
             if (r.mode() == QShopAnalyzer.MODE_SELL) {
@@ -224,7 +225,8 @@ public class QShopDbViewProvider implements IDbViewProvider {
                 } else if (r.quantity() == 0) {
                     quantityText = Text.translatable("chunkscanner.qshop.out_of_stock");
                 } else {
-                    quantityText = Text.literal(String.valueOf(r.quantity()));
+                    quantityText = Text.literal(String.valueOf(
+                            shulker ? getEffectiveQty(r) : r.quantity()));
                 }
             } else {
                 modeText = Text.translatable("chunkscanner.filter.mode.buy");
@@ -233,25 +235,25 @@ public class QShopDbViewProvider implements IDbViewProvider {
                 } else if (r.quantity() == 0) {
                     quantityText = Text.translatable("chunkscanner.qshop.out_of_space");
                 } else {
-                    quantityText = Text.literal(String.valueOf(r.quantity()));
+                    quantityText = Text.literal(String.valueOf(
+                            shulker ? getEffectiveQty(r) : r.quantity()));
                 }
             }
 
             LocatedPosition pos = new LocatedPosition(r.dimId(), r.x(), r.y(), r.z());
-            boolean shulker = (r.flags() & QShopAnalyzer.FLAG_SHULKER_EXPANDED) != 0;
 
             TableLayoutBuilder.RowBuilder row = b.addRow()
                     .position(pos)
                     .text(r.owner())
                     .text(modeText)
                     .text(quantityText)
-                    .text(r.itemName())
+                    .text(getEffectiveItemName(r))
                     .text(formatPrice(r.price()));
 
             if (shulker) {
                 List<Text> unitPriceTip = buildShulkerUnitPriceTooltip(r);
                 if (unitPriceTip != null) {
-                    row.withColor(0xFFFF55FF);
+                    row.withColor(0xFFFF55FF); // 紫色
                     row.withTooltip(unitPriceTip);
                 }
             }
@@ -283,9 +285,10 @@ public class QShopDbViewProvider implements IDbViewProvider {
             row.text(updateTime);
 
             if(r.enhancementTimestamp() > 0) {
-                row.withTooltip(new Text[] {
+                row.withColor(0xFF55FFFF) // Aqua
+                   .withTooltip(List.of(
                     Text.translatable("chunkscanner.qshop.enhancement_update_time", formatTimestamp(r.enhancementTimestamp()))
-                });
+                ));
             }
 
             row.done();
@@ -385,24 +388,8 @@ public class QShopDbViewProvider implements IDbViewProvider {
      */
     private static List<Text> buildShulkerUnitPriceTooltip(QShopDbAdapter.Record record) {
         try {
-            int priceCents = record.price();
-
-            // 获取物品堆叠上限
-            int maxStack;
-            if (record.itemId() != null && !record.itemId().isEmpty()) {
-                Identifier itemId = Identifier.tryParse(record.itemId());
-                if (itemId != null) {
-                    net.minecraft.item.Item item = Registries.ITEM.get(itemId);
-                    maxStack = item.getMaxCount();
-                } else {
-                    maxStack = 64;
-                }
-            } else {
-                maxStack = 64;
-            }
-
-            int totalCount = SHULKER_SLOTS * maxStack;
-            double unitPrice = (double) priceCents / totalCount / 100.0;
+            double unitPrice = getEstimatedUnitPriceCents(record) / 100.0;
+            if (unitPrice <= 0) return null;
 
             return List.of(Text.translatable("chunkscanner.qshop.shulker_unit_price",
                             String.format("%.2f", unitPrice))
@@ -413,6 +400,60 @@ public class QShopDbViewProvider implements IDbViewProvider {
     }
 
     private static final int SHULKER_SLOTS = 27;
+
+    /**
+     * 获取潜影盒条目的有效商品名称：用内部 ItemStack 显示名替代告示牌文本。
+     * 非潜影盒条目直接返回原始 itemName。
+     */
+    private static Text getEffectiveItemName(QShopDbAdapter.Record r) {
+        if ((r.flags() & QShopAnalyzer.FLAG_SHULKER_EXPANDED) == 0) {
+            return Text.literal(r.itemName());
+        }
+        ItemStack inner = parseDetailItemStack(r);
+        if (inner != null) {
+            return inner.getName();
+        }
+        return Text.literal(r.itemName());
+    }
+
+    /**
+     * 获取物品的堆叠上限。用于潜影盒单价计算。
+     */
+    private static int getMaxStackCount(QShopDbAdapter.Record r) {
+        if (r.itemId() != null && !r.itemId().isEmpty()) {
+            Identifier id = Identifier.tryParse(r.itemId());
+            if (id != null) {
+                net.minecraft.item.Item item = Registries.ITEM.get(id);
+                return item != null ? item.getMaxCount() : 64;
+            }
+        }
+        return 64;
+    }
+
+    /**
+     * 潜影盒条目预估单价（分）。用于 tooltip 展示。
+     * 单价 = 商店价格 /（潜影盒槽位数 × 物品堆叠上限）。
+     */
+    private static double getEstimatedUnitPriceCents(QShopDbAdapter.Record r) {
+        int maxStack = getMaxStackCount(r);
+        if (maxStack <= 0) maxStack = 64;
+        int totalItems = SHULKER_SLOTS * maxStack;
+        return r.price() * 1.0 / totalItems;
+    }
+
+    /**
+     * 获取排序/筛选时使用的"有效数量"。
+     * 潜影盒条目返回箱内物品总数；普通条目返回原始数量。
+     */
+    private static int getEffectiveQty(QShopDbAdapter.Record r) {
+        if ((r.flags() & QShopAnalyzer.FLAG_SHULKER_EXPANDED) == 0) {
+            return r.quantity();
+        }
+        if (r.quantity() == QShopAnalyzer.INFINITE_QUANTITY) return QShopAnalyzer.INFINITE_QUANTITY;
+        int maxStack = getMaxStackCount(r);
+        if (maxStack <= 0) maxStack = 64;
+        return SHULKER_SLOTS * maxStack;
+    }
 
     /** 获取筛选并排序后的记录列表。 */
     private List<QShopDbAdapter.Record> getFilteredSortedRecords() {
@@ -441,8 +482,10 @@ public class QShopDbViewProvider implements IDbViewProvider {
         return switch (sortMode) {
             case SORT_PRICE_ASC -> Comparator.comparingInt(QShopDbAdapter.Record::price);
             case SORT_PRICE_DESC -> (a, b) -> Integer.compare(b.price(), a.price());
-            case SORT_QTY_ASC -> Comparator.comparingInt(QShopDbAdapter.Record::quantity);
-            case SORT_QTY_DESC -> (a, b) -> Integer.compare(b.quantity(), a.quantity());
+            case SORT_QTY_ASC -> Comparator.comparingInt(r -> getEffectiveQty((QShopDbAdapter.Record) r));
+            case SORT_QTY_DESC -> (a, b) -> Integer.compare(
+                    getEffectiveQty((QShopDbAdapter.Record) b),
+                    getEffectiveQty((QShopDbAdapter.Record) a));
             default -> (a, b) -> 0;
         };
     }
@@ -471,9 +514,12 @@ public class QShopDbViewProvider implements IDbViewProvider {
             if (priceMaxFilter != null && priceCents > priceMaxFilter) return false;
         }
 
-        // 数量范围筛选
-        if (qtyMinFilter != null && r.quantity() < qtyMinFilter) return false;
-        if (qtyMaxFilter != null && r.quantity() > qtyMaxFilter) return false;
+        // 数量范围筛选（潜影盒条目按有效数量比较）
+        if (qtyMinFilter != null || qtyMaxFilter != null) {
+            int effectiveQty = getEffectiveQty(r);
+            if (qtyMinFilter != null && effectiveQty < qtyMinFilter) return false;
+            if (qtyMaxFilter != null && effectiveQty > qtyMaxFilter) return false;
+        }
 
         return true;
     }
