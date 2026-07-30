@@ -11,6 +11,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.zip.CRC32;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.IChunkDb;
@@ -47,11 +48,16 @@ import com.billy65536.chunkscanner.config.TaskConfig;
  * │   for each:                                  │
  * │     keyLen: u32  |  key: bytes               │
  * │     valLen: u32  |  val: bytes               │
+ * ├──────────────────────────────────────────────┤
+ * │ CRC32 (v4+)                                  │
+ * │   crc: u32 (4)                               │
  * └──────────────────────────────────────────────┘
  */
 public class BinaryChunkDb implements IChunkDb {
     /** 文件魔数："CHNKSCAN"（little-endian uint64）。package-private 供 DbFileUtil 引用。 */
     static final long MAGIC = 0x4E4143534B4E4843L; // "CHNKSCAN" (little-endian)
+    /** 当前二进制文件格式版本。 */
+    private static final int CURRENT_VERSION = 4;
     /** 任务配置元数据键（存储在 KV store 中，JSON 序列化）。 */
     private static final byte[] TASK_CONFIG_KEY = "__taskConfig__".getBytes(StandardCharsets.UTF_8);
 
@@ -303,6 +309,7 @@ public class BinaryChunkDb implements IChunkDb {
      * 3. 加载字符串池（v3+ 每条记录带显式 ID，v1/v2 按顺序）
      * 4. 加载 Chunk Meta（含 dimPoolId，需通过字符串池还原维度名）
      * 5. 加载 KV 记录
+     * 6. v4+: 验证文件末尾 CRC32 校验和
      *
      * 使用 FileChannel + DirectByteBuffer 减少 GC 压力。
      * 单次最多分配 32KB 缓冲，大文件分多次 readFully。
@@ -413,6 +420,33 @@ public class BinaryChunkDb implements IChunkDb {
                 kvStore.put(new ByteArrayKey(key), val);
             }
 
+            // CRC32 verification (version >= 4)
+            if (version >= 4) {
+                long dataLen = ch.position(); // position at start of CRC field
+                ch.position(0);
+
+                CRC32 crc = new CRC32();
+                byte[] crcBuf = new byte[8192];
+                long remaining = dataLen;
+                while (remaining > 0) {
+                    int toRead = (int) Math.min(crcBuf.length, remaining);
+                    readFully(ch, ByteBuffer.wrap(crcBuf, 0, toRead), toRead);
+                    crc.update(crcBuf, 0, toRead);
+                    remaining -= toRead;
+                }
+                int computedCrc = (int) crc.getValue();
+
+                buf.clear();
+                readFully(ch, buf, 4);
+                buf.flip();
+                int storedCrc = buf.getInt();
+
+                if (computedCrc != storedCrc) {
+                    ChunkScannerMod.LOGGER.warn("[scan:{}] CRC32 mismatch: stored=0x{}, computed=0x{} — file may be corrupted.",
+                            scanId, Integer.toHexString(storedCrc), Integer.toHexString(computedCrc));
+                }
+            }
+
             ChunkScannerMod.LOGGER.info("[scan:{}] Loaded {} kv, {} strings, {} metas.",
                     scanId, kvStore.size(), stringPool.size() - 1, chunkScanTime.size());
 
@@ -462,9 +496,9 @@ public class BinaryChunkDb implements IChunkDb {
                 ByteBuffer buf = ByteBuffer.allocateDirect(128 * 1024);
                 buf.order(ByteOrder.LITTLE_ENDIAN);
 
-                // Header (version 3: pool entries with explicit IDs)
+                // Header (version 4: pool entries with explicit IDs, CRC32 appended)
                 buf.putLong(MAGIC);
-                buf.putInt(3);
+                buf.putInt(CURRENT_VERSION);
                 buf.putShort((short) scanIdBytes.length);
                 buf.put(scanIdBytes);
                 buf.putShort((short) analyzerBytes.length);
@@ -502,6 +536,23 @@ public class BinaryChunkDb implements IChunkDb {
                     buf.putInt(v.length); buf.put(v);
                     buf.flip(); ch.write(buf);
                 }
+            }
+
+            // v4+: compute CRC32 of all written data and append to file
+            CRC32 crc = new CRC32();
+            try (InputStream is = Files.newInputStream(tmpPath)) {
+                byte[] crcBuf = new byte[8192];
+                int n;
+                while ((n = is.read(crcBuf)) > 0) {
+                    crc.update(crcBuf, 0, n);
+                }
+            }
+            try (FileChannel ch = FileChannel.open(tmpPath, StandardOpenOption.APPEND)) {
+                ByteBuffer crcByteBuf = ByteBuffer.allocate(4);
+                crcByteBuf.order(ByteOrder.LITTLE_ENDIAN);
+                crcByteBuf.putInt((int) crc.getValue());
+                crcByteBuf.flip();
+                ch.write(crcByteBuf);
             }
 
             Files.move(tmpPath, dataPath(),
