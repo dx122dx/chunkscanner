@@ -12,6 +12,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -475,7 +482,7 @@ public class DatabaseScreen extends Screen {
                             ChunkScannerMod.LOGGER.warn("No files found for export.");
                             return;
                         }
-                        zipFiles(relatedFiles, parent, outPath);
+                        zipFiles(relatedFiles, parent, outPath, db.getScanId(), db.getAnalyzerId());
                         ChunkScannerMod.LOGGER.info("Database exported to: {}", outPath);
                     } catch (Exception e) {
                         ChunkScannerMod.LOGGER.warn("Failed to export database: {}", e.getMessage());
@@ -487,22 +494,58 @@ public class DatabaseScreen extends Screen {
         }, "ChunkScanner-FileSave").start();
     }
 
-    /** 将文件列表打包为 ZIP，保留相对路径。 */
-    private static void zipFiles(List<Path> files, Path baseDir, Path zipPath) throws IOException {
+    /** 将文件列表打包为 ZIP，保留相对路径，并添加 metadata.json。 */
+    private static void zipFiles(List<Path> files, Path baseDir, Path zipPath,
+                                  String scanId, String analyzerId) throws IOException {
         try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zipPath.toFile()))) {
             byte[] buffer = new byte[8192];
+            MessageDigest sha256;
+            try {
+                sha256 = MessageDigest.getInstance("SHA-256");
+            } catch (NoSuchAlgorithmException e) {
+                throw new IOException("SHA-256 not available", e);
+            }
+            JsonArray fileArray = new JsonArray();
+
             for (Path file : files) {
                 String entryName = baseDir.relativize(file).toString();
                 zos.putNextEntry(new ZipEntry(entryName));
+                sha256.reset();
                 try (FileInputStream fis = new FileInputStream(file.toFile())) {
                     int len;
                     while ((len = fis.read(buffer)) > 0) {
                         zos.write(buffer, 0, len);
+                        sha256.update(buffer, 0, len);
                     }
                 }
                 zos.closeEntry();
+
+                String hash = bytesToHex(sha256.digest());
+                JsonObject fileObj = new JsonObject();
+                fileObj.addProperty("name", entryName);
+                fileObj.addProperty("sha256", hash);
+                fileArray.add(fileObj);
             }
+
+            // 生成 metadata.json
+            JsonObject meta = new JsonObject();
+            meta.addProperty("exportTime", ZonedDateTime.now()
+                    .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+            meta.addProperty("databaseName", scanId);
+            meta.addProperty("scannerId", analyzerId);
+            meta.add("files", fileArray);
+
+            byte[] metaBytes = new GsonBuilder().setPrettyPrinting().create()
+                    .toJson(meta).getBytes(StandardCharsets.UTF_8);
+            zos.putNextEntry(new ZipEntry("metadata.json"));
+            zos.write(metaBytes);
+            zos.closeEntry();
         }
+    }
+
+    /** 字节数组转十六进制字符串。 */
+    private static String bytesToHex(byte[] bytes) {
+        return java.util.HexFormat.of().formatHex(bytes);
     }
 
     private void exportToFile(Path path) throws IOException {
