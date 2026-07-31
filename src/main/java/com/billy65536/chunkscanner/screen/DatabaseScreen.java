@@ -2,8 +2,6 @@ package com.billy65536.chunkscanner.screen;
 
 import java.awt.Desktop;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -11,16 +9,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Stream;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
 
 import javax.swing.JFileChooser;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -36,6 +24,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
+import com.billy65536.chunkscanner.components.db.DbExportUtil;
 import com.billy65536.chunkscanner.components.db.DbFileUtil;
 import com.billy65536.chunkscanner.components.view_provider.RawDbProvider;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
@@ -439,23 +428,18 @@ public class DatabaseScreen extends Screen {
             return;
         }
 
-        // 计算文件前缀（不含扩展名），用于匹配主文件和子数据库
-        String fileName = mainFile.getFileName().toString();
-        int lastDot = fileName.lastIndexOf('.');
-        String prefix = lastDot > 0 ? fileName.substring(0, lastDot) : fileName;
-        Path parent = mainFile.getParent();
-
         // JFileChooser 选择保存路径
         new Thread(() -> {
             try {
                 final JFileChooser chooser = new JFileChooser();
                 chooser.setDialogTitle(Text.translatable("chunkscanner.gui.database.export_db").getString());
-                chooser.setSelectedFile(new File(db.getScanId() + "_db.zip"));
+                chooser.setSelectedFile(new File(DbExportUtil.buildDefaultFileName(
+                        db.getAnalyzerId(), db.getScanId(), "zip")));
                 chooser.setFileFilter(new FileNameExtensionFilter("ZIP Archives (*.zip)", "zip"));
 
-                Path dir = ChunkScannerMod.getDbRoot();
-                if (Files.exists(dir)) {
-                    chooser.setCurrentDirectory(dir.toFile());
+                Path exportDir = DbExportUtil.getExportDir();
+                if (Files.exists(exportDir)) {
+                    chooser.setCurrentDirectory(exportDir.toFile());
                 }
 
                 final int[] returnVal = new int[1];
@@ -468,21 +452,9 @@ public class DatabaseScreen extends Screen {
                         outPath = outPath.resolveSibling(outPath.getFileName() + ".zip");
                     }
                     try {
-                        db.flush(); // 先刷写，确保子数据库等新文件已落盘
+                        db.flush();
                         Files.createDirectories(outPath.getParent());
-                        // flush 后再收集文件，确保包含所有新产生的文件
-                        List<Path> relatedFiles;
-                        try (Stream<Path> files = Files.list(parent)) {
-                            relatedFiles = files
-                                    .filter(p -> p.getFileName().toString().startsWith(prefix))
-                                    .sorted()
-                                    .toList();
-                        }
-                        if (relatedFiles.isEmpty()) {
-                            ChunkScannerMod.LOGGER.warn("No files found for export.");
-                            return;
-                        }
-                        zipFiles(relatedFiles, parent, outPath, db.getScanId(), db.getAnalyzerId());
+                        DbExportUtil.exportRawZip(db, outPath);
                         ChunkScannerMod.LOGGER.info("Database exported to: {}", outPath);
                     } catch (Exception e) {
                         ChunkScannerMod.LOGGER.warn("Failed to export database: {}", e.getMessage());
@@ -492,60 +464,6 @@ public class DatabaseScreen extends Screen {
                 ChunkScannerMod.LOGGER.warn("Export dialog failed: {}", e.getMessage());
             }
         }, "ChunkScanner-FileSave").start();
-    }
-
-    /** 将文件列表打包为 ZIP，保留相对路径，并添加 metadata.json。 */
-    private static void zipFiles(List<Path> files, Path baseDir, Path zipPath,
-                                  String scanId, String analyzerId) throws IOException {
-        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zipPath.toFile()))) {
-            byte[] buffer = new byte[8192];
-            MessageDigest sha256;
-            try {
-                sha256 = MessageDigest.getInstance("SHA-256");
-            } catch (NoSuchAlgorithmException e) {
-                throw new IOException("SHA-256 not available", e);
-            }
-            JsonArray fileArray = new JsonArray();
-
-            for (Path file : files) {
-                String entryName = baseDir.relativize(file).toString();
-                zos.putNextEntry(new ZipEntry(entryName));
-                sha256.reset();
-                try (FileInputStream fis = new FileInputStream(file.toFile())) {
-                    int len;
-                    while ((len = fis.read(buffer)) > 0) {
-                        zos.write(buffer, 0, len);
-                        sha256.update(buffer, 0, len);
-                    }
-                }
-                zos.closeEntry();
-
-                String hash = bytesToHex(sha256.digest());
-                JsonObject fileObj = new JsonObject();
-                fileObj.addProperty("name", entryName);
-                fileObj.addProperty("sha256", hash);
-                fileArray.add(fileObj);
-            }
-
-            // 生成 metadata.json
-            JsonObject meta = new JsonObject();
-            meta.addProperty("exportTime", ZonedDateTime.now()
-                    .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
-            meta.addProperty("databaseName", scanId);
-            meta.addProperty("scannerId", analyzerId);
-            meta.add("files", fileArray);
-
-            byte[] metaBytes = new GsonBuilder().setPrettyPrinting().create()
-                    .toJson(meta).getBytes(StandardCharsets.UTF_8);
-            zos.putNextEntry(new ZipEntry("metadata.json"));
-            zos.write(metaBytes);
-            zos.closeEntry();
-        }
-    }
-
-    /** 字节数组转十六进制字符串。 */
-    private static String bytesToHex(byte[] bytes) {
-        return java.util.HexFormat.of().formatHex(bytes);
     }
 
     private void exportToFile(Path path) throws IOException {

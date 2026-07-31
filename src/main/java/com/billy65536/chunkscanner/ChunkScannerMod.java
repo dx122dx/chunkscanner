@@ -6,6 +6,7 @@ import com.billy65536.chunkscanner.components.analyzer.QShopChatListener;
 import com.billy65536.chunkscanner.components.analyzer.QShopHighlightRenderer;
 import com.billy65536.chunkscanner.components.analyzer.SignAnalyzer;
 import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
+import com.billy65536.chunkscanner.components.db.DbExportUtil;
 import com.billy65536.chunkscanner.components.db.DbFileUtil;
 import com.billy65536.chunkscanner.components.view_provider.QShopDbViewProvider;
 import com.billy65536.chunkscanner.components.view_provider.RawDbProvider;
@@ -18,6 +19,7 @@ import com.billy65536.chunkscanner.core.IChunkAnalyzer;
 import com.billy65536.chunkscanner.core.IChunkDb;
 import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
+import com.billy65536.chunkscanner.core.ScanSession;
 import com.billy65536.chunkscanner.integration.ClothConfigIntegration;
 import com.billy65536.chunkscanner.screen.ChunkScannerScreen;
 import com.billy65536.chunkscanner.screen.DatabaseScreen;
@@ -37,6 +39,7 @@ import net.minecraft.util.Formatting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -307,6 +310,12 @@ public class ChunkScannerMod implements ClientModInitializer {
                     return 1;
                 }));
 
+        // /cs db export raw|tsv <id> [filename]
+        var exportNode = ClientCommandManager.literal("export");
+        exportNode.then(buildExportNode("raw", ChunkScannerMod::exportDbRaw));
+        exportNode.then(buildExportNode("tsv", ChunkScannerMod::exportDbTsv));
+        dbNode.then(exportNode);
+
         root.then(dbNode);
 
         // ===== /cs config =====
@@ -396,6 +405,29 @@ public class ChunkScannerMod implements ClientModInitializer {
                         }));
     }
 
+    /** 构建带 id + 可选 filename 参数的导出命令节点。 */
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<FabricClientCommandSource> buildExportNode(
+            String label, ExportCommand command) {
+        return ClientCommandManager.literal(label)
+                .then(ClientCommandManager.argument("id", StringArgumentType.string())
+                        .suggests(DB_FILE_ID_SUGGESTIONS)
+                        .then(ClientCommandManager.argument("filename", StringArgumentType.string())
+                                .executes(ctx -> {
+                                    command.execute(
+                                            StringArgumentType.getString(ctx, "id"),
+                                            StringArgumentType.getString(ctx, "filename"),
+                                            ctx.getSource().getClient());
+                                    return 1;
+                                }))
+                        .executes(ctx -> {
+                            command.execute(
+                                    StringArgumentType.getString(ctx, "id"),
+                                    null,
+                                    ctx.getSource().getClient());
+                            return 1;
+                        }));
+    }
+
     private static int openTaskGui(MinecraftClient client) {
         client.send(() -> client.setScreen(new ChunkScannerScreen(getScanner())));
         return 1;
@@ -431,6 +463,20 @@ public class ChunkScannerMod implements ClientModInitializer {
         return 1;
     }
 
+    // ==================== 导出辅助接口 ====================
+
+    /** 导出操作函数接口。 */
+    @FunctionalInterface
+    private interface ExportAction {
+        Path export(IChunkDb db, Path outFile) throws IOException;
+    }
+
+    /** 导出命令执行接口。 */
+    @FunctionalInterface
+    private interface ExportCommand {
+        void execute(String scanId, String customFileName, MinecraftClient client);
+    }
+
     // ==================== DB 文件操作 ====================
 
     /**
@@ -459,6 +505,72 @@ public class ChunkScannerMod implements ClientModInitializer {
             sendMsg(client, Text.translatable("chunkscanner.msg.db_delete_failed",
                     scanId, e.getMessage()).formatted(Formatting.RED));
         }
+    }
+
+    /**
+     * 通用数据库导出流程：验证 → 刷写 → 打开 DB → 执行导出 → 反馈。
+     */
+    private static void exportDb(String scanId, String customFileName,
+                                  MinecraftClient client,
+                                  ExportAction action,
+                                  String successKey, String logLabel) {
+        if (instance == null || instance.scanner == null) {
+            sendMsg(client, Text.literal("ChunkScanner not initialized.").formatted(Formatting.RED));
+            return;
+        }
+
+        // 若扫描活跃则先刷写，确保导出包含最新数据
+        ScanSession activeSession = instance.scanner.getSession(scanId);
+        if (activeSession != null) {
+            activeSession.db.flush();
+        }
+
+        Path file = DbFileUtil.resolveFilePath(scanId);
+        if (!Files.exists(file)) {
+            sendMsg(client, Text.translatable("chunkscanner.msg.db_file_not_found", scanId)
+                    .formatted(Formatting.RED));
+            return;
+        }
+
+        DbFileUtil.FileMeta meta = DbFileUtil.readFileMeta(file);
+        if (meta == null || meta == DbFileUtil.FileMeta.EMPTY) {
+            sendMsg(client, Text.translatable("chunkscanner.msg.db_file_not_found", scanId)
+                    .formatted(Formatting.RED));
+            return;
+        }
+
+        try {
+            IChunkDb.IFactory dbFactory = IChunkDb.FactoryRegistry.getDefault();
+            IChunkDb db = dbFactory.create(scanId, meta.analyzerId(), ChunkScannerMod.getDbDir());
+
+            Path outFile = null;
+            if (customFileName != null && !customFileName.isBlank()) {
+                outFile = DbExportUtil.getExportDir().resolve(customFileName);
+            }
+            Path exported = action.export(db, outFile);
+            sendMsg(client, Text.translatable(successKey,
+                    exported.getFileName().toString()).formatted(Formatting.GREEN));
+        } catch (Exception e) {
+            LOGGER.warn("Failed to export {} database: {}", logLabel, e.getMessage());
+            sendMsg(client, Text.translatable("chunkscanner.msg.db_export_failed",
+                    e.getMessage()).formatted(Formatting.RED));
+        }
+    }
+
+    /** 导出数据库为 ZIP（raw）格式，包含原始文件与 metadata.json。 */
+    private static void exportDbRaw(String scanId, String customFileName,
+                                     MinecraftClient client) {
+        exportDb(scanId, customFileName, client,
+                DbExportUtil::exportRawZip,
+                "chunkscanner.msg.db_export_raw_success", "raw");
+    }
+
+    /** 导出数据库为 TSV 格式（hex key + tab + hex value）。 */
+    private static void exportDbTsv(String scanId, String customFileName,
+                                     MinecraftClient client) {
+        exportDb(scanId, customFileName, client,
+                DbExportUtil::exportTsv,
+                "chunkscanner.msg.db_export_tsv_success", "tsv");
     }
 
     /**

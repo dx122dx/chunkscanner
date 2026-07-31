@@ -1,7 +1,7 @@
 {
     "category.chunkscanner.main": "区块扫描器",
     "chunkscanner.help.title": "======== ChunkScanner 帮助 ========",
-    "chunkscanner.help.content": "ChunkScanner —— 异步渐进式区块扫描模组\n\n命令列表：\n  /cs task begin <分析器> [id] [配置...]  开始扫描\n  /cs task stop <id>                     停止扫描\n  /cs task pause <id>                    暂停扫描\n  /cs task resume <id>                   恢复扫描\n  /cs task stopall                       停止全部\n  /cs task status                        查看状态\n  /cs task list                          列出分析器\n  /cs task gui                           打开任务界面\n  /cs task help                          命令帮助\n  /cs db gui                             打开数据库\n  /cs db open [id]                       打开指定数据库\n  /cs db delete <id>                     删除数据库\n  /cs db reboot <id>                     从数据库恢复扫描\n  /cs db list                            列出数据库\n  /cs config gui                         打开配置界面\n  /cs config reload [quick]              重载配置\n  /cs components qshop commitEnhancement 提交QShop增强\n  /cs components qshop removeEnhancement 移除QShop增强\n  /cs help                               帮助\n\n快捷别名：\n  /csc qshop commitEnhancement           (= /cs components qshop commitEnhancement)\n  /csc qshop removeEnhancement           (= /cs components qshop removeEnhancement)\n\n配置格式 (begin): key=value ... (revisit=60 tasks=16 radius=1.0 wpName=商店 wpInit=¥ wpGroup=shops)\n参数中的 id/name 支持双引号包裹，如 \"my scan id\"。",
+    "chunkscanner.help.content": "ChunkScanner —— 异步渐进式区块扫描模组\n\n命令列表：\n  /cs task begin <分析器> [id] [配置...]  开始扫描\n  /cs task stop <id>                     停止扫描\n  /cs task pause <id>                    暂停扫描\n  /cs task resume <id>                   恢复扫描\n  /cs task stopall                       停止全部\n  /cs task status                        查看状态\n  /cs task list                          列出分析器\n  /cs task gui                           打开任务界面\n  /cs task help                          命令帮助\n  /cs db gui                             打开数据库\n  /cs db open [id]                       打开指定数据库\n  /cs db delete <id>                     删除数据库\n  /cs db reboot <id>                     从数据库恢复扫描\n  /cs db list                            列出数据库\n  /cs db export raw <id> [name]          导出数据库为 ZIP\n  /cs db export tsv <id> [name]          导出数据库为 TSV\n  /cs config gui                         打开配置界面\n  /cs config reload [quick]              重载配置\n  /cs components qshop commitEnhancement 提交QShop增强\n  /cs components qshop removeEnhancement 移除QShop增强\n  /cs help                               帮助\n\n快捷别名：\n  /csc qshop commitEnhancement           (= /cs components qshop commitEnhancement)\n  /csc qshop removeEnhancement           (= /cs components qshop removeEnhancement)\n\n配置格式 (begin): key=value ... (revisit=60 tasks=16 radius=1.0 wpName=商店 wpInit=¥ wpGroup=shops)\n参数中的 id/name 支持双引号包裹，如 \"my scan id\"。",
     "chunkscanner.msg.not_in_world": "无法启动：不在世界中。",
     "chunkscanner.msg.unknown_analyzer": "未知分析器：%s。使用 /cs task list 查看可用分析器。",
     "chunkscanner.msg.scan_exists": "扫描 id \"%s\" 已存在。请先使用 /cs task stop %s。",
@@ -21,6 +21,9 @@
     "chunkscanner.msg.db_deleted": "已删除数据库 \"%s\"。",
     "chunkscanner.msg.db_delete_failed": "删除数据库 \"%s\" 失败：%s",
     "chunkscanner.msg.db_file_using": "无法删除数据库 \"%s\": 该数据库文件正被活跃扫描会话 \"%s\" 使用，请先终止该扫描。",
+    "chunkscanner.msg.db_export_raw_success": "数据库已导出为 ZIP：%s",
+    "chunkscanner.msg.db_export_tsv_success": "数据库已导出为 TSV：%s",
+    "chunkscanner.msg.db_export_failed": "导出失败：%s",
     "chunkscanner.status.title": "======== ChunkScanner 状态 ========",
     "chunkscanner.status.stop_hint": "点击停止此扫描任务",
     "chunkscanner.status.pause_hint": "点击暂停/恢复此扫描任务",
