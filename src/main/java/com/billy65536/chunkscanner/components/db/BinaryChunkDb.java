@@ -161,6 +161,9 @@ public class BinaryChunkDb implements IChunkDb {
     @Override
     public String getScanId() { return scanId; }
 
+    @Override
+    public String getFactoryId() { return "binary"; }
+
     // ==================== 字符串池 ====================
 
     @Override

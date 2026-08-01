@@ -113,7 +113,9 @@ public final class DbExportUtil {
         Path outPath = (outFile != null)
                 ? outFile
                 : ensureExportDir().resolve(buildDefaultFileName(analyzerId, scanId, "zip"));
-        zipFiles(relatedFiles, parent, outPath, scanId, analyzerId);
+        String databaseType = db.getFactoryId();
+        String mainFileName = parent.relativize(mainFile).toString();
+        zipFiles(relatedFiles, parent, outPath, scanId, analyzerId, databaseType, mainFileName);
         return outPath;
     }
 
@@ -148,7 +150,8 @@ public final class DbExportUtil {
 
     /** 将文件列表打包为 ZIP，保留相对路径，并添加 metadata.json。 */
     private static void zipFiles(List<Path> files, Path baseDir, Path zipPath,
-                                  String scanId, String analyzerId) throws IOException {
+                                  String scanId, String analyzerId,
+                                  String databaseType, String mainFileName) throws IOException {
         try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zipPath.toFile()))) {
             byte[] buffer = new byte[8192];
             MessageDigest sha256;
@@ -183,6 +186,12 @@ public final class DbExportUtil {
                     .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
             meta.addProperty("databaseName", scanId);
             meta.addProperty("scannerId", analyzerId);
+            if (databaseType != null) {
+                meta.addProperty("databaseType", databaseType);
+            }
+            if (mainFileName != null) {
+                meta.addProperty("mainFile", mainFileName);
+            }
             meta.add("files", fileArray);
 
             byte[] metaBytes = new GsonBuilder().setPrettyPrinting().create()

@@ -27,6 +27,12 @@ public interface IChunkDb {
     /** 创建此数据库的分析器 ID。 */
     String getAnalyzerId();
 
+    /**
+     * 返回创建此数据库的 {@link IFactory#getId() 工厂标识符}。
+     * 默认返回 {@code null}，表示未指定/未知类型。
+     */
+    default String getFactoryId() { return null; }
+
     /** 文件大小（字节）。 */
     long getStorageSize();
 
