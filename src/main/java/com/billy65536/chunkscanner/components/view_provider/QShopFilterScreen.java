@@ -24,7 +24,7 @@ import net.minecraft.util.Formatting;
 public class QShopFilterScreen extends Screen {
 
     private final Screen parent;
-    private final QShopDbViewProvider provider;
+    private final QShopFilter filter;
 
     // ==================== 布局常量 ====================
 
@@ -76,30 +76,30 @@ public class QShopFilterScreen extends Screen {
     private String qtyMinStr;
     private String qtyMaxStr;
 
-    public QShopFilterScreen(Screen parent, QShopDbViewProvider provider) {
+    public QShopFilterScreen(Screen parent, QShopFilter filter) {
         super(Text.translatable("chunkscanner.filter.qshop.title"));
         this.parent = parent;
-        this.provider = provider;
+        this.filter = filter;
 
-        // 从 provider 加载当前筛选状态
-        this.modeFilter = provider.getModeFilter();
-        this.sortMode = provider.getSortMode();
-        this.dimFilter = provider.getDimFilter() != null ? provider.getDimFilter() : "";
-        this.ownerFilter = provider.getOwnerFilter() != null ? provider.getOwnerFilter() : "";
-        this.itemFilter = provider.getItemFilter() != null ? provider.getItemFilter() : "";
-        this.itemIdFilter = provider.getItemIdFilter() != null ? provider.getItemIdFilter() : "";
-        this.flagsFilter = provider.getFlagsFilter() != null ? provider.getFlagsFilter() : "";
-        this.dimFilterMode = provider.getDimFilterMode();
-        this.ownerFilterMode = provider.getOwnerFilterMode();
-        this.itemFilterMode = provider.getItemFilterMode();
-        this.itemIdFilterMode = provider.getItemIdFilterMode();
-        this.flagsFilterMode = provider.getFlagsFilterMode();
-        this.priceMinStr = priceToDisplayString(provider.getPriceMinFilter());
-        this.priceMaxStr = priceToDisplayString(provider.getPriceMaxFilter());
-        this.qtyMinStr = provider.getQtyMinFilter() != null
-                ? String.valueOf(provider.getQtyMinFilter()) : "";
-        this.qtyMaxStr = provider.getQtyMaxFilter() != null
-                ? String.valueOf(provider.getQtyMaxFilter()) : "";
+        // 从 filter 加载当前筛选状态
+        this.modeFilter = filter.getModeFilter();
+        this.sortMode = filter.getSortMode();
+        this.dimFilter = filter.getDimFilter() != null ? filter.getDimFilter() : "";
+        this.ownerFilter = filter.getOwnerFilter() != null ? filter.getOwnerFilter() : "";
+        this.itemFilter = filter.getItemFilter() != null ? filter.getItemFilter() : "";
+        this.itemIdFilter = filter.getItemIdFilter() != null ? filter.getItemIdFilter() : "";
+        this.flagsFilter = filter.getFlagsFilter() != null ? filter.getFlagsFilter() : "";
+        this.dimFilterMode = filter.getDimFilterMode();
+        this.ownerFilterMode = filter.getOwnerFilterMode();
+        this.itemFilterMode = filter.getItemFilterMode();
+        this.itemIdFilterMode = filter.getItemIdFilterMode();
+        this.flagsFilterMode = filter.getFlagsFilterMode();
+        this.priceMinStr = priceToDisplayString(filter.getPriceMinFilter());
+        this.priceMaxStr = priceToDisplayString(filter.getPriceMaxFilter());
+        this.qtyMinStr = filter.getQtyMinFilter() != null
+                ? String.valueOf(filter.getQtyMinFilter()) : "";
+        this.qtyMaxStr = filter.getQtyMaxFilter() != null
+                ? String.valueOf(filter.getQtyMaxFilter()) : "";
     }
 
     // ==================== 初始化 ====================
@@ -269,13 +269,13 @@ public class QShopFilterScreen extends Screen {
 
     private Text getSortText() {
         return switch (sortMode) {
-            case QShopDbViewProvider.SORT_PRICE_ASC ->
+            case QShopFilter.SORT_PRICE_ASC ->
                     Text.translatable("chunkscanner.filter.sort.price_asc").formatted(Formatting.GREEN);
-            case QShopDbViewProvider.SORT_PRICE_DESC ->
+            case QShopFilter.SORT_PRICE_DESC ->
                     Text.translatable("chunkscanner.filter.sort.price_desc").formatted(Formatting.GREEN);
-            case QShopDbViewProvider.SORT_QTY_ASC ->
+            case QShopFilter.SORT_QTY_ASC ->
                     Text.translatable("chunkscanner.filter.sort.qty_asc").formatted(Formatting.GREEN);
-            case QShopDbViewProvider.SORT_QTY_DESC ->
+            case QShopFilter.SORT_QTY_DESC ->
                     Text.translatable("chunkscanner.filter.sort.qty_desc").formatted(Formatting.GREEN);
             default -> Text.translatable("chunkscanner.filter.sort.none").formatted(Formatting.GRAY);
         };
@@ -283,13 +283,13 @@ public class QShopFilterScreen extends Screen {
 
     private Text getPatternModeText(int mode) {
         return switch (mode) {
-            case QShopDbViewProvider.PATTERN_CONTAINS ->
+            case QShopFilter.PATTERN_CONTAINS ->
                     Text.literal("含").formatted(Formatting.WHITE);
-            case QShopDbViewProvider.PATTERN_EXCLUDE ->
+            case QShopFilter.PATTERN_EXCLUDE ->
                     Text.literal("除").formatted(Formatting.RED);
-            case QShopDbViewProvider.PATTERN_EXACT ->
+            case QShopFilter.PATTERN_EXACT ->
                     Text.literal("全").formatted(Formatting.YELLOW);
-            case QShopDbViewProvider.PATTERN_REGEX ->
+            case QShopFilter.PATTERN_REGEX ->
                     Text.literal("正").formatted(Formatting.AQUA);
             default -> Text.literal("?").formatted(Formatting.GRAY);
         };
@@ -298,11 +298,11 @@ public class QShopFilterScreen extends Screen {
     /** flags 筛选模式（3 种：含/除/全，无正则）。 */
     private Text getFlagsModeText(int mode) {
         return switch (mode) {
-            case QShopDbViewProvider.PATTERN_CONTAINS ->
+            case QShopFilter.PATTERN_CONTAINS ->
                     Text.literal("含").formatted(Formatting.WHITE);
-            case QShopDbViewProvider.PATTERN_EXCLUDE ->
+            case QShopFilter.PATTERN_EXCLUDE ->
                     Text.literal("除").formatted(Formatting.RED);
-            case QShopDbViewProvider.PATTERN_EXACT ->
+            case QShopFilter.PATTERN_EXACT ->
                     Text.literal("全").formatted(Formatting.YELLOW);
             default -> Text.literal("?").formatted(Formatting.GRAY);
         };
@@ -360,44 +360,44 @@ public class QShopFilterScreen extends Screen {
     // ==================== 操作 ====================
 
     private void apply() {
-        provider.setModeFilter(modeFilter);
-        provider.setSortMode(sortMode);
-        provider.setDimFilter(trimToNull(dimField.getText()));
-        provider.setDimFilterMode(dimFilterMode);
-        provider.setOwnerFilter(trimToNull(ownerField.getText()));
-        provider.setOwnerFilterMode(ownerFilterMode);
-        provider.setItemFilter(trimToNull(itemField.getText()));
-        provider.setItemFilterMode(itemFilterMode);
-        provider.setItemIdFilter(trimToNull(itemIdField.getText()));
-        provider.setItemIdFilterMode(itemIdFilterMode);
-        provider.setFlagsFilter(trimToNull(flagsField.getText()));
-        provider.setFlagsFilterMode(flagsFilterMode);
+        filter.setModeFilter(modeFilter);
+        filter.setSortMode(sortMode);
+        filter.setDimFilter(trimToNull(dimField.getText()));
+        filter.setDimFilterMode(dimFilterMode);
+        filter.setOwnerFilter(trimToNull(ownerField.getText()));
+        filter.setOwnerFilterMode(ownerFilterMode);
+        filter.setItemFilter(trimToNull(itemField.getText()));
+        filter.setItemFilterMode(itemFilterMode);
+        filter.setItemIdFilter(trimToNull(itemIdField.getText()));
+        filter.setItemIdFilterMode(itemIdFilterMode);
+        filter.setFlagsFilter(trimToNull(flagsField.getText()));
+        filter.setFlagsFilterMode(flagsFilterMode);
 
         // 价格范围：解析浮点数并乘以 100 存储（内部以货币最小单位表示）
-        provider.setPriceMinFilter(parsePriceInt(priceMinField.getText()));
-        provider.setPriceMaxFilter(parsePriceInt(priceMaxField.getText()));
+        filter.setPriceMinFilter(parsePriceInt(priceMinField.getText()));
+        filter.setPriceMaxFilter(parsePriceInt(priceMaxField.getText()));
 
         // 数量范围
-        provider.setQtyMinFilter(parseIntOrNull(qtyMinField.getText()));
-        provider.setQtyMaxFilter(parseIntOrNull(qtyMaxField.getText()));
+        filter.setQtyMinFilter(parseIntOrNull(qtyMinField.getText()));
+        filter.setQtyMaxFilter(parseIntOrNull(qtyMaxField.getText()));
 
-        provider.invalidateCache();
+        filter.invalidateCache();
         close();
     }
 
     private void reset() {
         modeFilter = 0;
-        sortMode = QShopDbViewProvider.SORT_NONE;
+        sortMode = QShopFilter.SORT_NONE;
         dimField.setText("");
-        dimFilterMode = QShopDbViewProvider.PATTERN_CONTAINS;
+        dimFilterMode = QShopFilter.PATTERN_CONTAINS;
         ownerField.setText("");
-        ownerFilterMode = QShopDbViewProvider.PATTERN_CONTAINS;
+        ownerFilterMode = QShopFilter.PATTERN_CONTAINS;
         itemField.setText("");
-        itemFilterMode = QShopDbViewProvider.PATTERN_CONTAINS;
+        itemFilterMode = QShopFilter.PATTERN_CONTAINS;
         itemIdField.setText("");
-        itemIdFilterMode = QShopDbViewProvider.PATTERN_CONTAINS;
+        itemIdFilterMode = QShopFilter.PATTERN_CONTAINS;
         flagsField.setText("");
-        flagsFilterMode = QShopDbViewProvider.PATTERN_CONTAINS;
+        flagsFilterMode = QShopFilter.PATTERN_CONTAINS;
         priceMinField.setText("");
         priceMaxField.setText("");
         qtyMinField.setText("");

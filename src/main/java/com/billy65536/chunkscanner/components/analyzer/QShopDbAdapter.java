@@ -418,7 +418,7 @@ public final class QShopDbAdapter {
         int ownerId = db.intern(owner);
         int itemNameId = db.intern(itemName);
         int itemIdPoolId = registryId != null ? db.intern(registryId) : 0;
-        int flags = registryId != null ? QShopAnalyzer.FLAG_ID_RECOVERED : 0;
+        int flags = registryId != null ? QShopContract.FLAG_ID_RECOVERED : 0;
 
         ByteBuffer vb = ByteBuffer.allocate(BASE_RECORD_SIZE).order(ByteOrder.LITTLE_ENDIAN);
         vb.putLong(encodeKeyHi(dimPoolId, x));
@@ -478,7 +478,7 @@ public final class QShopDbAdapter {
 
             if (enhancedItemId != 0) {
                 itemId = subDb.lookup(enhancedItemId);
-                flags &= ~QShopAnalyzer.FLAG_ID_RECOVERED; // 覆盖后，不再使用从映射表恢复的 id，移除该标记
+                flags &= ~QShopContract.FLAG_ID_RECOVERED; // 覆盖后，不再使用从映射表恢复的 id，移除该标记
             }
             flags |= enhancedFlags;
             detailNbtString = detailNbtPoolId != 0 ? subDb.lookup(detailNbtPoolId) : null;
@@ -502,9 +502,9 @@ public final class QShopDbAdapter {
         int detailNbtPoolId = fullNbtString != null
                 ? subDb.intern(fullNbtString) : 0;
 
-        int flags = QShopAnalyzer.FLAG_ENHANCED_DATA;
-        if (isShulkerExpanded) flags |= QShopAnalyzer.FLAG_SHULKER_EXPANDED;
-        if (isBook) flags |= QShopAnalyzer.FLAG_BOOK;
+        int flags = QShopContract.FLAG_ENHANCED_DATA;
+        if (isShulkerExpanded) flags |= QShopContract.FLAG_SHULKER_EXPANDED;
+        if (isBook) flags |= QShopContract.FLAG_BOOK;
 
         ByteBuffer buf = ByteBuffer.allocate(ENHANCED_RECORD_SIZE).order(ByteOrder.LITTLE_ENDIAN);
         buf.putInt(itemIdPoolId);

@@ -24,9 +24,8 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
-import com.billy65536.chunkscanner.components.db.DbExportUtil;
-import com.billy65536.chunkscanner.components.db.DbFileUtil;
-import com.billy65536.chunkscanner.components.view_provider.RawDbProvider;
+import com.billy65536.chunkscanner.core.db.DbExportUtil;
+import com.billy65536.chunkscanner.core.db.DbFileUtil;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.TaskConfig;
 import com.billy65536.chunkscanner.core.AnalyzerRegistry;
@@ -161,7 +160,7 @@ public class DatabaseScreen extends Screen {
         IChunkDb.IFactory dbFactory = IChunkDb.FactoryRegistry.getDefault();
         IChunkDb db = dbFactory.createMetadataOnly(meta.scanId(), meta.analyzerId(), fileDir);
         rawChunkDb = db;
-        openedDb = new RawDbProvider(db);
+        openedDb = createDefaultViewProvider(db, meta.analyzerId());
         try {
             db.open();
         } catch (Exception e) {
@@ -193,6 +192,26 @@ public class DatabaseScreen extends Screen {
         rawChunkDb = null;
         currentView = null;
         cachedTaskConfig = null;
+    }
+
+    /**
+     * 根据分析器的默认视图提供者 id 创建视图提供者实例。
+     * 经 DbViewProviderRegistry 获取，不直接依赖任何具体的 view_provider 实现（避免 screen→components 耦合）。
+     * 若默认视图不可用，回退到 "raw" 视图。
+     */
+    private static IDbViewProvider createDefaultViewProvider(IChunkDb db, String analyzerId) {
+        String viewId = AnalyzerRegistry.getDefaultViewProvider(analyzerId);
+        IDbViewProvider provider = createView(viewId, db);
+        if (provider == null) {
+            provider = createView("raw", db);
+        }
+        return provider;
+    }
+
+    private static IDbViewProvider createView(String viewId, IChunkDb db) {
+        DbViewProviderRegistry.ITypeDescriptor desc = DbViewProviderRegistry.get(viewId);
+        if (desc == null) return null;
+        return desc.create(db);
     }
 
     // ==================== 视图提供者 ====================

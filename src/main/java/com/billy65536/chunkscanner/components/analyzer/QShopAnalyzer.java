@@ -45,19 +45,19 @@ import com.billy65536.chunkscanner.core.IChunkDb;
 public class QShopAnalyzer implements IChunkAnalyzer {
 
     /** 特殊值：物品注册名通过译名映射表恢复（R）。 */
-    public static final int FLAG_ID_RECOVERED = 0x01;
+    public static final int FLAG_ID_RECOVERED = QShopContract.FLAG_ID_RECOVERED;
     /** 特殊值：此记录包含增强数据存储在子数据库 1。 */
-    public static final int FLAG_ENHANCED_DATA = 0x02;
+    public static final int FLAG_ENHANCED_DATA = QShopContract.FLAG_ENHANCED_DATA;
     /** 特殊值：潜影盒已展开（S），内容物作为商品。 */
-    public static final int FLAG_SHULKER_EXPANDED = 0x04;
+    public static final int FLAG_SHULKER_EXPANDED = QShopContract.FLAG_SHULKER_EXPANDED;
     /** 特殊值：成书（B），商品名已替换为标题。 */
-    public static final int FLAG_BOOK = 0x08;
+    public static final int FLAG_BOOK = QShopContract.FLAG_BOOK;
 
     /** quantity 的最大值 (24-bit)，用作"无限"的哨兵值 */
-    public static final int INFINITE_QUANTITY = 0xFFFFFF;
+    public static final int INFINITE_QUANTITY = QShopContract.INFINITE_QUANTITY;
 
-    public static final byte MODE_SELL = 0;
-    public static final byte MODE_BUY  = 1;
+    public static final byte MODE_SELL = QShopContract.MODE_SELL;
+    public static final byte MODE_BUY  = QShopContract.MODE_BUY;
 
     // ==================== 正则模式（由配置文件驱动） ====================
 

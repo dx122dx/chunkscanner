@@ -6,8 +6,8 @@ import com.billy65536.chunkscanner.components.analyzer.QShopChatListener;
 import com.billy65536.chunkscanner.components.analyzer.QShopHighlightRenderer;
 import com.billy65536.chunkscanner.components.analyzer.SignAnalyzer;
 import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
-import com.billy65536.chunkscanner.components.db.DbExportUtil;
-import com.billy65536.chunkscanner.components.db.DbFileUtil;
+import com.billy65536.chunkscanner.core.db.DbExportUtil;
+import com.billy65536.chunkscanner.core.db.DbFileUtil;
 import com.billy65536.chunkscanner.components.view_provider.QShopDbViewProvider;
 import com.billy65536.chunkscanner.components.view_provider.RawDbProvider;
 import com.billy65536.chunkscanner.components.view_provider.SignDbViewProvider;
@@ -20,6 +20,7 @@ import com.billy65536.chunkscanner.core.IChunkDb;
 import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.core.ScanSession;
+import com.billy65536.chunkscanner.gui.GuiUtil;
 import com.billy65536.chunkscanner.integration.ClothConfigIntegration;
 import com.billy65536.chunkscanner.screen.ChunkScannerScreen;
 import com.billy65536.chunkscanner.screen.DatabaseScreen;
@@ -42,6 +43,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 public class ChunkScannerMod implements ClientModInitializer {
     public static final String MOD_ID = "chunkscanner";
@@ -152,7 +154,7 @@ public class ChunkScannerMod implements ClientModInitializer {
 
         // 注册分析器
         AnalyzerRegistry.register(new SignAnalyzer());
-        AnalyzerRegistry.register(new QShopAnalyzer());
+        AnalyzerRegistry.register(new QShopAnalyzer(), "qshop_view");
 
         // 注册 DbViewProvider 类型（提供数据库浏览的不同视图）
         DbViewProviderRegistry.register(new RawDbProvider.Type());
@@ -306,7 +308,7 @@ public class ChunkScannerMod implements ClientModInitializer {
         // /cs db list
         dbNode.then(ClientCommandManager.literal("list")
                 .executes(ctx -> {
-                    DbFileUtil.chatListDbFiles(ctx.getSource().getClient());
+                    chatListDbFiles(ctx.getSource().getClient());
                     return 1;
                 }));
 
@@ -612,6 +614,29 @@ public class ChunkScannerMod implements ClientModInitializer {
         }
 
         scanner.startWithDb(client, meta.scanId(), meta.analyzerId(), storedConfig, existingDb);
+    }
+
+    /**
+     * 在聊天中列出所有 DB 文件及其大小、分析器。
+     * 原位于 components.db.DbFileUtil，上移至此处（命令层）以解除 DbFileUtil 的 UI 职责。
+     */
+    public static void chatListDbFiles(net.minecraft.client.MinecraftClient client) {
+        List<DbFileUtil.FileMeta> files = DbFileUtil.listAllDbFiles();
+        if (files.isEmpty()) {
+            sendMsg(client, Text.translatable("chunkscanner.gui.database.no_files").formatted(Formatting.GRAY));
+            return;
+        }
+        sendMsg(client, Text.translatable("chunkscanner.gui.database.title")
+                .formatted(Formatting.GOLD, Formatting.BOLD));
+        for (DbFileUtil.FileMeta meta : files) {
+            String sizeStr = GuiUtil.formatSize(meta.fileSize());
+            String aName = meta.analyzerId() != null && !meta.analyzerId().isEmpty()
+                    ? meta.analyzerId() : "?";
+            sendMsg(client, Text.literal("  ")
+                    .append(Text.literal(meta.scanId()).formatted(Formatting.YELLOW))
+                    .append(Text.literal(" [" + aName + "]").formatted(Formatting.GRAY))
+                    .append(Text.literal(" " + sizeStr).formatted(Formatting.WHITE)));
+        }
     }
 
     private static void sendMsg(MinecraftClient client, Text msg) {

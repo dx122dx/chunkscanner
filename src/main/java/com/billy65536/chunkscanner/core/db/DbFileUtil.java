@@ -1,7 +1,4 @@
-package com.billy65536.chunkscanner.components.db;
-
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+package com.billy65536.chunkscanner.core.db;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -18,13 +15,11 @@ import com.billy65536.chunkscanner.ChunkScannerMod;
 
 /**
  * DB 文件工具类 —— 统一所有二进制文件元数据读取和文件操作。
- *
- * 避免了 ChunkScannerMod 和 DatabaseScreen 中的重复代码。
  */
 public final class DbFileUtil {
 
-    /** 默认 Magic（引用 BinaryChunkDb 的单一定义）。 */
-    static final long MAGIC = BinaryChunkDb.MAGIC;
+    /** 文件魔数："CHNKSCAN"（little-endian uint64）。 */
+    public static final long MAGIC = 0x4E4143534B4E4843L;
 
     /** 最小头大小（magic(8) + version(4) + scanIdLen(2) = 14）。 */
     private static final int MIN_HEADER_SIZE = 14;
@@ -35,7 +30,7 @@ public final class DbFileUtil {
 
     /**
      * 从二进制文件中读取 scanId 和 analyzerId。
-     * 使用 FileChannel 只读取头部数据，避免大文件全量加载到内存。
+     * 使用 RandomAccessFile 只读取头部数据，避免大文件全量加载到内存。
      */
     public static FileMeta readFileMeta(Path file) {
         try {
@@ -126,7 +121,6 @@ public final class DbFileUtil {
      * 根据 scanId 查找对应的文件路径（跨所有上下文搜索）。
      * 用于删除、显示路径等操作。
      */
-    @SuppressWarnings("deprecation")
     public static Path resolveFilePath(String scanId) {
         // 先在已缓存的列表中查找
         for (FileMeta m : listAllDbFiles()) {
@@ -134,8 +128,41 @@ public final class DbFileUtil {
                 return m.filePath();
             }
         }
-        // fallback：使用当前上下文构造路径
-        return ChunkScannerMod.getDbDir().resolve(BinaryChunkDb.safeFileName(scanId));
+        // fallback：按命名约定 chunkscanner_{hash}.{analyzerId}.{dbExt} 在默认目录中匹配
+        String stem = safeFilenameStem(scanId);
+        Path dir = ChunkScannerMod.getDbDir();
+        try (java.nio.file.DirectoryStream<Path> stream =
+                     Files.newDirectoryStream(dir, stem + ".*")) {
+            for (Path p : stream) {
+                if (!p.getFileName().toString().contains(".sub_")) {
+                    return p;
+                }
+            }
+        } catch (IOException ignored) {
+            return dir.resolve("[ERROR - Failed to resolve file path]");
+        }
+        return dir.resolve(stem + ".bin");
+    }
+
+    /**
+     * 生成安全的文件名主干：chunkscanner_{hash}（不含扩展名）。
+     */
+    public static String safeFilenameStem(String scanId) {
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(scanId.getBytes(StandardCharsets.UTF_8));
+            long hash = ((long) (digest[0] & 0xFF) << 56)
+                      | ((long) (digest[1] & 0xFF) << 48)
+                      | ((long) (digest[2] & 0xFF) << 40)
+                      | ((long) (digest[3] & 0xFF) << 32)
+                      | ((long) (digest[4] & 0xFF) << 24)
+                      | ((long) (digest[5] & 0xFF) << 16)
+                      | ((long) (digest[6] & 0xFF) << 8)
+                      | (digest[7] & 0xFF);
+            return "chunkscanner_" + Long.toUnsignedString(hash & 0x7FFFFFFFFFFFFFFFL, 36);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 not available", e);
+        }
     }
 
     // ==================== 文件操作 ====================
@@ -172,40 +199,6 @@ public final class DbFileUtil {
         }
 
         return deleted;
-    }
-
-    // ==================== 聊天消息 ====================
-
-    /**
-     * 在聊天中列出所有 DB 文件及其大小、分析器。
-     */
-    public static void chatListDbFiles(net.minecraft.client.MinecraftClient client) {
-        List<FileMeta> files = listAllDbFiles();
-        if (files.isEmpty()) {
-            sendMsg(client, Text.translatable("chunkscanner.gui.database.no_files").formatted(Formatting.GRAY));
-            return;
-        }
-        sendMsg(client, Text.translatable("chunkscanner.gui.database.title")
-                .formatted(Formatting.GOLD, Formatting.BOLD));
-        for (FileMeta meta : files) {
-            String sizeStr = meta.fileSize() < 1024
-                    ? meta.fileSize() + " B"
-                    : meta.fileSize() < 1024 * 1024
-                        ? String.format("%.1f KB", meta.fileSize() / 1024.0)
-                        : String.format("%.1f MB", meta.fileSize() / (1024.0 * 1024.0));
-            String aName = meta.analyzerId() != null && !meta.analyzerId().isEmpty()
-                    ? meta.analyzerId() : "?";
-            sendMsg(client, Text.literal("  ")
-                    .append(Text.literal(meta.scanId()).formatted(Formatting.YELLOW))
-                    .append(Text.literal(" [" + aName + "]").formatted(Formatting.GRAY))
-                    .append(Text.literal(" " + sizeStr).formatted(Formatting.WHITE)));
-        }
-    }
-
-    private static void sendMsg(net.minecraft.client.MinecraftClient client, Text msg) {
-        if (client.player != null) {
-            client.player.sendMessage(msg, false);
-        }
     }
 
     // ==================== 辅助类型 ====================

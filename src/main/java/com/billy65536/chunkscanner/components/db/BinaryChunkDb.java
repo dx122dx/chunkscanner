@@ -15,6 +15,7 @@ import java.util.zip.CRC32;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.IChunkDb;
+import com.billy65536.chunkscanner.core.db.DbFileUtil;
 import com.billy65536.chunkscanner.core.CoreUtil;
 import com.billy65536.chunkscanner.config.TaskConfig;
 
@@ -58,8 +59,8 @@ import com.billy65536.chunkscanner.config.TaskConfig;
  * └──────────────────────────────────────────────┘
  */
 public class BinaryChunkDb implements IChunkDb {
-    /** 文件魔数："CHNKSCAN"（little-endian uint64）。package-private 供 DbFileUtil 引用。 */
-    static final long MAGIC = 0x4E4143534B4E4843L; // "CHNKSCAN" (little-endian)
+    /** 文件魔数 */
+    private static final long MAGIC = DbFileUtil.MAGIC;
     /** 当前二进制文件格式版本。 */
     private static final int CURRENT_VERSION = 4;
     /** 任务配置元数据键（仅用于 v1-v3 兼容读取）。 */
@@ -140,7 +141,7 @@ public class BinaryChunkDb implements IChunkDb {
         this.dbDir = dbDir != null ? dbDir : ChunkScannerMod.getDbDir();
         this.dbExt = dbExt;
         this.subId = subId;
-        this.fileStem = safeFileStem(scanId);
+        this.fileStem = DbFileUtil.safeFilenameStem(scanId);
         this.safeAnalyzerId = sanitizeAnalyzerId(analyzerId);
         this.stringPool = new ConcurrentHashMap<>();
         this.stringPoolReverse = new ConcurrentHashMap<>();
@@ -717,37 +718,6 @@ public class BinaryChunkDb implements IChunkDb {
     }
 
     // ==================== 文件名工具 ====================
-
-    /**
-     * 根据 scanId 生成安全的文件名主干（不含扩展名）。
-     * 使用 SHA-256 前 8 字节（base-36 编码），保证跨 JVM 确定性。
-     */
-    static String safeFileStem(String scanId) {
-        try {
-            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
-            byte[] digest = md.digest(scanId.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            long hash = ((long)(digest[0] & 0xFF) << 56)
-                      | ((long)(digest[1] & 0xFF) << 48)
-                      | ((long)(digest[2] & 0xFF) << 40)
-                      | ((long)(digest[3] & 0xFF) << 32)
-                      | ((long)(digest[4] & 0xFF) << 24)
-                      | ((long)(digest[5] & 0xFF) << 16)
-                      | ((long)(digest[6] & 0xFF) << 8)
-                      | (digest[7] & 0xFF);
-            return "chunkscanner_" + Long.toUnsignedString(hash & 0x7FFFFFFFFFFFFFFFL, 36);
-        } catch (java.security.NoSuchAlgorithmException e) {
-            throw new RuntimeException("SHA-256 not available", e);
-        }
-    }
-
-    /**
-     * 旧版 .dat 文件名生成（保留用于兼容旧文件，如 DbFileUtil 的 fallback 路径）。
-     * @deprecated 新代码应使用安全命名语法 chunkscanner_{hash}.{analyzer}.{dbExt}
-     */
-    @Deprecated
-    static String safeFileName(String scanId) {
-        return safeFileStem(scanId) + ".dat";
-    }
 
     /** 将分析器名称转换为符合文件名规范的标识符。 */
     private static String sanitizeAnalyzerId(String name) {

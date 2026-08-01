@@ -18,22 +18,48 @@ import java.util.Map;
 public final class AnalyzerRegistry {
 
     private static final Map<String, IChunkAnalyzer> analyzers = new LinkedHashMap<>();
+    private static final Map<String, String> defaultViewProviders = new LinkedHashMap<>();
 
     private AnalyzerRegistry() {}
 
-    /** 注册一个分析器。重复注册会覆盖之前同 ID 的分析器。参数为 null 或 ID 为 null 时忽略。 */
+    /**
+     * 注册一个分析器并指定默认视图提供者为 "raw"。
+     * 重复注册会覆盖之前同 ID 的分析器及其默认视图提供者。
+     *
+     * @param analyzer            分析器实例
+     */
     public static void register(IChunkAnalyzer analyzer) {
+        register(analyzer, "raw");
+    }
+
+    /**
+     * 注册一个分析器并指定默认视图提供者 id。
+     * 重复注册会覆盖之前同 ID 的分析器及其默认视图提供者。
+     *
+     * @param analyzer            分析器实例
+     * @param defaultViewProvider 默认视图提供者 id（对应 DbViewProviderRegistry 中注册的 id），留空或 null 视为 "raw"
+     */
+    public static void register(IChunkAnalyzer analyzer, String defaultViewProvider) {
         if (analyzer == null || analyzer.getId() == null) {
             ChunkScannerMod.LOGGER.warn("Attempted to register null analyzer or analyzer with null ID, ignored");
             return;
         }
         analyzers.put(analyzer.getId(), analyzer);
-        ChunkScannerMod.LOGGER.info("Registered analyzer: {}", analyzer.getId());
+        String dvp = (defaultViewProvider == null || defaultViewProvider.isEmpty()) ? "raw" : defaultViewProvider;
+        defaultViewProviders.put(analyzer.getId(), dvp);
+        ChunkScannerMod.LOGGER.info("Registered analyzer: {} (default view: {})", analyzer.getId(), dvp);
     }
 
     /** 通过 ID 获取分析器，不存在返回 null。 */
     public static IChunkAnalyzer get(String id) {
         return analyzers.get(id);
+    }
+
+    /**
+     * 获取分析器对应的默认视图提供者 id，未注册返回 "raw"。
+     */
+    public static String getDefaultViewProvider(String analyzerId) {
+        return defaultViewProviders.getOrDefault(analyzerId, "raw");
     }
 
     /** 获取所有已注册的分析器（只读）。 */

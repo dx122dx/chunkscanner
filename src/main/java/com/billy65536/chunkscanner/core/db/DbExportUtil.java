@@ -1,4 +1,4 @@
-package com.billy65536.chunkscanner.components.db;
+package com.billy65536.chunkscanner.core.db;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.IChunkDb;
@@ -21,7 +21,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 /**
- * 数据库导出工具。
+ * 数据库导出工具（core 层）。
  *
  * <p>支持两种导出模式：</p>
  * <ul>
@@ -193,7 +193,7 @@ public final class DbExportUtil {
         }
     }
 
-    /** 字节数组转十六进制字符串。 */
+    /** 字节数组转十六进制字符串（完整）。 */
     static String bytesToHex(byte[] bytes) {
         return java.util.HexFormat.of().formatHex(bytes);
     }

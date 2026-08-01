@@ -3,26 +3,13 @@ package com.billy65536.chunkscanner.components.view_provider;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.StringNbtReader;
-import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.Identifier;
 
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.time.format.FormatStyle;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 
-import com.billy65536.chunkscanner.components.analyzer.QShopAnalyzer;
+import com.billy65536.chunkscanner.components.analyzer.QShopContract;
 import com.billy65536.chunkscanner.components.analyzer.QShopDbAdapter;
 import com.billy65536.chunkscanner.core.IChunkDb;
 import com.billy65536.chunkscanner.core.IDbViewProvider;
@@ -34,7 +21,9 @@ import com.billy65536.chunkscanner.gui.layout.ILayout;
 /**
  * QShop 分析器特化的 DbViewProvider。
  *
- * 解析 qshop 分析器生成的二进制 KV 数据，将原始字节转换为可读的商店信息。
+ * <p>解析 qshop 分析器生成的二进制 KV 数据，将原始字节转换为可读的商店信息。
+ * 筛选状态与匹配逻辑由 {@link QShopFilter} 负责，展示辅助由 {@link QShopDisplayUtil} 负责，
+ * 本类仅承担展示布局的构建与接口适配。</p>
  *
  * 键格式（34 字节）：
  *   "qshop:" (6B) | dimPoolId:u32 (4B) | cx:i32 (4B) | cz:i32 (4B) | keyHi:u64 (8B) | keyLo:u64 (8B)
@@ -50,63 +39,12 @@ public class QShopDbViewProvider implements IDbViewProvider {
 
     private final IChunkDb db;
 
-
     /** 缓存筛选并排序后的记录。仅渲染线程访问，无需同步。 */
     private List<QShopDbAdapter.Record> cachedFilteredSorted;
-    private boolean filteredCacheValid = false;
+    private int cacheVersion = 0;
 
-    // ==================== 排序常量 ====================
-
-    public static final int SORT_NONE = 0;
-    public static final int SORT_PRICE_ASC = 1;
-    public static final int SORT_PRICE_DESC = 2;
-    public static final int SORT_QTY_ASC = 3;
-    public static final int SORT_QTY_DESC = 4;
-
-    // ==================== 模式常量 ====================
-
-    /** 包含模式：字段包含筛选文本即匹配（现有默认行为）。 */
-    public static final int PATTERN_CONTAINS = 0;
-    /** 排除模式：字段不包含筛选文本才匹配（包含的排除）。 */
-    public static final int PATTERN_EXCLUDE = 1;
-    /** 全字模式：字段完全等于筛选文本才匹配（忽略大小写）。 */
-    public static final int PATTERN_EXACT = 2;
-    /** 正则模式：字段满足正则表达式才匹配。 */
-    public static final int PATTERN_REGEX = 3;
-
-    // ==================== 筛选状态 ====================
-
-    /** 模式筛选：0=全部, 1=出售(MODE_SELL), 2=收购(MODE_BUY) */
-    private int modeFilter = 0;
-    private String dimFilter = null;
-    private String ownerFilter = null;
-    private String itemFilter = null;
-    private String itemIdFilter = null;
-    private String flagsFilter = null;
-
-    /** 各文本筛选字段的匹配模式。 */
-    private int dimFilterMode = PATTERN_CONTAINS;
-    private int ownerFilterMode = PATTERN_CONTAINS;
-    private int itemFilterMode = PATTERN_CONTAINS;
-    private int itemIdFilterMode = PATTERN_CONTAINS;
-    private int flagsFilterMode = PATTERN_CONTAINS; // 对 flag: 含=任一匹配, 除=全不匹配, 全=全匹配
-
-    /** 预编译的正则 Pattern 缓存（仅在 PATTERN_REGEX 模式下非 null）。 */
-    private Pattern compiledDimPattern = null;
-    private Pattern compiledOwnerPattern = null;
-    private Pattern compiledItemPattern = null;
-    private Pattern compiledItemIdPattern = null;
-
-    /** 价格范围筛选（null = 不限制）。内部以货币最小单位存储（乘以 100）。 */
-    private Integer priceMinFilter = null;
-    private Integer priceMaxFilter = null;
-
-    /** 数量范围筛选（null = 不限制）。 */
-    private Integer qtyMinFilter = null;
-    private Integer qtyMaxFilter = null;
-
-    /** 排序模式。 */
-    private int sortMode = SORT_NONE;
+    /** 筛选状态与匹配逻辑。 */
+    private final QShopFilter filter = new QShopFilter();
 
     public QShopDbViewProvider(IChunkDb db) {
         this.db = db;
@@ -129,74 +67,12 @@ public class QShopDbViewProvider implements IDbViewProvider {
 
     @Override
     public boolean isFilterActive() {
-        return modeFilter != 0 || dimFilter != null || ownerFilter != null
-                || itemFilter != null || itemIdFilter != null || flagsFilter != null
-                || sortMode != SORT_NONE
-                || priceMinFilter != null || priceMaxFilter != null
-                || qtyMinFilter != null || qtyMaxFilter != null;
+        return filter.isFilterActive();
     }
 
     @Override
     public Screen createFilterScreen(Screen parent) {
-        return new QShopFilterScreen(parent, this);
-    }
-
-    // ==================== 筛选字段存取 ====================
-
-    public int getModeFilter() { return modeFilter; }
-    public void setModeFilter(int v) { modeFilter = v; }
-    public String getDimFilter() { return dimFilter; }
-    public void setDimFilter(String v) { dimFilter = v; }
-    public int getDimFilterMode() { return dimFilterMode; }
-    public void setDimFilterMode(int v) { dimFilterMode = v; }
-    public String getOwnerFilter() { return ownerFilter; }
-    public void setOwnerFilter(String v) { ownerFilter = v; }
-    public int getOwnerFilterMode() { return ownerFilterMode; }
-    public void setOwnerFilterMode(int v) { ownerFilterMode = v; }
-    public String getItemFilter() { return itemFilter; }
-    public void setItemFilter(String v) { itemFilter = v; }
-    public int getItemFilterMode() { return itemFilterMode; }
-    public void setItemFilterMode(int v) { itemFilterMode = v; }
-
-    public Integer getPriceMinFilter() { return priceMinFilter; }
-    public void setPriceMinFilter(Integer v) { priceMinFilter = v; }
-    public Integer getPriceMaxFilter() { return priceMaxFilter; }
-    public void setPriceMaxFilter(Integer v) { priceMaxFilter = v; }
-
-    public Integer getQtyMinFilter() { return qtyMinFilter; }
-    public void setQtyMinFilter(Integer v) { qtyMinFilter = v; }
-    public Integer getQtyMaxFilter() { return qtyMaxFilter; }
-    public void setQtyMaxFilter(Integer v) { qtyMaxFilter = v; }
-
-    public int getSortMode() { return sortMode; }
-    public void setSortMode(int v) { sortMode = v; }
-
-    public String getItemIdFilter() { return itemIdFilter; }
-    public void setItemIdFilter(String v) { itemIdFilter = v; }
-    public int getItemIdFilterMode() { return itemIdFilterMode; }
-    public void setItemIdFilterMode(int v) { itemIdFilterMode = v; }
-
-    public String getFlagsFilter() { return flagsFilter; }
-    public void setFlagsFilter(String v) { flagsFilter = v; }
-    public int getFlagsFilterMode() { return flagsFilterMode; }
-    public void setFlagsFilterMode(int v) { flagsFilterMode = Math.max(0, Math.min(2, v)); }
-
-    /** 筛选条件变更后使缓存失效，并预编译正则 Pattern。 */
-    public void invalidateCache() {
-        filteredCacheValid = false;
-        compiledDimPattern = compileIfNeeded(dimFilter, dimFilterMode);
-        compiledOwnerPattern = compileIfNeeded(ownerFilter, ownerFilterMode);
-        compiledItemPattern = compileIfNeeded(itemFilter, itemFilterMode);
-        compiledItemIdPattern = compileIfNeeded(itemIdFilter, itemIdFilterMode);
-    }
-
-    private static Pattern compileIfNeeded(String filter, int mode) {
-        if (mode != PATTERN_REGEX || filter == null || filter.isEmpty()) return null;
-        try {
-            return Pattern.compile(filter, Pattern.CASE_INSENSITIVE);
-        } catch (PatternSyntaxException e) {
-            return null;
-        }
+        return new QShopFilterScreen(parent, this.filter);
     }
 
     // ==================== ViewLayout ====================
@@ -215,28 +91,28 @@ public class QShopDbViewProvider implements IDbViewProvider {
 
         TableLayoutBuilder b = new TableLayoutBuilder(textRenderer, metaCount, HEADERS);
         for (QShopDbAdapter.Record r : matched) {
-            boolean shulker = (r.flags() & QShopAnalyzer.FLAG_SHULKER_EXPANDED) != 0;
+            boolean shulker = (r.flags() & QShopContract.FLAG_SHULKER_EXPANDED) != 0;
             Text modeText;
             Text quantityText;
-            if (r.mode() == QShopAnalyzer.MODE_SELL) {
+            if (r.mode() == QShopContract.MODE_SELL) {
                 modeText = Text.translatable("chunkscanner.filter.mode.sell");
-                if (r.quantity() == QShopAnalyzer.INFINITE_QUANTITY) {
+                if (r.quantity() == QShopContract.INFINITE_QUANTITY) {
                     quantityText = Text.translatable("chunkscanner.qshop.infinite");
                 } else if (r.quantity() == 0) {
                     quantityText = Text.translatable("chunkscanner.qshop.out_of_stock");
                 } else {
                     quantityText = Text.literal(String.valueOf(
-                            shulker ? getEffectiveQty(r) : r.quantity()));
+                            shulker ? filter.getEffectiveQty(r) : r.quantity()));
                 }
             } else {
                 modeText = Text.translatable("chunkscanner.filter.mode.buy");
-                if (r.quantity() == QShopAnalyzer.INFINITE_QUANTITY) {
+                if (r.quantity() == QShopContract.INFINITE_QUANTITY) {
                     quantityText = Text.translatable("chunkscanner.qshop.infinite");
                 } else if (r.quantity() == 0) {
                     quantityText = Text.translatable("chunkscanner.qshop.out_of_space");
                 } else {
                     quantityText = Text.literal(String.valueOf(
-                            shulker ? getEffectiveQty(r) : r.quantity()));
+                            shulker ? filter.getEffectiveQty(r) : r.quantity()));
                 }
             }
 
@@ -247,11 +123,11 @@ public class QShopDbViewProvider implements IDbViewProvider {
                     .text(r.owner())
                     .text(modeText)
                     .text(quantityText)
-                    .text(getEffectiveItemName(r))
-                    .text(formatPrice(r.price()));
+                    .text(QShopDisplayUtil.getEffectiveItemName(r))
+                    .text(QShopDisplayUtil.formatPrice(r.price()));
 
             if (shulker) {
-                List<Text> unitPriceTip = buildShulkerUnitPriceTooltip(r);
+                List<Text> unitPriceTip = QShopDisplayUtil.buildShulkerUnitPriceTooltip(r);
                 if (unitPriceTip != null) {
                     row.withColor(0xFFFF55FF); // 紫色
                     row.withTooltip(unitPriceTip);
@@ -261,33 +137,33 @@ public class QShopDbViewProvider implements IDbViewProvider {
             row.text(r.itemId());
 
             // Detail 列物品图标和 tooltip
-            ItemStack icon = parseDetailItemStack(r);
+            ItemStack icon = QShopDisplayUtil.parseDetailItemStack(r);
             if (icon != null) {
                 row.item(icon);
             } else {
                 row.blank();
             }
-            List<Text> detailTips = buildDetailTooltip(r);
+            List<Text> detailTips = QShopDisplayUtil.buildDetailTooltip(r);
             if (detailTips != null) {
                 row.withTooltip(detailTips);
             }
 
             // Flags 列
-            String flagsStr = formatFlagsShort(r.flags());
-            List<Text> flagTips = formatFlagsTooltip(r.flags());
+            String flagsStr = QShopDisplayUtil.formatFlagsShort(r.flags());
+            List<Text> flagTips = QShopDisplayUtil.formatFlagsTooltip(r.flags());
             row.text(flagsStr);
             if (flagTips != null) {
                 row.withTooltip(flagTips);
             }
 
             // Update Time 列
-            String updateTime = formatTimestamp(r.timestamp());
+            String updateTime = QShopDisplayUtil.formatTimestamp(r.timestamp());
             row.text(updateTime);
 
-            if(r.enhancementTimestamp() > 0) {
+            if (r.enhancementTimestamp() > 0) {
                 row.withColor(0xFF55FFFF) // Aqua
                    .withTooltip(List.of(
-                    Text.translatable("chunkscanner.qshop.enhancement_update_time", formatTimestamp(r.enhancementTimestamp()))
+                    Text.translatable("chunkscanner.qshop.enhancement_update_time", QShopDisplayUtil.formatTimestamp(r.enhancementTimestamp()))
                 ));
             }
 
@@ -296,310 +172,25 @@ public class QShopDbViewProvider implements IDbViewProvider {
         return b.build();
     }
 
-    // ==================== 特殊值展示 ====================
-
-    /**
-     * 将标志位转换为简写字符显示。每个置位的标志用一个单字符表示。
-     * 如果 flags 为 0，返回空字符串。
-     */
-    public static String formatFlagsShort(int flags) {
-        if (flags == 0) return "";
-        StringBuilder sb = new StringBuilder();
-        if ((flags & QShopAnalyzer.FLAG_ID_RECOVERED) != 0) {
-            sb.append("R");
-        }
-        if ((flags & QShopAnalyzer.FLAG_ENHANCED_DATA) != 0) {
-            sb.append("E");
-        }
-        if ((flags & QShopAnalyzer.FLAG_SHULKER_EXPANDED) != 0) {
-            sb.append("S");
-        }
-        if ((flags & QShopAnalyzer.FLAG_BOOK) != 0) {
-            sb.append("B");
-        }
-        return sb.toString();
-    }
-
-    /**
-     * 构建标志位的 tooltip 文本列表。每行一个标志："{缩写} - {描述}"。
-     * 返回 null 表示无需 tooltip。
-     */
-    public static List<Text> formatFlagsTooltip(int flags) {
-        if (flags == 0) return null;
-        List<Text> lines = new ArrayList<>();
-        if ((flags & QShopAnalyzer.FLAG_ID_RECOVERED) != 0) {
-            lines.add(Text.translatable("chunkscanner.qshop.flag.id_recovered"));
-        }
-        if ((flags & QShopAnalyzer.FLAG_ENHANCED_DATA) != 0) {
-            lines.add(Text.translatable("chunkscanner.qshop.flag.enhanced"));
-        }
-        if ((flags & QShopAnalyzer.FLAG_SHULKER_EXPANDED) != 0) {
-            lines.add(Text.translatable("chunkscanner.qshop.flag.shulker_expanded"));
-        }
-        if ((flags & QShopAnalyzer.FLAG_BOOK) != 0) {
-            lines.add(Text.translatable("chunkscanner.qshop.flag.book"));
-        }
-        return lines.isEmpty() ? null : lines;
-    }
-
-    /**
-     * 从 detailNbtString 解析 ItemStack，解析失败返回 null。
-     * 供 buildDetailTooltip 和 getLayout() 复用。
-     */
-    private static ItemStack parseDetailItemStack(QShopDbAdapter.Record record) {
-        if (record.detailNbtString() == null || record.detailNbtString().isEmpty()) return null;
-        try {
-            NbtCompound nbt = StringNbtReader.parse(record.detailNbtString());
-            ItemStack stack = ItemStack.fromNbt(nbt);
-            return (stack != null && !stack.isEmpty()) ? stack : null;
-        } catch (Exception ignored) {
-            return null;
-        }
-    }
-
-    /**
-     * 构建 Detail 列物品悬停 tooltip。
-     *
-     * <p>从 detailNbtString（完整 ItemStack NBT JSON）重建 ItemStack，
-     * 调用原版 {@code getTooltip()} 获取物品描述文本。</p>
-     */
-    private static List<Text> buildDetailTooltip(QShopDbAdapter.Record record) {
-        ItemStack stack = parseDetailItemStack(record);
-        if (stack == null) return null;
-
-        net.minecraft.client.MinecraftClient client =
-                net.minecraft.client.MinecraftClient.getInstance();
-        if (client.player == null) return null;
-        try {
-            // 使用 Screen.getTooltipFromItem 保持与物品栏一致的 tooltip 行为：
-            // 自动根据 F3+H 切换 BASIC/ADVANCED，且通过 Fabric Mixin 触发
-            // ItemTooltipCallback.EVENT，mod 追加的 tooltip 行也会包含在内
-            return net.minecraft.client.gui.screen.Screen.getTooltipFromItem(client, stack);
-        } catch (Exception e) {
-            return List.of(Text.literal(record.itemId()));
-        }
-    }
-
-    /**
-     * 构建 S 标志（潜影盒展开）的单价 tooltip。
-     *
-     * <p>单价 = 商店价格 / 满箱物品数 = 商店价格 / (27 × 物品堆叠上限)。
-     * 显示格式："单价约 X.XX"。</p>
-     */
-    private static List<Text> buildShulkerUnitPriceTooltip(QShopDbAdapter.Record record) {
-        try {
-            double unitPrice = getEstimatedUnitPriceCents(record) / 100.0;
-            if (unitPrice <= 0) return null;
-
-            return List.of(Text.translatable("chunkscanner.qshop.shulker_unit_price",
-                            String.format("%.2f", unitPrice))
-                    .formatted(Formatting.LIGHT_PURPLE));
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private static final int SHULKER_SLOTS = 27;
-
-    /**
-     * 获取潜影盒条目的有效商品名称：用内部 ItemStack 显示名替代告示牌文本。
-     * 非潜影盒条目直接返回原始 itemName。
-     */
-    private static Text getEffectiveItemName(QShopDbAdapter.Record r) {
-        if ((r.flags() & QShopAnalyzer.FLAG_SHULKER_EXPANDED) == 0) {
-            return Text.literal(r.itemName());
-        }
-        ItemStack inner = parseDetailItemStack(r);
-        if (inner != null) {
-            return inner.getName();
-        }
-        return Text.literal(r.itemName());
-    }
-
-    /**
-     * 获取物品的堆叠上限。用于潜影盒单价计算。
-     */
-    private static int getMaxStackCount(QShopDbAdapter.Record r) {
-        if (r.itemId() != null && !r.itemId().isEmpty()) {
-            Identifier id = Identifier.tryParse(r.itemId());
-            if (id != null) {
-                net.minecraft.item.Item item = Registries.ITEM.get(id);
-                return item != null ? item.getMaxCount() : 64;
-            }
-        }
-        return 64;
-    }
-
-    /**
-     * 潜影盒条目预估单价（分）。用于 tooltip 展示。
-     * 单价 = 商店价格 /（潜影盒槽位数 × 物品堆叠上限）。
-     */
-    private static double getEstimatedUnitPriceCents(QShopDbAdapter.Record r) {
-        int maxStack = getMaxStackCount(r);
-        if (maxStack <= 0) maxStack = 64;
-        int totalItems = SHULKER_SLOTS * maxStack;
-        return r.price() * 1.0 / totalItems;
-    }
-
-    /**
-     * 获取排序/筛选时使用的"有效数量"。
-     * 潜影盒条目返回箱内物品总数；普通条目返回原始数量。
-     */
-    private static int getEffectiveQty(QShopDbAdapter.Record r) {
-        if ((r.flags() & QShopAnalyzer.FLAG_SHULKER_EXPANDED) == 0) {
-            return r.quantity();
-        }
-        if (r.quantity() == QShopAnalyzer.INFINITE_QUANTITY) return QShopAnalyzer.INFINITE_QUANTITY;
-        int maxStack = getMaxStackCount(r);
-        if (maxStack <= 0) maxStack = 64;
-        return SHULKER_SLOTS * maxStack;
-    }
-
     /** 获取筛选并排序后的记录列表。 */
     private List<QShopDbAdapter.Record> getFilteredSortedRecords() {
-        if (filteredCacheValid && cachedFilteredSorted != null) {
+        if (cacheVersion == filter.getCacheVersion() && cachedFilteredSorted != null) {
             return cachedFilteredSorted;
         }
         List<QShopDbAdapter.Record> records = new QShopDbAdapter(db).getAllRecords();
         List<QShopDbAdapter.Record> matched = new ArrayList<>();
         for (QShopDbAdapter.Record r : records) {
-            if (matchesFilter(r)) {
+            if (filter.matches(r)) {
                 matched.add(r);
             }
         }
-        if (sortMode != SORT_NONE && matched.size() > 1) {
-            matched.sort(getSortComparator());
+        if (filter.getSortMode() != QShopFilter.SORT_NONE && matched.size() > 1) {
+            matched.sort(filter.getSortComparator());
         }
         cachedFilteredSorted = matched;
-        filteredCacheValid = true;
+        cacheVersion = filter.getCacheVersion();
         return matched;
     }
-
-    /**
-     * 根据当前排序模式返回对应的比较器。
-     */
-    private Comparator<QShopDbAdapter.Record> getSortComparator() {
-        return switch (sortMode) {
-            case SORT_PRICE_ASC -> Comparator.comparingInt(QShopDbAdapter.Record::price);
-            case SORT_PRICE_DESC -> (a, b) -> Integer.compare(b.price(), a.price());
-            case SORT_QTY_ASC -> Comparator.comparingInt(r -> getEffectiveQty((QShopDbAdapter.Record) r));
-            case SORT_QTY_DESC -> (a, b) -> Integer.compare(
-                    getEffectiveQty((QShopDbAdapter.Record) b),
-                    getEffectiveQty((QShopDbAdapter.Record) a));
-            default -> (a, b) -> 0;
-        };
-    }
-
-    /**
-     * 检查一条记录是否满足当前所有筛选条件。
-     */
-    private boolean matchesFilter(QShopDbAdapter.Record r) {
-        // 模式筛选
-        if (modeFilter == 1 && r.mode() != QShopAnalyzer.MODE_SELL) return false;
-        if (modeFilter == 2 && r.mode() != QShopAnalyzer.MODE_BUY) return false;
-
-        // 文本筛选（null/空串 = 不筛选，否则按指定模式匹配）
-        if (!matchesPattern(r.dimId(), dimFilter, dimFilterMode, compiledDimPattern)) return false;
-        if (!matchesPattern(r.owner(), ownerFilter, ownerFilterMode, compiledOwnerPattern)) return false;
-        if (!matchesPattern(r.itemName(), itemFilter, itemFilterMode, compiledItemPattern)) return false;
-        if (!matchesPattern(r.itemId(), itemIdFilter, itemIdFilterMode, compiledItemIdPattern)) return false;
-
-        // flags 筛选
-        if (!matchesFlags(r.flags(), flagsFilter, flagsFilterMode)) return false;
-
-        // 价格范围筛选
-        if (priceMinFilter != null || priceMaxFilter != null) {
-            int priceCents = r.price();
-            if (priceMinFilter != null && priceCents < priceMinFilter) return false;
-            if (priceMaxFilter != null && priceCents > priceMaxFilter) return false;
-        }
-
-        // 数量范围筛选（潜影盒条目按有效数量比较）
-        if (qtyMinFilter != null || qtyMaxFilter != null) {
-            int effectiveQty = getEffectiveQty(r);
-            if (qtyMinFilter != null && effectiveQty < qtyMinFilter) return false;
-            if (qtyMaxFilter != null && effectiveQty > qtyMaxFilter) return false;
-        }
-
-        return true;
-    }
-
-    /**
-     * 根据匹配模式检查字段是否满足筛选条件。
-     *
-     * @param field           待检查的字段值
-     * @param filter          筛选文本（null 或空串 = 不筛选，直接通过）
-     * @param mode            匹配模式（PATTERN_CONTAINS/EXCLUDE/EXACT/REGEX）
-     * @param compiledPattern 预编译的正则 Pattern（仅 REGEX 模式下非 null）
-     * @return true 表示通过筛选
-     */
-    private boolean matchesPattern(String field, String filter, int mode, Pattern compiledPattern) {
-        if (filter == null || filter.isEmpty()) return true;
-        if (field == null) return false;
-        return switch (mode) {
-            case PATTERN_CONTAINS -> field.toLowerCase().contains(filter.toLowerCase());
-            case PATTERN_EXCLUDE -> !field.toLowerCase().contains(filter.toLowerCase());
-            case PATTERN_EXACT -> field.equalsIgnoreCase(filter);
-            case PATTERN_REGEX -> compiledPattern != null && compiledPattern.matcher(field).find();
-            default -> true;
-        };
-    }
-
-    /**
-     * 检查记录 flags 是否满足筛选条件。
-     *
-     * <p>flagsFilter 为用户输入的标志字符（如 "RE"），依次尝试解析每个字符为 flag 位：
-     * <ul>
-     *   <li>'R' → FLAG_ID_RECOVERED</li>
-     *   <li>'E' → FLAG_ENHANCED_DATA</li>
-     *   <li>'S' → FLAG_SHULKER_EXPANDED</li>
-     *   <li>'B' → FLAG_BOOK</li>
-     * </ul>
-     * 忽略无效字符。若 flagsFilter 中无有效标志，直接通过。
-     *
-     * @param recordFlags  记录的 flags 整型值
-     * @param flagsFilter  用户输入的标志过滤字符串
-     * @param mode         匹配模式：PATTERN_CONTAINS=任一匹配，PATTERN_EXCLUDE=全不匹配，PATTERN_EXACT=全部匹配
-     * @return true 表示通过筛选
-     */
-    static boolean matchesFlags(int recordFlags, String flagsFilter, int mode) {
-        if (flagsFilter == null || flagsFilter.isEmpty()) return true;
-
-        int mask = 0;
-        for (int i = 0; i < flagsFilter.length(); i++) {
-            mask |= switch (flagsFilter.charAt(i)) {
-                case 'R', 'r' -> QShopAnalyzer.FLAG_ID_RECOVERED;
-                case 'E', 'e' -> QShopAnalyzer.FLAG_ENHANCED_DATA;
-                case 'S', 's' -> QShopAnalyzer.FLAG_SHULKER_EXPANDED;
-                case 'B', 'b' -> QShopAnalyzer.FLAG_BOOK;
-                default -> 0;
-            };
-        }
-        if (mask == 0) return true;
-
-        return switch (mode) {
-            case PATTERN_CONTAINS -> (recordFlags & mask) != 0;
-            case PATTERN_EXCLUDE -> (recordFlags & mask) == 0;
-            case PATTERN_EXACT -> (recordFlags & mask) == mask;
-            default -> true;
-        };
-    }
-
-    /** 将价格整型（最小货币单位）格式化为显示字符串，如 50 → "0.50"。 */
-    private static String formatPrice(int cents) {
-        return String.format("%d.%02d", cents / 100, cents % 100);
-    }
-
-    private static ZoneId timezone = ZoneId.systemDefault();
-    private static DateTimeFormatter timeFormatter = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT);
-
-    /** 将时间戳（毫秒）转化为时间字符串 */
-    private static String formatTimestamp(long timestamp) {
-        Instant instant = Instant.ofEpochMilli(timestamp);
-        LocalDateTime dateTime = LocalDateTime.ofInstant(instant, timezone);
-        return timeFormatter.format(dateTime);
-    }
-
 
     // ==================== 类型描述符 ====================
 
