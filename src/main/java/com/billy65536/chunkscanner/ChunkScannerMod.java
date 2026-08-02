@@ -15,6 +15,10 @@ import com.billy65536.chunkscanner.core.AnalyzerRegistry;
 import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.core.IChunkDb;
+import com.billy65536.chunkscanner.core.navigation.NavigationEntry;
+import com.billy65536.chunkscanner.core.navigation.NavigationQueue;
+import com.billy65536.chunkscanner.core.navigation.PlayerNearCondition;
+import com.billy65536.chunkscanner.integration.BaritoneNavigator;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -34,6 +38,9 @@ public class ChunkScannerMod implements ClientModInitializer {
     private ChunkScanner scanner;
     private ChunkScannerCommands commands;
 
+    private final NavigationQueue navQueue = new NavigationQueue();
+    private boolean navActive;
+
     private static ChunkScannerMod instance;
 
     public static ChunkScanner getScanner() {
@@ -42,6 +49,25 @@ public class ChunkScannerMod implements ClientModInitializer {
 
     public static ChunkScannerCommands getCommands() {
         return instance != null ? instance.commands : null;
+    }
+
+    public static NavigationQueue getNavQueue() {
+        return instance != null ? instance.navQueue : null;
+    }
+
+    /** 启动导航（由命令层调用）。 */
+    public static void startNavigation() {
+        if (instance != null) instance.startNav();
+    }
+
+    /** 清空导航队列并取消导航。 */
+    public static void clearNavigation() {
+        if (instance != null) instance.clearNav();
+    }
+
+    /** 将位置加入导航队列。 */
+    public static void enqueueNavigation(NavigationEntry entry) {
+        if (instance != null) instance.enqueueNav(entry);
     }
 
     // ==================== 数据库路径管理 ====================
@@ -122,10 +148,11 @@ public class ChunkScannerMod implements ClientModInitializer {
         // 初始化 QShop 告示牌高亮渲染器
         QShopHighlightRenderer.initialize();
 
-        // 注册客户端 tick 回调：每帧执行扫描调度 + QShop 聊天监听批量处理
+        // 注册客户端 tick 回调：每帧执行扫描调度 + QShop 聊天监听批量处理 + 导航
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             scanner.onClientTick(client);
             QShopChatListener.tick();
+            tickNav(client);
         });
 
         // 注册连接事件：进入服务器/世界时构建物品译名映射表 + 注册聊天监听
@@ -150,5 +177,83 @@ public class ChunkScannerMod implements ClientModInitializer {
         }, "ChunkScanner-Shutdown"));
 
         LOGGER.info("ChunkScanner initialized! /cs help");
+    }
+
+    // ==================== 导航逻辑 ====================
+
+    private int navTickCounter;
+
+    /** 启动导航（由 /cs nav go 命令调用）。 */
+    public void startNav() {
+        if (navQueue.isEmpty()) return;
+        navActive = true;
+        navTickCounter = 0;
+        updateNavGoal();
+        LOGGER.info("Navigation started, {} target(s) in queue.", navQueue.size());
+    }
+
+    /** 每 tick 检查当前目标是否到达，推进队列。 */
+    private void tickNav(MinecraftClient client) {
+        if (!navActive || client.player == null) return;
+
+        // 检查当前目标是否到达（推进队列）
+        boolean changed = navQueue.tick(client);
+
+        if (navQueue.isEmpty()) {
+            navActive = false;
+            BaritoneNavigator.cancel();
+            LOGGER.info("Navigation complete.");
+            return;
+        }
+
+        // 目标变化或每 20 tick 刷新一次导航（节流）
+        navTickCounter++;
+        if (changed || navTickCounter >= 20) {
+            navTickCounter = 0;
+            updateNavGoal();
+        }
+    }
+
+    /** 根据 navAutoEnabled 设置更新 Baritone 导航目标。 */
+    private void updateNavGoal() {
+        if (!BaritoneNavigator.isAvailable()) return;
+        if (navQueue.isEmpty()) {
+            BaritoneNavigator.cancel();
+            return;
+        }
+
+        if (CONFIG.navAutoEnabled) {
+            // GoalComposite：一次性打包所有队列坐标，让 Baritone 自动走最近点
+            java.util.List<NavigationEntry> entries = navQueue.getEntries();
+            int[][] positions = new int[entries.size()][3];
+            for (int i = 0; i < entries.size(); i++) {
+                NavigationEntry e = entries.get(i);
+                positions[i][0] = e.x();
+                positions[i][1] = e.y();
+                positions[i][2] = e.z();
+            }
+            BaritoneNavigator.navigateComposite(positions);
+        } else {
+            // 单点接力：每次只走当前队首
+            NavigationEntry e = navQueue.peek();
+            if (e != null) {
+                BaritoneNavigator.navigateTo(e.x(), e.y(), e.z());
+            }
+        }
+    }
+
+    /** 清空导航队列并取消导航。 */
+    public void clearNav() {
+        navActive = false;
+        navQueue.clear();
+        BaritoneNavigator.cancel();
+        LOGGER.info("Navigation queue cleared.");
+    }
+
+    /** 将位置加入导航队列。 */
+    public void enqueueNav(NavigationEntry entry) {
+        PlayerNearCondition condition = new PlayerNearCondition(
+                entry.x(), entry.y(), entry.z(), CONFIG.navReachDist);
+        navQueue.enqueue(entry, condition);
     }
 }

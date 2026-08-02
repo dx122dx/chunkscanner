@@ -10,7 +10,10 @@ import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.ScanSession;
 import com.billy65536.chunkscanner.core.db.DbExportUtil;
 import com.billy65536.chunkscanner.core.db.DbFileUtil;
+import com.billy65536.chunkscanner.core.navigation.NavigationEntry;
+import com.billy65536.chunkscanner.core.navigation.NavigationQueue;
 import com.billy65536.chunkscanner.gui.GuiUtil;
+import com.billy65536.chunkscanner.integration.BaritoneNavigator;
 import com.billy65536.chunkscanner.integration.ClothConfigIntegration;
 import com.billy65536.chunkscanner.screen.ChunkScannerScreen;
 import com.billy65536.chunkscanner.screen.DatabaseScreen;
@@ -216,6 +219,35 @@ public class ChunkScannerCommands {
         configNode.then(configReloadNode);
 
         root.then(configNode);
+
+        // ===== /cs nav =====
+        var navNode = ClientCommandManager.literal("nav");
+
+        navNode.then(ClientCommandManager.literal("go")
+                .executes(ctx -> {
+                    navStart(ctx.getSource().getClient());
+                    return 1;
+                }));
+
+        navNode.then(ClientCommandManager.literal("clear")
+                .executes(ctx -> {
+                    navClear(ctx.getSource().getClient());
+                    return 1;
+                }));
+
+        navNode.then(ClientCommandManager.literal("list")
+                .executes(ctx -> {
+                    navList(ctx.getSource().getClient());
+                    return 1;
+                }));
+
+        navNode.then(ClientCommandManager.literal("toggle")
+                .executes(ctx -> {
+                    navToggle(ctx.getSource().getClient());
+                    return 1;
+                }));
+
+        root.then(navNode);
 
         // ===== /cs components =====
         // 可扩展的组件命令入口：/cs components <componentName> <action> [args...]
@@ -500,6 +532,61 @@ public class ChunkScannerCommands {
         if (client.player != null) {
             client.player.sendMessage(msg, false);
         }
+    }
+
+    // ==================== 导航命令 ====================
+
+    private void navStart(MinecraftClient client) {
+        NavigationQueue queue = ChunkScannerMod.getNavQueue();
+        if (queue == null || queue.isEmpty()) {
+            sendMsg(client, Text.translatable("chunkscanner.msg.nav_empty").formatted(Formatting.YELLOW));
+            return;
+        }
+        if (!BaritoneNavigator.isAvailable()) {
+            sendMsg(client, Text.translatable("chunkscanner.msg.nav_no_baritone").formatted(Formatting.RED));
+            return;
+        }
+        ChunkScannerMod.startNavigation();
+        sendMsg(client, Text.translatable("chunkscanner.msg.nav_start", queue.size())
+                .formatted(Formatting.GREEN));
+    }
+
+    private void navClear(MinecraftClient client) {
+        NavigationQueue queue = ChunkScannerMod.getNavQueue();
+        int size = queue != null ? queue.size() : 0;
+        ChunkScannerMod.clearNavigation();
+        sendMsg(client, Text.translatable("chunkscanner.msg.nav_cleared", size)
+                .formatted(Formatting.GREEN));
+    }
+
+    private void navList(MinecraftClient client) {
+        NavigationQueue queue = ChunkScannerMod.getNavQueue();
+        if (queue == null || queue.isEmpty()) {
+            sendMsg(client, Text.translatable("chunkscanner.msg.nav_empty").formatted(Formatting.YELLOW));
+            return;
+        }
+        sendMsg(client, Text.translatable("chunkscanner.msg.nav_list_header",
+                queue.size(),
+                ChunkScannerMod.CONFIG.navAutoEnabled ? "GoalComposite" : "接力")
+                .formatted(Formatting.GOLD));
+
+        int i = 1;
+        for (NavigationEntry e : queue.getEntries()) {
+            sendMsg(client, Text.literal("  " + i + ". ")
+                    .append(Text.literal("(" + e.x() + ", " + e.y() + ", " + e.z() + ")")
+                            .formatted(Formatting.WHITE))
+                    .append(Text.literal(" " + e.dimensionId()).formatted(Formatting.GRAY)));
+            i++;
+        }
+    }
+
+    private void navToggle(MinecraftClient client) {
+        ChunkScannerMod.CONFIG.navAutoEnabled = !ChunkScannerMod.CONFIG.navAutoEnabled;
+        sendMsg(client, Text.translatable("chunkscanner.msg.nav_toggle",
+                ChunkScannerMod.CONFIG.navAutoEnabled
+                        ? Text.translatable("chunkscanner.gui.nav.mode.composite").formatted(Formatting.AQUA)
+                        : Text.translatable("chunkscanner.gui.nav.mode.relay").formatted(Formatting.YELLOW))
+                .formatted(Formatting.GREEN));
     }
 
     /**

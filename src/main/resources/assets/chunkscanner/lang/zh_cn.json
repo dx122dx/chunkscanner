@@ -122,8 +122,8 @@
     "chunkscanner.label.none": "(无)",
     "chunkscanner.label.paused": "[已暂停]",
     "chunkscanner.label.rebooted": "(已恢复)",
-    "chunkscanner.tooltip.create_waypoint": "点击创建 Xaero 路径点",
-    "chunkscanner.tooltip.print_coords": "点击打印坐标到聊天框",
+    "chunkscanner.tooltip.create_waypoint": "左键：创建路径点 | 右键：加入导航队列",
+    "chunkscanner.tooltip.print_coords": "左键：打印坐标 | 右键：加入导航队列",
     "chunkscanner.tooltip.session.pending": "待扫描: %d",
     "chunkscanner.tooltip.session.scanned": "已扫描: %d (无发现: %d, 有发现: %d)",
     "chunkscanner.tooltip.session.past_revisit": "超重访: %d (无发现: %d, 有发现: %d)",
@@ -156,5 +156,14 @@
     "chunkscanner.msg.qshop.enhance.manual.no_block": "请对准一个方块再执行 /cs components qshop commitEnhancement。",
     "chunkscanner.msg.qshop.enhance.manual.no_scanner": "扫描器未初始化。",
     "chunkscanner.msg.qshop.enhance.manual.not_found": "目标位置在已扫描的 QShop 记录中未找到。",
-    "chunkscanner.msg.qshop.enhance.manual.removed": "已移除 (%d, %d, %d) 处的 QShop 增强信息。"
+    "chunkscanner.msg.qshop.enhance.manual.removed": "已移除 (%d, %d, %d) 处的 QShop 增强信息。",
+
+    "chunkscanner.msg.nav_empty": "导航队列为空。请在 Database 界面右键坐标加入导航队列。",
+    "chunkscanner.msg.nav_no_baritone": "未安装 Baritone 模组，导航功能不可用。",
+    "chunkscanner.msg.nav_start": "导航已启动，共 %s 个目标。",
+    "chunkscanner.msg.nav_cleared": "导航队列已清空（已移除 %s 个目标）。",
+    "chunkscanner.msg.nav_list_header": "导航队列（共 %s 个目标，模式：%s）：",
+    "chunkscanner.msg.nav_toggle": "导航模式已切换为：%s",
+    "chunkscanner.gui.nav.mode.composite": "GoalComposite（自动选最近）",
+    "chunkscanner.gui.nav.mode.relay": "接力导航（按序进行）"
 }

@@ -118,6 +118,13 @@ public class ConfigLoader {
                 if (wp.has("group")) config.waypointGroup = wp.get("group").getAsString();
             }
 
+            // 读取导航默认值
+            if (json.has("navigation")) {
+                JsonObject nav = json.getAsJsonObject("navigation");
+                if (nav.has("autoEnabled")) config.navAutoEnabled = nav.get("autoEnabled").getAsBoolean();
+                if (nav.has("reachDist")) config.navReachDist = nav.get("reachDist").getAsDouble();
+            }
+
             ChunkScannerMod.LOGGER.info("Config loaded from: {}", path);
         } catch (IOException e) {
             ChunkScannerMod.LOGGER.error("Failed to load config: {}", e.getMessage());
@@ -160,6 +167,12 @@ public class ConfigLoader {
             waypoint.addProperty("initials", config.waypointInitials);
             waypoint.addProperty("group", config.waypointGroup);
             json.add("waypoint", waypoint);
+
+            // 导航默认值
+            JsonObject navigation = new JsonObject();
+            navigation.addProperty("autoEnabled", config.navAutoEnabled);
+            navigation.addProperty("reachDist", config.navReachDist);
+            json.add("navigation", navigation);
 
             Files.writeString(path, GSON.toJson(json), StandardCharsets.UTF_8);
             ChunkScannerMod.LOGGER.info("Config saved to: {}", path);

@@ -133,6 +133,14 @@ public class ChunkScannerConfig {
     /** 路径点所在组（WaypointSet 名称）。默认 "chunkscanner"。 */
     public String waypointGroup = "chunkscanner";
 
+    // ==================== 导航默认值 ====================
+
+    /** 是否启用 Baritone 自动寻路（GoalComposite 重排队列）。默认 false。 */
+    public boolean navAutoEnabled = false;
+
+    /** 导航到达判定距离（格）。玩家距目标在此范围内即判定到达。默认 3.0。 */
+    public double navReachDist = 3.0;
+
     /** 创建一份配置副本，供每个扫描任务独立持有。 */
     public ChunkScannerConfig copy() {
         ChunkScannerConfig c = new ChunkScannerConfig();
@@ -159,6 +167,8 @@ public class ChunkScannerConfig {
         c.waypointName = this.waypointName;
         c.waypointInitials = this.waypointInitials;
         c.waypointGroup = this.waypointGroup;
+        c.navAutoEnabled = this.navAutoEnabled;
+        c.navReachDist = this.navReachDist;
         return c;
     }
 }

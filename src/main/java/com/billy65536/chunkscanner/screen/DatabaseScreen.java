@@ -36,6 +36,9 @@ import com.billy65536.chunkscanner.core.CoreUtil;
 import com.billy65536.chunkscanner.core.IDbViewProvider;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.core.LocatedPosition;
+import com.billy65536.chunkscanner.core.navigation.NavigationEntry;
+import com.billy65536.chunkscanner.core.navigation.NavigationQueue;
+import com.billy65536.chunkscanner.core.navigation.PlayerNearCondition;
 import com.billy65536.chunkscanner.gui.GuiUtil;
 import com.billy65536.chunkscanner.gui.ScrollManager;
 import com.billy65536.chunkscanner.gui.ScrollableListPanel;
@@ -747,6 +750,25 @@ public class DatabaseScreen extends Screen {
         int visibleW = this.width - 10;
         int totalW = Math.max(computeContentWidth(), visibleW + 1);
         kvHScroll.drawHorizontal(context, this.height - 38, hLeft, hRight, totalW);
+
+        // 导航队列指示器（底部一行显示前 3 个目标）
+        NavigationQueue navQ = ChunkScannerMod.getNavQueue();
+        if (navQ != null && !navQ.isEmpty()) {
+            int navY = this.height - 50;
+            java.util.List<NavigationEntry> entries = navQ.getEntries();
+            int showCount = Math.min(3, entries.size());
+            java.lang.StringBuilder sb = new java.lang.StringBuilder();
+            sb.append("[Nav: ").append(entries.size()).append("]");
+            for (int i = 0; i < showCount; i++) {
+                NavigationEntry e = entries.get(i);
+                sb.append(" (").append(e.x()).append(", ").append(e.y()).append(", ").append(e.z()).append(")");
+                if (i < showCount - 1) sb.append(" →");
+            }
+            if (entries.size() > showCount) sb.append(" → ...");
+            context.drawTextWithShadow(textRenderer,
+                    Text.literal(sb.toString()).formatted(Formatting.GRAY),
+                    margin, navY, 0xFFFFFF);
+        }
     }
 
     /** 计算当前视图内容的总宽度（像素），用于水平滚动条。 */
@@ -763,7 +785,7 @@ public class DatabaseScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (button != 0) return super.mouseClicked(mouseX, mouseY, button);
+        if (button != 0 && button != 1) return super.mouseClicked(mouseX, mouseY, button);
 
         int centerX = this.width / 2;
         int leftX = centerX - WIDTH / 2;
@@ -849,7 +871,26 @@ public class DatabaseScreen extends Screen {
             return true;
         }
 
-        // 位置列点击：创建 Xaero 路径点（支持 {key} 占位符替换）
+        // 位置列右键点击：加入导航队列
+        if (button == 1 && hoveredKvIdx >= 0 && hoveredKvCol >= 0
+                && layout != null
+                && layout.isPositionColumn(hoveredKvCol)
+                && currentView != null) {
+            LocatedPosition pos = layout.getPositionAt(hoveredKvIdx);
+            if (pos != null) {
+                NavigationQueue queue = ChunkScannerMod.getNavQueue();
+                if (queue != null) {
+                    NavigationEntry entry = new NavigationEntry(pos.dimensionId(), pos.x(), pos.y(), pos.z());
+                    queue.enqueue(entry, new PlayerNearCondition(
+                            pos.x(), pos.y(), pos.z(), ChunkScannerMod.CONFIG.navReachDist));
+                    ChunkScannerMod.LOGGER.info("Nav enqueue: ({}, {}, {}) dim={} queue size={}",
+                            pos.x(), pos.y(), pos.z(), pos.dimensionId(), queue.size());
+                }
+                return true;
+            }
+        }
+
+        // 位置列左键点击：创建 Xaero 路径点（支持 {key} 占位符替换）
         if (hoveredKvIdx >= 0 && hoveredKvCol >= 0
                 && layout != null
                 && layout.isPositionColumn(hoveredKvCol)

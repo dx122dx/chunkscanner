@@ -122,8 +122,8 @@
     "chunkscanner.label.none": "(none)",
     "chunkscanner.label.paused": "[PAUSED]",
     "chunkscanner.label.rebooted": "(rebooted)",
-    "chunkscanner.tooltip.create_waypoint": "Click to create Xaero waypoint",
-    "chunkscanner.tooltip.print_coords": "Click to print coordinates to chat",
+    "chunkscanner.tooltip.create_waypoint": "Left: create waypoint | Right: enqueue nav",
+    "chunkscanner.tooltip.print_coords": "Left: print coords | Right: enqueue nav",
     "chunkscanner.tooltip.session.pending": "Pending: %d",
     "chunkscanner.tooltip.session.scanned": "Scanned: %d (No find: %d, Found: %d)",
     "chunkscanner.tooltip.session.past_revisit": "Past revisit: %d (No find: %d, Found: %d)",
@@ -156,5 +156,14 @@
     "chunkscanner.msg.qshop.enhance.manual.no_block": "Aim at a block before using /cs components qshop commitEnhancement.",
     "chunkscanner.msg.qshop.enhance.manual.no_scanner": "Scanner not initialized.",
     "chunkscanner.msg.qshop.enhance.manual.not_found": "Target position not found in any scanned QShop record.",
-    "chunkscanner.msg.qshop.enhance.manual.removed": "Removed QShop enhancement at (%d, %d, %d)."
+    "chunkscanner.msg.qshop.enhance.manual.removed": "Removed QShop enhancement at (%d, %d, %d).",
+
+    "chunkscanner.msg.nav_empty": "Navigation queue is empty. Right-click on coordinates in Database screen to enqueue.",
+    "chunkscanner.msg.nav_no_baritone": "Baritone is not installed. Navigation requires Baritone mod.",
+    "chunkscanner.msg.nav_start": "Navigation started with %s target(s).",
+    "chunkscanner.msg.nav_cleared": "Navigation queue cleared (%s target(s) removed).",
+    "chunkscanner.msg.nav_list_header": "Navigation Queue (%s targets, mode: %s):",
+    "chunkscanner.msg.nav_toggle": "Navigation mode: %s",
+    "chunkscanner.gui.nav.mode.composite": "GoalComposite (auto-nearest)",
+    "chunkscanner.gui.nav.mode.relay": "Relay (sequential)"
 }
