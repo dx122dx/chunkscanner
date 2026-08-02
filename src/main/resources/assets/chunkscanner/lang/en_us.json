@@ -167,5 +167,6 @@
     "chunkscanner.gui.nav.mode.composite": "GoalComposite (auto-nearest)",
     "chunkscanner.gui.nav.mode.relay": "Relay (sequential)",
     "chunkscanner.msg.nav_dimension_changed": "Navigation paused: dimension changed from %s to %s. Return to resume.",
-    "chunkscanner.msg.nav_dimension_resumed": "Navigation resumed in dimension %s."
+    "chunkscanner.msg.nav_dimension_resumed": "Navigation resumed in dimension %s.",
+    "chunkscanner.msg.nav_failed": "Navigation failed. Check logs for details."
 }

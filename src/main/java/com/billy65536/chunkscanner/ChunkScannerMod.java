@@ -257,12 +257,17 @@ public class ChunkScannerMod implements ClientModInitializer {
 
     /** 根据 navAutoEnabled 设置更新 Baritone 导航目标。 */
     private void updateNavGoal() {
-        if (!BaritoneNavigator.isAvailable()) return;
+        if (!BaritoneNavigator.isAvailable()) {
+            navActive = false;
+            return;
+        }
         if (navQueue.isEmpty()) {
             BaritoneNavigator.cancel();
             return;
         }
 
+        boolean ok;
+        MinecraftClient client = MinecraftClient.getInstance();
         if (CONFIG.navAutoEnabled) {
             // GoalComposite：最多取前 navCompositeLimit 项，防止反射构造过多 GoalBlock
             java.util.List<NavigationEntry> entries = navQueue.getEntries();
@@ -274,13 +279,25 @@ public class ChunkScannerMod implements ClientModInitializer {
                 positions[i][1] = e.y();
                 positions[i][2] = e.z();
             }
-            BaritoneNavigator.navigateComposite(positions);
+            ok = BaritoneNavigator.navigateComposite(positions);
         } else {
             // 单点接力：每次只走当前队首
             NavigationEntry e = navQueue.peek();
             if (e != null) {
-                BaritoneNavigator.navigateTo(e.x(), e.y(), e.z());
+                ok = BaritoneNavigator.navigateTo(e.x(), e.y(), e.z());
+            } else {
+                ok = false;
             }
+        }
+
+        if (!ok) {
+            if (client.player != null) {
+                client.player.sendMessage(
+                        Text.translatable("chunkscanner.msg.nav_failed")
+                                .formatted(Formatting.RED),
+                        false);
+            }
+            clearNav();
         }
     }
 
