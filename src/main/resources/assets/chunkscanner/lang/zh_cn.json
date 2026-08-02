@@ -165,5 +165,7 @@
     "chunkscanner.msg.nav_list_header": "导航队列（共 %s 个目标，模式：%s）：",
     "chunkscanner.msg.nav_toggle": "导航模式已切换为：%s",
     "chunkscanner.gui.nav.mode.composite": "GoalComposite（自动选最近）",
-    "chunkscanner.gui.nav.mode.relay": "接力导航（按序进行）"
+    "chunkscanner.gui.nav.mode.relay": "接力导航（按序进行）",
+    "chunkscanner.msg.nav_dimension_changed": "导航已暂停：维度从 %s 变更到 %s。返回原维度后自动恢复。",
+    "chunkscanner.msg.nav_dimension_resumed": "导航已在维度 %s 中恢复。"
 }

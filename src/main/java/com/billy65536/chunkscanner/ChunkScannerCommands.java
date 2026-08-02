@@ -567,7 +567,9 @@ public class ChunkScannerCommands {
         }
         sendMsg(client, Text.translatable("chunkscanner.msg.nav_list_header",
                 queue.size(),
-                ChunkScannerMod.CONFIG.navAutoEnabled ? "GoalComposite" : "接力")
+                ChunkScannerMod.CONFIG.navAutoEnabled
+                        ? Text.translatable("chunkscanner.gui.nav.mode.composite")
+                        : Text.translatable("chunkscanner.gui.nav.mode.relay"))
                 .formatted(Formatting.GOLD));
 
         int i = 1;
@@ -582,6 +584,7 @@ public class ChunkScannerCommands {
 
     private void navToggle(MinecraftClient client) {
         ChunkScannerMod.CONFIG.navAutoEnabled = !ChunkScannerMod.CONFIG.navAutoEnabled;
+        ConfigLoader.save(ChunkScannerMod.CONFIG);
         sendMsg(client, Text.translatable("chunkscanner.msg.nav_toggle",
                 ChunkScannerMod.CONFIG.navAutoEnabled
                         ? Text.translatable("chunkscanner.gui.nav.mode.composite").formatted(Formatting.AQUA)

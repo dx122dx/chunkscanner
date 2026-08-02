@@ -141,6 +141,9 @@ public class ChunkScannerConfig {
     /** 导航到达判定距离（格）。玩家距目标在此范围内即判定到达。默认 3.0。 */
     public double navReachDist = 3.0;
 
+    /** GoalComposite 模式下最多同时打包的导航目标数（防止反射构造过多 GoalBlock）。默认 128。 */
+    public int navCompositeLimit = 128;
+
     /** 创建一份配置副本，供每个扫描任务独立持有。 */
     public ChunkScannerConfig copy() {
         ChunkScannerConfig c = new ChunkScannerConfig();
@@ -169,6 +172,7 @@ public class ChunkScannerConfig {
         c.waypointGroup = this.waypointGroup;
         c.navAutoEnabled = this.navAutoEnabled;
         c.navReachDist = this.navReachDist;
+        c.navCompositeLimit = this.navCompositeLimit;
         return c;
     }
 }

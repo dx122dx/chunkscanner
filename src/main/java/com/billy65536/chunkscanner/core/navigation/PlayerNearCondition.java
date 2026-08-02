@@ -7,13 +7,15 @@ import net.minecraft.client.MinecraftClient;
  */
 public final class PlayerNearCondition implements NavigationCondition {
 
-    private final int x, y, z;
+    private static final double BLOCK_CENTER = 0.5;
+
+    private final double x, y, z;
     private final double reachDistSq;
 
     public PlayerNearCondition(int x, int y, int z, double reachDist) {
-        this.x = x;
+        this.x = x + BLOCK_CENTER;
         this.y = y;
-        this.z = z;
+        this.z = z + BLOCK_CENTER;
         this.reachDistSq = reachDist * reachDist;
     }
 

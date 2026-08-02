@@ -123,6 +123,7 @@ public class ConfigLoader {
                 JsonObject nav = json.getAsJsonObject("navigation");
                 if (nav.has("autoEnabled")) config.navAutoEnabled = nav.get("autoEnabled").getAsBoolean();
                 if (nav.has("reachDist")) config.navReachDist = nav.get("reachDist").getAsDouble();
+                if (nav.has("compositeLimit")) config.navCompositeLimit = nav.get("compositeLimit").getAsInt();
             }
 
             ChunkScannerMod.LOGGER.info("Config loaded from: {}", path);
@@ -172,6 +173,7 @@ public class ConfigLoader {
             JsonObject navigation = new JsonObject();
             navigation.addProperty("autoEnabled", config.navAutoEnabled);
             navigation.addProperty("reachDist", config.navReachDist);
+            navigation.addProperty("compositeLimit", config.navCompositeLimit);
             json.add("navigation", navigation);
 
             Files.writeString(path, GSON.toJson(json), StandardCharsets.UTF_8);

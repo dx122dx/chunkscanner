@@ -25,6 +25,8 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,6 +42,8 @@ public class ChunkScannerMod implements ClientModInitializer {
 
     private final NavigationQueue navQueue = new NavigationQueue();
     private boolean navActive;
+    private boolean navPausedByDim;
+    private String navStartDimension;
 
     private static ChunkScannerMod instance;
 
@@ -186,6 +190,10 @@ public class ChunkScannerMod implements ClientModInitializer {
     /** 启动导航（由 /cs nav go 命令调用）。 */
     public void startNav() {
         if (navQueue.isEmpty()) return;
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player != null && client.world != null) {
+            navStartDimension = client.world.getDimensionKey().getValue().toString();
+        }
         navActive = true;
         navTickCounter = 0;
         updateNavGoal();
@@ -194,7 +202,40 @@ public class ChunkScannerMod implements ClientModInitializer {
 
     /** 每 tick 检查当前目标是否到达，推进队列。 */
     private void tickNav(MinecraftClient client) {
-        if (!navActive || client.player == null) return;
+        if (!navActive || client.player == null || client.world == null) return;
+
+        // 维度和导航起始不一致：暂停并提示
+        String currentDim = client.world.getDimensionKey().getValue().toString();
+        if (navStartDimension != null && !navStartDimension.equals(currentDim)) {
+            if (!navPausedByDim) {
+                navPausedByDim = true;
+                BaritoneNavigator.cancel();
+                if (client.player != null) {
+                    client.player.sendMessage(
+                            Text.translatable("chunkscanner.msg.nav_dimension_changed",
+                                    navStartDimension, currentDim)
+                                    .formatted(Formatting.YELLOW),
+                            false);
+                }
+                LOGGER.info("Navigation paused: dimension changed from {} to {}.",
+                        navStartDimension, currentDim);
+            }
+            return;
+        }
+        // 维度恢复
+        if (navPausedByDim && navStartDimension != null && navStartDimension.equals(currentDim)) {
+            navPausedByDim = false;
+            navTickCounter = 0;
+            updateNavGoal();
+            if (client.player != null) {
+                client.player.sendMessage(
+                        Text.translatable("chunkscanner.msg.nav_dimension_resumed",
+                                currentDim)
+                                .formatted(Formatting.GREEN),
+                        false);
+            }
+        }
+        if (navPausedByDim) return;
 
         // 检查当前目标是否到达（推进队列）
         boolean changed = navQueue.tick(client);
@@ -223,10 +264,11 @@ public class ChunkScannerMod implements ClientModInitializer {
         }
 
         if (CONFIG.navAutoEnabled) {
-            // GoalComposite：一次性打包所有队列坐标，让 Baritone 自动走最近点
+            // GoalComposite：最多取前 navCompositeLimit 项，防止反射构造过多 GoalBlock
             java.util.List<NavigationEntry> entries = navQueue.getEntries();
-            int[][] positions = new int[entries.size()][3];
-            for (int i = 0; i < entries.size(); i++) {
+            int limit = Math.min(entries.size(), Math.max(1, CONFIG.navCompositeLimit));
+            int[][] positions = new int[limit][3];
+            for (int i = 0; i < limit; i++) {
                 NavigationEntry e = entries.get(i);
                 positions[i][0] = e.x();
                 positions[i][1] = e.y();
@@ -245,6 +287,8 @@ public class ChunkScannerMod implements ClientModInitializer {
     /** 清空导航队列并取消导航。 */
     public void clearNav() {
         navActive = false;
+        navPausedByDim = false;
+        navStartDimension = null;
         navQueue.clear();
         BaritoneNavigator.cancel();
         LOGGER.info("Navigation queue cleared.");

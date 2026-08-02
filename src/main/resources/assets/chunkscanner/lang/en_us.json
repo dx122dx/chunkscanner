@@ -165,5 +165,7 @@
     "chunkscanner.msg.nav_list_header": "Navigation Queue (%s targets, mode: %s):",
     "chunkscanner.msg.nav_toggle": "Navigation mode: %s",
     "chunkscanner.gui.nav.mode.composite": "GoalComposite (auto-nearest)",
-    "chunkscanner.gui.nav.mode.relay": "Relay (sequential)"
+    "chunkscanner.gui.nav.mode.relay": "Relay (sequential)",
+    "chunkscanner.msg.nav_dimension_changed": "Navigation paused: dimension changed from %s to %s. Return to resume.",
+    "chunkscanner.msg.nav_dimension_resumed": "Navigation resumed in dimension %s."
 }

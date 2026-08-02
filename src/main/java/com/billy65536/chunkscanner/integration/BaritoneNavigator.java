@@ -65,14 +65,23 @@ public final class BaritoneNavigator {
         Class<?> baritoneApiClass = Class.forName("baritone.api.BaritoneAPI", true, cl);
         Method getProvider = baritoneApiClass.getMethod("getProvider");
         Object provider = getProvider.invoke(null);
+        if (provider == null) {
+            throw new IllegalStateException("Baritone provider returned null (not in a world?)");
+        }
 
         // provider.getPrimaryBaritone()
         Method getPrimaryBaritone = provider.getClass().getMethod("getPrimaryBaritone");
         baritone = getPrimaryBaritone.invoke(provider);
+        if (baritone == null) {
+            throw new IllegalStateException("Baritone#getPrimaryBaritone returned null");
+        }
 
         // baritone.getCustomGoalProcess()
         Method getCustomGoalProcess = baritone.getClass().getMethod("getCustomGoalProcess");
         customGoalProcess = getCustomGoalProcess.invoke(baritone);
+        if (customGoalProcess == null) {
+            throw new IllegalStateException("Baritone#getCustomGoalProcess returned null");
+        }
 
         // GoalBlock(int, int, int)
         Class<?> goalBlockClass = Class.forName("baritone.api.pathing.goals.GoalBlock", true, cl);
@@ -149,12 +158,17 @@ public final class BaritoneNavigator {
         try {
             if (onLostControl != null) {
                 onLostControl.invoke(customGoalProcess);
-            } else {
-                // 回退：尝试 setGoalAndPath(null)
-                setGoalAndPath.invoke(customGoalProcess, (Object) null);
             }
         } catch (Exception e) {
-            ChunkScannerMod.LOGGER.warn("BaritoneNavigator: cancel failed: {}", e.getMessage());
+            ChunkScannerMod.LOGGER.warn("BaritoneNavigator: cancel via onLostControl failed: {}", e.getMessage());
+            // 回退：某些版本无 onLostControl，尝试 setGoalAndPath(null)
+            try {
+                if (setGoalAndPath != null) {
+                    setGoalAndPath.invoke(customGoalProcess, (Object) null);
+                }
+            } catch (Exception e2) {
+                ChunkScannerMod.LOGGER.warn("BaritoneNavigator: cancel fallback also failed: {}", e2.getMessage());
+            }
         }
     }
 }
