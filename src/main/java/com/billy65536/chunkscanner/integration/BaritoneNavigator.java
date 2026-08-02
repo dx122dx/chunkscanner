@@ -20,6 +20,7 @@ import com.billy65536.chunkscanner.ChunkScannerMod;
 public final class BaritoneNavigator {
 
     private static volatile Boolean available;
+    private static volatile boolean configDisabled;
     private static boolean initialized;
     private static Object baritone;
     private static Object customGoalProcess;
@@ -35,11 +36,25 @@ public final class BaritoneNavigator {
 
     /* ==================== 可用性检测 ==================== */
 
+    /** 通过配置禁用 Baritone（风险警告关闭）。需要重启后由 ChunkScannerMod 调用。 */
+    public static void setConfigDisabled(boolean disabled) {
+        configDisabled = disabled;
+        if (disabled) {
+            ChunkScannerMod.LOGGER.info("BaritoneNavigator: disabled by config (BaritoneRiskWarning=BARITONE_DISABLED).");
+        }
+    }
+
+    /** 查询是否因风险警告配置被禁用。 */
+    public static boolean isConfigDisabled() {
+        return configDisabled;
+    }
+
     /**
      * 当前环境中 Baritone 是否可用。
-     * 首次调用时若 mod 已安装会触发反射初始化；初始化失败则返回 false。
+     * 首次调用时若 mod 已安装会触发反射初始化；初始化失败或被配置禁用则返回 false。
      */
     public static boolean isAvailable() {
+        if (configDisabled) return false;
         if (available == null) {
             available = FabricLoader.getInstance().isModLoaded("baritone");
             if (available) {

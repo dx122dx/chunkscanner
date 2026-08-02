@@ -18,12 +18,15 @@ import com.billy65536.chunkscanner.core.IChunkDb;
 import com.billy65536.chunkscanner.core.navigation.ChunkScannerNavigation;
 import com.billy65536.chunkscanner.core.navigation.NavigationEntry;
 import com.billy65536.chunkscanner.core.navigation.NavigationQueue;
+import com.billy65536.chunkscanner.integration.BaritoneNavigator;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.text.ClickEvent;
+import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import org.slf4j.Logger;
@@ -126,6 +129,12 @@ public class ChunkScannerMod implements ClientModInitializer {
         // 加载全局配置（优先 Cloth Config，fallback 到 JSON 文件）
         ConfigLoader.load(CONFIG);
 
+        // 启动时检查 Baritone 风险警告配置，若为 BARITONE_DISABLED 则立即禁用
+        if (CONFIG.baritoneRiskWarning == ChunkScannerConfig.BaritoneRiskWarning.BARITONE_DISABLED) {
+            BaritoneNavigator.setConfigDisabled(true);
+            LOGGER.info("Baritone disabled by config (BaritoneRiskWarning=BARITONE_DISABLED).");
+        }
+
         // 注入配置到导航门面并注册回调
         ChunkScannerNavigation.ChunkScannerConfigHolder.set(CONFIG);
         nav.setAutoEnabled(CONFIG.navAutoEnabled);
@@ -188,12 +197,18 @@ public class ChunkScannerMod implements ClientModInitializer {
             nav.tick(client);
         });
 
-        // 注册连接事件：进入服务器/世界时构建物品译名映射表 + 注册聊天监听
+        // 注册连接事件：进入服务器/世界时构建物品译名映射表 + 注册聊天监听 + Baritone 风险警告
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
             LOGGER.info("Joined world, building item translation mapping...");
             ItemTranslator.buildMapping();
             LOGGER.info("Item translation mapping built: {} entries", ItemTranslator.size());
             QShopChatListener.register();
+
+            // 若 Baritone 可用且风险警告为 SHOWN，展示警告消息
+            if (CONFIG.baritoneRiskWarning == ChunkScannerConfig.BaritoneRiskWarning.SHOWN
+                    && BaritoneNavigator.isAvailable()) {
+                client.execute(() -> showBaritoneRiskWarning(client));
+            }
         });
 
         // 注册断连事件：退出服务器/世界时清理所有扫描会话和映射表
@@ -210,5 +225,51 @@ public class ChunkScannerMod implements ClientModInitializer {
         }, "ChunkScanner-Shutdown"));
 
         LOGGER.info("ChunkScanner initialized! /cs help");
+    }
+
+    /**
+     * 展示 Baritone 风险警告消息（加入服务器/世界时触发）。
+     * 包含功能说明、风险警告、可点击的"禁用 Baritone"链接及配置提示。
+     */
+    private static void showBaritoneRiskWarning(MinecraftClient client) {
+        if (client.player == null) return;
+
+        // 标题行
+        client.player.sendMessage(
+                Text.literal("")
+                        .append(Text.literal("=== ChunkScanner Baritone ").formatted(Formatting.GOLD))
+                        .append(Text.translatable("chunkscanner.msg.baritone_risk_title")
+                                .formatted(Formatting.RED, Formatting.BOLD))
+                        .append(Text.literal(" ===").formatted(Formatting.GOLD)),
+                false);
+
+        // 功能说明
+        client.player.sendMessage(
+                Text.translatable("chunkscanner.msg.baritone_risk_desc")
+                        .formatted(Formatting.GRAY),
+                false);
+
+        // 风险警告
+        client.player.sendMessage(
+                Text.translatable("chunkscanner.msg.baritone_risk_warning")
+                        .formatted(Formatting.YELLOW),
+                false);
+
+        // a) 可点击的"禁用 Baritone"文本
+        MutableText disableText = Text.literal("[")
+                .formatted(Formatting.GRAY)
+                .append(Text.translatable("chunkscanner.msg.baritone_risk_disable")
+                        .formatted(Formatting.RED, Formatting.UNDERLINE))
+                .append(Text.literal("]").formatted(Formatting.GRAY));
+        disableText.styled(s -> s.withClickEvent(
+                new ClickEvent(ClickEvent.Action.RUN_COMMAND,
+                        "/cs baritone risk disable")));
+        client.player.sendMessage(disableText, false);
+
+        // b) 配置提示
+        client.player.sendMessage(
+                Text.translatable("chunkscanner.msg.baritone_risk_config_hint")
+                        .formatted(Formatting.GRAY),
+                false);
     }
 }

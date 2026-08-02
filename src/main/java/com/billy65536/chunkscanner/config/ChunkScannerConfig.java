@@ -55,6 +55,22 @@ public class ChunkScannerConfig {
         BOTH
     }
 
+    /**
+     * Baritone 风险警告级别。
+     * <ul>
+     *   <li>{@link #SHOWN} — 每次加入服务器时显示警告（默认）</li>
+     *   <li>{@link #HIDDEN} — 不显示警告，Baritone 正常使用</li>
+     *   <li>{@link #BARITONE_DISABLED} — 禁用 Baritone 功能，启用路径点回退</li>
+     * </ul>
+     *
+     * <p>注意：修改此选项后需要重启游戏生效。</p>
+     */
+    public enum BaritoneRiskWarning {
+        SHOWN,
+        HIDDEN,
+        BARITONE_DISABLED
+    }
+
     // ==================== 扫描默认值 ====================
 
     /** 最小重访间隔（秒）。默认 60。 */
@@ -144,6 +160,11 @@ public class ChunkScannerConfig {
     /** GoalComposite 模式下最多同时打包的导航目标数（防止反射构造过多 GoalBlock）。默认 128。 */
     public int navCompositeLimit = 128;
 
+    // ==================== Baritone 风险警告 ====================
+
+    /** Baritone 风险警告级别。默认 SHOWN。 */
+    public BaritoneRiskWarning baritoneRiskWarning = BaritoneRiskWarning.SHOWN;
+
     /** 创建一份配置副本，供每个扫描任务独立持有。 */
     public ChunkScannerConfig copy() {
         ChunkScannerConfig c = new ChunkScannerConfig();
@@ -173,6 +194,7 @@ public class ChunkScannerConfig {
         c.navAutoEnabled = this.navAutoEnabled;
         c.navReachDist = this.navReachDist;
         c.navCompositeLimit = this.navCompositeLimit;
+        c.baritoneRiskWarning = this.baritoneRiskWarning;
         return c;
     }
 }

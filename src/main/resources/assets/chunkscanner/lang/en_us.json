@@ -168,5 +168,12 @@
     "chunkscanner.gui.nav.mode.relay": "Relay (sequential)",
     "chunkscanner.msg.nav_dimension_changed": "Navigation paused: dimension changed from %s to %s. Return to resume.",
     "chunkscanner.msg.nav_dimension_resumed": "Navigation resumed in dimension %s.",
-    "chunkscanner.msg.nav_failed": "Navigation failed. Check logs for details."
+    "chunkscanner.msg.nav_failed": "Navigation failed. Check logs for details.",
+    "chunkscanner.msg.nav_fallback_enabled": "Waypoint fallback mode enabled: front-of-queue coordinates will be added as waypoints.",
+    "chunkscanner.msg.baritone_risk_title": "Risk Warning",
+    "chunkscanner.msg.baritone_risk_desc": "Baritone provides automatic pathfinding navigation to queued targets. It allows automated movement to scanned coordinates.",
+    "chunkscanner.msg.baritone_risk_warning": "WARNING: Using Baritone on multiplayer servers may violate server rules and could result in bans. Use at your own risk.",
+    "chunkscanner.msg.baritone_risk_disable": "Disable Baritone",
+    "chunkscanner.msg.baritone_risk_config_hint": "To hide this warning permanently without disabling Baritone, set baritoneRiskWarning to \"HIDDEN\" in the config file. (Requires game restart)",
+    "chunkscanner.msg.baritone_risk_disabled": "Baritone has been disabled. Waypoint fallback mode is now active. Restart the game to re-enable Baritone."
 }

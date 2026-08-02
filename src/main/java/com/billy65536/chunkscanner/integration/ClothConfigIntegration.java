@@ -227,6 +227,18 @@ public class ClothConfigIntegration {
                 .setSaveConsumer(v -> ChunkScannerMod.CONFIG.targetTickNs = v)
                 .build());
 
+        // === Baritone 分类 ===
+        var baritone = builder.getOrCreateCategory(Text.literal("Baritone"));
+
+        baritone.addEntry(builder.entryBuilder()
+                .startEnumSelector(Text.literal("Baritone 风险警告"),
+                        ChunkScannerConfig.BaritoneRiskWarning.class,
+                        ChunkScannerMod.CONFIG.baritoneRiskWarning)
+                .setDefaultValue(ChunkScannerConfig.BaritoneRiskWarning.SHOWN)
+                .setTooltip(Text.literal("Shown=加入服务器时显示警告，Hidden=隐藏警告，BaritoneDisabled=禁用Baritone并启用路径点回退。修改后需重启游戏生效。"))
+                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.baritoneRiskWarning = v)
+                .build());
+
         return builder.build();
     }
 }

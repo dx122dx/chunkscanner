@@ -124,6 +124,8 @@ public class ConfigLoader {
                 if (nav.has("autoEnabled")) config.navAutoEnabled = nav.get("autoEnabled").getAsBoolean();
                 if (nav.has("reachDist")) config.navReachDist = nav.get("reachDist").getAsDouble();
                 if (nav.has("compositeLimit")) config.navCompositeLimit = nav.get("compositeLimit").getAsInt();
+                if (nav.has("baritoneRiskWarning"))
+                    config.baritoneRiskWarning = parseBaritoneRiskWarning(nav.get("baritoneRiskWarning").getAsString());
             }
 
             ChunkScannerMod.LOGGER.info("Config loaded from: {}", path);
@@ -174,6 +176,7 @@ public class ConfigLoader {
             navigation.addProperty("autoEnabled", config.navAutoEnabled);
             navigation.addProperty("reachDist", config.navReachDist);
             navigation.addProperty("compositeLimit", config.navCompositeLimit);
+            navigation.addProperty("baritoneRiskWarning", config.baritoneRiskWarning.name());
             json.add("navigation", navigation);
 
             Files.writeString(path, GSON.toJson(json), StandardCharsets.UTF_8);
@@ -214,6 +217,20 @@ public class ConfigLoader {
         } catch (IllegalArgumentException e) {
             ChunkScannerMod.LOGGER.warn("Unknown chat interception method '{}', falling back to BOTH", s);
             return ChunkScannerConfig.ChatInterceptionMethod.BOTH;
+        }
+    }
+
+    /** 安全解析 Baritone 风险警告字符串，无法识别时回退默认值。 */
+    private static ChunkScannerConfig.BaritoneRiskWarning parseBaritoneRiskWarning(String s) {
+        if (s == null) {
+            ChunkScannerMod.LOGGER.warn("Baritone risk warning is null, falling back to SHOWN");
+            return ChunkScannerConfig.BaritoneRiskWarning.SHOWN;
+        }
+        try {
+            return ChunkScannerConfig.BaritoneRiskWarning.valueOf(s);
+        } catch (IllegalArgumentException e) {
+            ChunkScannerMod.LOGGER.warn("Unknown baritone risk warning '{}', falling back to SHOWN", s);
+            return ChunkScannerConfig.BaritoneRiskWarning.SHOWN;
         }
     }
 }

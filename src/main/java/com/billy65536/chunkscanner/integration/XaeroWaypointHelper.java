@@ -89,6 +89,11 @@ public final class XaeroWaypointHelper {
     private static volatile Method fallbackGetCurrentWaypointSet;
     private static volatile Method fallbackGetIterableWaypointSets;
 
+    // Waypoint 坐标 getter（用于按坐标查找和删除路径点）
+    private static volatile Method waypointGetX;
+    private static volatile Method waypointGetY;
+    private static volatile Method waypointGetZ;
+
     private XaeroWaypointHelper() {}
 
     /**
@@ -132,6 +137,49 @@ public final class XaeroWaypointHelper {
      */
     public static boolean tryCreateWaypoint(LocatedPosition pos) {
         return tryCreateWaypoint(pos, DEFAULT_WAYPOINT_NAME, DEFAULT_WAYPOINT_INITIALS, null);
+    }
+
+    /**
+     * 尝试删除指定坐标的 Xaero 路径点（通常用于导航回退路径点清理）。
+     *
+     * @param pos   目标坐标
+     * @param group 路径点组名（null 使用当前组）
+     * @return true 表示成功删除
+     */
+    public static boolean tryRemoveWaypoint(LocatedPosition pos, String group) {
+        if (pos == null) return false;
+        if (!initMinimapReflection()) return false;
+        if (waypointGetX == null || waypointGetY == null || waypointGetZ == null) {
+            LOGGER.debug("Waypoint getters not available, cannot remove waypoint");
+            return false;
+        }
+        try {
+            Object module = getMinimapModule();
+            if (module == null) return false;
+            Object session = getCurrentSession.invoke(module);
+            if (session == null) return false;
+
+            // 获取目标维度的 MinimapWorld
+            Object targetWorld = getWorldForDimension(session, pos.dimensionId());
+            if (targetWorld == null) return false;
+
+            // 获取路径点集
+            Object waypointSet = resolveWaypointSetForWorld(targetWorld, group);
+            if (waypointSet == null) return false;
+
+            // 从路径点集中查找并移除匹配坐标的路径点
+            if (!removeWaypointByCoordinate(waypointSet, pos.x(), pos.y(), pos.z())) {
+                return false;
+            }
+
+            // 触发持久化保存
+            saveWorld(session, targetWorld);
+            LOGGER.debug("Removed waypoint at {} in dimension {}", pos, pos.dimensionId());
+            return true;
+        } catch (Exception e) {
+            LOGGER.debug("Failed to remove waypoint at {}: {}", pos, e.getMessage());
+            return false;
+        }
     }
 
     /**
@@ -482,6 +530,81 @@ public final class XaeroWaypointHelper {
     }
 
     /**
+     * 从 WaypointSet 中按坐标查找并移除路径点。
+     *
+     * @return true 如果成功找到并移除
+     */
+    private static boolean removeWaypointByCoordinate(Object waypointSet, int x, int y, int z) {
+        try {
+            if (waypointGetX == null || waypointGetY == null || waypointGetZ == null) return false;
+
+            // 获取路径点列表
+            java.util.List<Object> list = getWaypointList(waypointSet);
+            if (list == null) return false;
+
+            // 查找匹配坐标的路径点
+            Object target = null;
+            for (Object wp : list) {
+                try {
+                    int wx = (int) waypointGetX.invoke(wp);
+                    int wy = (int) waypointGetY.invoke(wp);
+                    int wz = (int) waypointGetZ.invoke(wp);
+                    if (wx == x && wy == y && wz == z) {
+                        target = wp;
+                        break;
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            if (target == null) {
+                LOGGER.debug("No waypoint found at ({}, {}, {})", x, y, z);
+                return false;
+            }
+
+            // 尝试 remove(Waypoint) 方法
+            try {
+                Method remove = waypointSet.getClass().getMethod("remove", waypointClass);
+                remove.invoke(waypointSet, target);
+                return true;
+            } catch (NoSuchMethodException ignored) {}
+
+            // 回退：直接操作内部 list
+            list.remove(target);
+            return true;
+        } catch (Exception e) {
+            LOGGER.debug("removeWaypointByCoordinate failed: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 从 WaypointSet 获取内部路径点列表（支持多种字段名）。
+     */
+    @SuppressWarnings("unchecked")
+    private static java.util.List<Object> getWaypointList(Object waypointSet) {
+        try {
+            Class<?> wsClass = waypointSet.getClass();
+            for (String fieldName : new String[]{"list", "waypoints", "waypointList"}) {
+                try {
+                    Field listField = wsClass.getDeclaredField(fieldName);
+                    listField.setAccessible(true);
+                    return (java.util.List<Object>) listField.get(waypointSet);
+                } catch (NoSuchFieldException ignored) {}
+            }
+            // 回退：查找任意 List 字段
+            for (Field f : wsClass.getDeclaredFields()) {
+                if (java.util.List.class.isAssignableFrom(f.getType())) {
+                    f.setAccessible(true);
+                    return (java.util.List<Object>) f.get(waypointSet);
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.debug("getWaypointList failed: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    /**
      * 调用 WaypointSet.add(Waypoint) 添加路径点。
      * 新版 Xaero (24.x) 方法名为 add，旧版可能为 addWaypoint。
      *
@@ -577,6 +700,16 @@ public final class XaeroWaypointHelper {
         try {
             // 1. Waypoint 类及构造函数、相关枚举
             waypointClass = Class.forName("xaero.common.minimap.waypoints.Waypoint");
+
+            // 缓存 Waypoint 坐标 getter（用于按坐标查找/删除路径点）
+            try {
+                waypointGetX = waypointClass.getMethod("getX");
+                waypointGetY = waypointClass.getMethod("getY");
+                waypointGetZ = waypointClass.getMethod("getZ");
+            } catch (NoSuchMethodException e) {
+                waypointGetX = waypointGetY = waypointGetZ = null;
+                LOGGER.debug("Waypoint getX/getY/getZ not available");
+            }
 
             // WaypointColor/WaypointPurpose: 新版 Xaero (24.x) 位于 xaero.hud.minimap.waypoint
             Class<?> waypointColorClass = tryLoadClass(
@@ -783,6 +916,9 @@ public final class XaeroWaypointHelper {
         fallbackGetWaypointSet = null;
         fallbackGetCurrentWaypointSet = null;
         fallbackGetIterableWaypointSets = null;
+        waypointGetX = null;
+        waypointGetY = null;
+        waypointGetZ = null;
     }
 
     /**

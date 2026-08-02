@@ -1,11 +1,15 @@
 package com.billy65536.chunkscanner.core.navigation;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import net.minecraft.client.MinecraftClient;
 
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
+import com.billy65536.chunkscanner.core.LocatedPosition;
 import com.billy65536.chunkscanner.integration.BaritoneNavigator;
+import com.billy65536.chunkscanner.integration.XaeroWaypointHelper;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,6 +37,7 @@ public final class ChunkScannerNavigation {
     private static final ChunkScannerNavigation INSTANCE = new ChunkScannerNavigation();
 
     private final NavigationQueue queue = new NavigationQueue();
+    private final Set<NavigationEntry> fallbackWaypoints = new HashSet<>();
     private boolean active;
     private boolean pausedByDim;
     private String startDimension;
@@ -41,6 +46,9 @@ public final class ChunkScannerNavigation {
     private Runnable onNavFailed;
     private java.util.function.BiConsumer<String, String> onDimChanged;
     private java.util.function.Consumer<String> onDimResumed;
+
+    /** 回退路径点组名（导航不可用时的路径点分组，避免与用户手动创建的路径点混淆）。 */
+    private static final String FALLBACK_WP_GROUP = "chunkscanner_nav";
 
     private ChunkScannerNavigation() {
         this.autoEnabled = ChunkScannerConfigHolder.navAutoEnabled();
@@ -104,6 +112,7 @@ public final class ChunkScannerNavigation {
         active = false;
         pausedByDim = false;
         startDimension = null;
+        cleanupFallbackWaypoints();
         queue.clear();
         BaritoneNavigator.cancel();
         LOGGER.info("Navigation stopped and queue cleared.");
@@ -211,11 +220,18 @@ public final class ChunkScannerNavigation {
         if (pausedByDim) return;
 
         // 到达判定
+        NavigationEntry beforeTick = queue.peek();
         boolean changed = queue.tick(client);
+
+        // 清理已出队目标的回退路径点
+        if (changed && beforeTick != null) {
+            removeFallbackWaypoint(beforeTick);
+        }
 
         if (queue.isEmpty()) {
             active = false;
             BaritoneNavigator.cancel();
+            cleanupFallbackWaypoints();
             LOGGER.info("Navigation complete.");
             return;
         }
@@ -240,7 +256,9 @@ public final class ChunkScannerNavigation {
 
     private void updateGoal() {
         if (!BaritoneNavigator.isAvailable()) {
-            active = false;
+            // Baritone 不可用（未安装或被配置禁用），取消已有导航并启用路径点回退
+            BaritoneNavigator.cancel();
+            updateFallbackWaypoints();
             return;
         }
         if (queue.isEmpty()) {
@@ -279,6 +297,48 @@ public final class ChunkScannerNavigation {
     }
 
     /**
+     * 路径点回退：当 Baritone 不可用时，将队头坐标添加为 Xaero 路径点。
+     * 参考 DatabaseScreen 左键点击坐标创建路径点的逻辑。
+     */
+    private void updateFallbackWaypoints() {
+        NavigationEntry front = queue.peek();
+        if (front == null) return;
+
+        // 如果队头已有回退路径点则跳过
+        if (fallbackWaypoints.contains(front)) return;
+
+        LocatedPosition pos = new LocatedPosition(
+                front.dimensionId(), front.x(), front.y(), front.z());
+        String wpName = "[N] " + ChunkScannerConfigHolder.waypointName();
+        String wpInit = ChunkScannerConfigHolder.waypointInitials();
+        String wpGroup = FALLBACK_WP_GROUP;
+
+        if (XaeroWaypointHelper.tryCreateWaypoint(pos, wpName, wpInit, wpGroup)) {
+            fallbackWaypoints.add(front);
+            LOGGER.debug("Fallback waypoint created for nav entry: {}", pos);
+        }
+    }
+
+    /** 删除指定导航条目的回退路径点。 */
+    private void removeFallbackWaypoint(NavigationEntry entry) {
+        if (!fallbackWaypoints.remove(entry)) return;
+        LocatedPosition pos = new LocatedPosition(
+                entry.dimensionId(), entry.x(), entry.y(), entry.z());
+        XaeroWaypointHelper.tryRemoveWaypoint(pos, FALLBACK_WP_GROUP);
+        LOGGER.debug("Fallback waypoint removed for nav entry: {}", pos);
+    }
+
+    /** 删除所有回退路径点。 */
+    private void cleanupFallbackWaypoints() {
+        for (NavigationEntry entry : fallbackWaypoints) {
+            LocatedPosition pos = new LocatedPosition(
+                    entry.dimensionId(), entry.x(), entry.y(), entry.z());
+            XaeroWaypointHelper.tryRemoveWaypoint(pos, FALLBACK_WP_GROUP);
+        }
+        fallbackWaypoints.clear();
+    }
+
+    /**
      * 配置值访问中介，打破 core.navigation 对 config 包的硬引用。
      * 由 ChunkScannerMod 在初始化时注入实际值。
      */
@@ -299,6 +359,14 @@ public final class ChunkScannerNavigation {
 
         static int navCompositeLimit() {
             return config != null ? config.navCompositeLimit : 128;
+        }
+
+        static String waypointName() {
+            return config != null && config.waypointName != null ? config.waypointName : "选中的坐标点";
+        }
+
+        static String waypointInitials() {
+            return config != null && config.waypointInitials != null ? config.waypointInitials : "目标";
         }
     }
 }

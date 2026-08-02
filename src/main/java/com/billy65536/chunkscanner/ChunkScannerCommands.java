@@ -10,8 +10,10 @@ import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.ScanSession;
 import com.billy65536.chunkscanner.core.db.DbExportUtil;
 import com.billy65536.chunkscanner.core.db.DbFileUtil;
+import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.core.navigation.ChunkScannerNavigation;
 import com.billy65536.chunkscanner.core.navigation.NavigationEntry;
+import com.billy65536.chunkscanner.integration.BaritoneNavigator;
 import com.billy65536.chunkscanner.gui.GuiUtil;
 import com.billy65536.chunkscanner.integration.ClothConfigIntegration;
 import com.billy65536.chunkscanner.screen.ChunkScannerScreen;
@@ -247,6 +249,19 @@ public class ChunkScannerCommands {
                 }));
 
         root.then(navNode);
+
+        // ===== /cs baritone =====
+        var baritoneNode = ClientCommandManager.literal("baritone");
+
+        var baritoneRiskNode = ClientCommandManager.literal("risk");
+        baritoneRiskNode.then(ClientCommandManager.literal("disable")
+                .executes(ctx -> {
+                    disableBaritoneRisk(ctx.getSource().getClient());
+                    return 1;
+                }));
+        baritoneNode.then(baritoneRiskNode);
+
+        root.then(baritoneNode);
 
         // ===== /cs components =====
         // 可扩展的组件命令入口：/cs components <componentName> <action> [args...]
@@ -542,8 +557,9 @@ public class ChunkScannerCommands {
             return;
         }
         if (!ChunkScannerNavigation.isBaritoneAvailable()) {
-            sendMsg(client, Text.translatable("chunkscanner.msg.nav_no_baritone").formatted(Formatting.RED));
-            return;
+            // Baritone 不可用，使用路径点回退模式
+            sendMsg(client, Text.translatable("chunkscanner.msg.nav_no_baritone").formatted(Formatting.YELLOW));
+            sendMsg(client, Text.translatable("chunkscanner.msg.nav_fallback_enabled").formatted(Formatting.GREEN));
         }
         ChunkScannerMod.startNavigation();
         sendMsg(client, Text.translatable("chunkscanner.msg.nav_start", nav.size())
@@ -579,6 +595,15 @@ public class ChunkScannerCommands {
                     .append(Text.literal(" " + e.dimensionId()).formatted(Formatting.GRAY)));
             i++;
         }
+    }
+
+    /** 通过命令禁用 Baritone 风险警告（设置 BARITONE_DISABLED + 立即禁用）。 */
+    private void disableBaritoneRisk(MinecraftClient client) {
+        ChunkScannerMod.CONFIG.baritoneRiskWarning = ChunkScannerConfig.BaritoneRiskWarning.BARITONE_DISABLED;
+        BaritoneNavigator.setConfigDisabled(true);
+        ConfigLoader.save(ChunkScannerMod.CONFIG);
+        sendMsg(client, Text.translatable("chunkscanner.msg.baritone_risk_disabled")
+                .formatted(Formatting.GREEN));
     }
 
     private void navToggle(MinecraftClient client) {
