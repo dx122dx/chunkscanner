@@ -15,10 +15,9 @@ import com.billy65536.chunkscanner.core.AnalyzerRegistry;
 import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.core.IChunkDb;
+import com.billy65536.chunkscanner.core.navigation.ChunkScannerNavigation;
 import com.billy65536.chunkscanner.core.navigation.NavigationEntry;
 import com.billy65536.chunkscanner.core.navigation.NavigationQueue;
-import com.billy65536.chunkscanner.core.navigation.PlayerNearCondition;
-import com.billy65536.chunkscanner.integration.BaritoneNavigator;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -40,10 +39,7 @@ public class ChunkScannerMod implements ClientModInitializer {
     private ChunkScanner scanner;
     private ChunkScannerCommands commands;
 
-    private final NavigationQueue navQueue = new NavigationQueue();
-    private boolean navActive;
-    private boolean navPausedByDim;
-    private String navStartDimension;
+    private final ChunkScannerNavigation nav = ChunkScannerNavigation.get();
 
     private static ChunkScannerMod instance;
 
@@ -55,23 +51,25 @@ public class ChunkScannerMod implements ClientModInitializer {
         return instance != null ? instance.commands : null;
     }
 
+    /** @deprecated 使用 {@link ChunkScannerNavigation#get()} 门面替代。 */
+    @Deprecated
     public static NavigationQueue getNavQueue() {
-        return instance != null ? instance.navQueue : null;
+        return instance != null ? instance.nav.getQueue() : null;
     }
 
     /** 启动导航（由命令层调用）。 */
     public static void startNavigation() {
-        if (instance != null) instance.startNav();
+        if (instance != null) instance.nav.start();
     }
 
     /** 清空导航队列并取消导航。 */
     public static void clearNavigation() {
-        if (instance != null) instance.clearNav();
+        if (instance != null) instance.nav.clear();
     }
 
     /** 将位置加入导航队列。 */
     public static void enqueueNavigation(NavigationEntry entry) {
-        if (instance != null) instance.enqueueNav(entry);
+        if (instance != null) instance.nav.enqueue(entry.x(), entry.y(), entry.z(), entry.dimensionId());
     }
 
     // ==================== 数据库路径管理 ====================
@@ -127,6 +125,37 @@ public class ChunkScannerMod implements ClientModInitializer {
 
         // 加载全局配置（优先 Cloth Config，fallback 到 JSON 文件）
         ConfigLoader.load(CONFIG);
+
+        // 注入配置到导航门面并注册回调
+        ChunkScannerNavigation.ChunkScannerConfigHolder.set(CONFIG);
+        nav.setAutoEnabled(CONFIG.navAutoEnabled);
+        nav.setOnNavFailed(() -> {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc.player != null) {
+                mc.player.sendMessage(
+                        Text.translatable("chunkscanner.msg.nav_failed")
+                                .formatted(Formatting.RED),
+                        false);
+            }
+        });
+        nav.setOnDimensionChanged((from, to) -> {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc.player != null) {
+                mc.player.sendMessage(
+                        Text.translatable("chunkscanner.msg.nav_dimension_changed", from, to)
+                                .formatted(Formatting.YELLOW),
+                        false);
+            }
+        });
+        nav.setOnDimensionResumed(dim -> {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc.player != null) {
+                mc.player.sendMessage(
+                        Text.translatable("chunkscanner.msg.nav_dimension_resumed", dim)
+                                .formatted(Formatting.GREEN),
+                        false);
+            }
+        });
         scanner = new ChunkScanner(CONFIG);
 
         // 注册数据库工厂（必须最先注册，ScanSession 依赖它创建数据库）
@@ -156,7 +185,7 @@ public class ChunkScannerMod implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             scanner.onClientTick(client);
             QShopChatListener.tick();
-            tickNav(client);
+            nav.tick(client);
         });
 
         // 注册连接事件：进入服务器/世界时构建物品译名映射表 + 注册聊天监听
@@ -181,140 +210,5 @@ public class ChunkScannerMod implements ClientModInitializer {
         }, "ChunkScanner-Shutdown"));
 
         LOGGER.info("ChunkScanner initialized! /cs help");
-    }
-
-    // ==================== 导航逻辑 ====================
-
-    private int navTickCounter;
-
-    /** 启动导航（由 /cs nav go 命令调用）。 */
-    public void startNav() {
-        if (navQueue.isEmpty()) return;
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player != null && client.world != null) {
-            navStartDimension = client.world.getDimensionKey().getValue().toString();
-        }
-        navActive = true;
-        navTickCounter = 0;
-        updateNavGoal();
-        LOGGER.info("Navigation started, {} target(s) in queue.", navQueue.size());
-    }
-
-    /** 每 tick 检查当前目标是否到达，推进队列。 */
-    private void tickNav(MinecraftClient client) {
-        if (!navActive || client.player == null || client.world == null) return;
-
-        // 维度和导航起始不一致：暂停并提示
-        String currentDim = client.world.getDimensionKey().getValue().toString();
-        if (navStartDimension != null && !navStartDimension.equals(currentDim)) {
-            if (!navPausedByDim) {
-                navPausedByDim = true;
-                BaritoneNavigator.cancel();
-                if (client.player != null) {
-                    client.player.sendMessage(
-                            Text.translatable("chunkscanner.msg.nav_dimension_changed",
-                                    navStartDimension, currentDim)
-                                    .formatted(Formatting.YELLOW),
-                            false);
-                }
-                LOGGER.info("Navigation paused: dimension changed from {} to {}.",
-                        navStartDimension, currentDim);
-            }
-            return;
-        }
-        // 维度恢复
-        if (navPausedByDim && navStartDimension != null && navStartDimension.equals(currentDim)) {
-            navPausedByDim = false;
-            navTickCounter = 0;
-            updateNavGoal();
-            if (client.player != null) {
-                client.player.sendMessage(
-                        Text.translatable("chunkscanner.msg.nav_dimension_resumed",
-                                currentDim)
-                                .formatted(Formatting.GREEN),
-                        false);
-            }
-        }
-        if (navPausedByDim) return;
-
-        // 检查当前目标是否到达（推进队列）
-        boolean changed = navQueue.tick(client);
-
-        if (navQueue.isEmpty()) {
-            navActive = false;
-            BaritoneNavigator.cancel();
-            LOGGER.info("Navigation complete.");
-            return;
-        }
-
-        // 目标变化或每 20 tick 刷新一次导航（节流）
-        navTickCounter++;
-        if (changed || navTickCounter >= 20) {
-            navTickCounter = 0;
-            updateNavGoal();
-        }
-    }
-
-    /** 根据 navAutoEnabled 设置更新 Baritone 导航目标。 */
-    private void updateNavGoal() {
-        if (!BaritoneNavigator.isAvailable()) {
-            navActive = false;
-            return;
-        }
-        if (navQueue.isEmpty()) {
-            BaritoneNavigator.cancel();
-            return;
-        }
-
-        boolean ok;
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (CONFIG.navAutoEnabled) {
-            // GoalComposite：最多取前 navCompositeLimit 项，防止反射构造过多 GoalBlock
-            java.util.List<NavigationEntry> entries = navQueue.getEntries();
-            int limit = Math.min(entries.size(), Math.max(1, CONFIG.navCompositeLimit));
-            int[][] positions = new int[limit][3];
-            for (int i = 0; i < limit; i++) {
-                NavigationEntry e = entries.get(i);
-                positions[i][0] = e.x();
-                positions[i][1] = e.y();
-                positions[i][2] = e.z();
-            }
-            ok = BaritoneNavigator.navigateComposite(positions);
-        } else {
-            // 单点接力：每次只走当前队首
-            NavigationEntry e = navQueue.peek();
-            if (e != null) {
-                ok = BaritoneNavigator.navigateTo(e.x(), e.y(), e.z());
-            } else {
-                ok = false;
-            }
-        }
-
-        if (!ok) {
-            if (client.player != null) {
-                client.player.sendMessage(
-                        Text.translatable("chunkscanner.msg.nav_failed")
-                                .formatted(Formatting.RED),
-                        false);
-            }
-            clearNav();
-        }
-    }
-
-    /** 清空导航队列并取消导航。 */
-    public void clearNav() {
-        navActive = false;
-        navPausedByDim = false;
-        navStartDimension = null;
-        navQueue.clear();
-        BaritoneNavigator.cancel();
-        LOGGER.info("Navigation queue cleared.");
-    }
-
-    /** 将位置加入导航队列。 */
-    public void enqueueNav(NavigationEntry entry) {
-        PlayerNearCondition condition = new PlayerNearCondition(
-                entry.x(), entry.y(), entry.z(), CONFIG.navReachDist);
-        navQueue.enqueue(entry, condition);
     }
 }

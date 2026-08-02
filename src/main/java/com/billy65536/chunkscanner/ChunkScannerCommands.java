@@ -10,10 +10,9 @@ import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.ScanSession;
 import com.billy65536.chunkscanner.core.db.DbExportUtil;
 import com.billy65536.chunkscanner.core.db.DbFileUtil;
+import com.billy65536.chunkscanner.core.navigation.ChunkScannerNavigation;
 import com.billy65536.chunkscanner.core.navigation.NavigationEntry;
-import com.billy65536.chunkscanner.core.navigation.NavigationQueue;
 import com.billy65536.chunkscanner.gui.GuiUtil;
-import com.billy65536.chunkscanner.integration.BaritoneNavigator;
 import com.billy65536.chunkscanner.integration.ClothConfigIntegration;
 import com.billy65536.chunkscanner.screen.ChunkScannerScreen;
 import com.billy65536.chunkscanner.screen.DatabaseScreen;
@@ -537,43 +536,43 @@ public class ChunkScannerCommands {
     // ==================== 导航命令 ====================
 
     private void navStart(MinecraftClient client) {
-        NavigationQueue queue = ChunkScannerMod.getNavQueue();
-        if (queue == null || queue.isEmpty()) {
+        ChunkScannerNavigation nav = ChunkScannerNavigation.get();
+        if (nav.size() == 0) {
             sendMsg(client, Text.translatable("chunkscanner.msg.nav_empty").formatted(Formatting.YELLOW));
             return;
         }
-        if (!BaritoneNavigator.isAvailable()) {
+        if (!ChunkScannerNavigation.isBaritoneAvailable()) {
             sendMsg(client, Text.translatable("chunkscanner.msg.nav_no_baritone").formatted(Formatting.RED));
             return;
         }
         ChunkScannerMod.startNavigation();
-        sendMsg(client, Text.translatable("chunkscanner.msg.nav_start", queue.size())
+        sendMsg(client, Text.translatable("chunkscanner.msg.nav_start", nav.size())
                 .formatted(Formatting.GREEN));
     }
 
     private void navClear(MinecraftClient client) {
-        NavigationQueue queue = ChunkScannerMod.getNavQueue();
-        int size = queue != null ? queue.size() : 0;
+        ChunkScannerNavigation nav = ChunkScannerNavigation.get();
+        int size = nav.size();
         ChunkScannerMod.clearNavigation();
         sendMsg(client, Text.translatable("chunkscanner.msg.nav_cleared", size)
                 .formatted(Formatting.GREEN));
     }
 
     private void navList(MinecraftClient client) {
-        NavigationQueue queue = ChunkScannerMod.getNavQueue();
-        if (queue == null || queue.isEmpty()) {
+        ChunkScannerNavigation nav = ChunkScannerNavigation.get();
+        if (nav.size() == 0) {
             sendMsg(client, Text.translatable("chunkscanner.msg.nav_empty").formatted(Formatting.YELLOW));
             return;
         }
         sendMsg(client, Text.translatable("chunkscanner.msg.nav_list_header",
-                queue.size(),
-                ChunkScannerMod.CONFIG.navAutoEnabled
+                nav.size(),
+                nav.isAutoEnabled()
                         ? Text.translatable("chunkscanner.gui.nav.mode.composite")
                         : Text.translatable("chunkscanner.gui.nav.mode.relay"))
                 .formatted(Formatting.GOLD));
 
         int i = 1;
-        for (NavigationEntry e : queue.getEntries()) {
+        for (NavigationEntry e : nav.list()) {
             sendMsg(client, Text.literal("  " + i + ". ")
                     .append(Text.literal("(" + e.x() + ", " + e.y() + ", " + e.z() + ")")
                             .formatted(Formatting.WHITE))
@@ -585,6 +584,8 @@ public class ChunkScannerCommands {
     private void navToggle(MinecraftClient client) {
         ChunkScannerMod.CONFIG.navAutoEnabled = !ChunkScannerMod.CONFIG.navAutoEnabled;
         ConfigLoader.save(ChunkScannerMod.CONFIG);
+        ChunkScannerNavigation nav = ChunkScannerNavigation.get();
+        nav.setAutoEnabled(ChunkScannerMod.CONFIG.navAutoEnabled);
         sendMsg(client, Text.translatable("chunkscanner.msg.nav_toggle",
                 ChunkScannerMod.CONFIG.navAutoEnabled
                         ? Text.translatable("chunkscanner.gui.nav.mode.composite").formatted(Formatting.AQUA)

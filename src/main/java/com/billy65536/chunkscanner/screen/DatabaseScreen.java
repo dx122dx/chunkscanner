@@ -36,9 +36,8 @@ import com.billy65536.chunkscanner.core.CoreUtil;
 import com.billy65536.chunkscanner.core.IDbViewProvider;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.core.LocatedPosition;
+import com.billy65536.chunkscanner.core.navigation.ChunkScannerNavigation;
 import com.billy65536.chunkscanner.core.navigation.NavigationEntry;
-import com.billy65536.chunkscanner.core.navigation.NavigationQueue;
-import com.billy65536.chunkscanner.core.navigation.PlayerNearCondition;
 import com.billy65536.chunkscanner.gui.GuiUtil;
 import com.billy65536.chunkscanner.gui.ScrollManager;
 import com.billy65536.chunkscanner.gui.ScrollableListPanel;
@@ -752,10 +751,10 @@ public class DatabaseScreen extends Screen {
         kvHScroll.drawHorizontal(context, this.height - 38, hLeft, hRight, totalW);
 
         // 导航队列指示器（底部一行显示前 3 个目标）
-        NavigationQueue navQ = ChunkScannerMod.getNavQueue();
-        if (navQ != null && !navQ.isEmpty()) {
+        ChunkScannerNavigation navFacade = ChunkScannerNavigation.get();
+        if (!navFacade.list().isEmpty()) {
             int navY = this.height - 50;
-            java.util.List<NavigationEntry> entries = navQ.getEntries();
+            java.util.List<NavigationEntry> entries = navFacade.list();
             int showCount = Math.min(3, entries.size());
             java.lang.StringBuilder sb = new java.lang.StringBuilder();
             sb.append("[Nav: ").append(entries.size()).append("]");
@@ -878,14 +877,10 @@ public class DatabaseScreen extends Screen {
                 && currentView != null) {
             LocatedPosition pos = layout.getPositionAt(hoveredKvIdx);
             if (pos != null) {
-                NavigationQueue queue = ChunkScannerMod.getNavQueue();
-                if (queue != null) {
-                    NavigationEntry entry = new NavigationEntry(pos.dimensionId(), pos.x(), pos.y(), pos.z());
-                    queue.enqueue(entry, new PlayerNearCondition(
-                            pos.x(), pos.y(), pos.z(), ChunkScannerMod.CONFIG.navReachDist));
-                    ChunkScannerMod.LOGGER.info("Nav enqueue: ({}, {}, {}) dim={} queue size={}",
-                            pos.x(), pos.y(), pos.z(), pos.dimensionId(), queue.size());
-                }
+                ChunkScannerNavigation nav = ChunkScannerNavigation.get();
+                nav.enqueue(pos.x(), pos.y(), pos.z(), pos.dimensionId());
+                ChunkScannerMod.LOGGER.info("Nav enqueue: ({}, {}, {}) dim={} queue size={}",
+                        pos.x(), pos.y(), pos.z(), pos.dimensionId(), nav.size());
                 return true;
             }
         }
