@@ -170,10 +170,11 @@
     "chunkscanner.msg.nav_dimension_resumed": "Navigation resumed in dimension %s.",
     "chunkscanner.msg.nav_failed": "Navigation failed. Check logs for details.",
     "chunkscanner.msg.nav_fallback_enabled": "Waypoint fallback mode enabled: front-of-queue coordinates will be added as waypoints.",
-    "chunkscanner.msg.baritone_risk_title": "Risk Warning",
-    "chunkscanner.msg.baritone_risk_desc": "Baritone provides automatic pathfinding navigation to queued targets. It allows automated movement to scanned coordinates.",
-    "chunkscanner.msg.baritone_risk_warning": "WARNING: Using Baritone on multiplayer servers may violate server rules and could result in bans. Use at your own risk.",
-    "chunkscanner.msg.baritone_risk_disable": "Disable Baritone",
-    "chunkscanner.msg.baritone_risk_config_hint": "To hide this warning permanently without disabling Baritone, set baritoneRiskWarning to \"HIDDEN\" in the config file. (Requires game restart)",
-    "chunkscanner.msg.baritone_risk_disabled": "Baritone has been disabled. Waypoint fallback mode is now active. Restart the game to re-enable Baritone."
+    "chunkscanner.msg.baritone_risk_title": "Baritone-Related Risk Warning",
+    "chunkscanner.msg.baritone_risk_desc": "The ChunkScanner mod uses some features provided by the Baritone mod to provide enhanced navigation, including: auto-pathfinding, auto-move to target coordinates, etc.",
+    "chunkscanner.msg.baritone_risk_warning": "Warning: Using Baritone-related features on multiplayer servers may §lviolate server rules and carries a risk of being banned§r. Use at your own risk.",
+    "chunkscanner.msg.baritone_risk_disable": "Click to disable Baritone enhanced features",
+    "chunkscanner.msg.baritone_risk_disable_desc": "Disables ChunkScanner's use of Baritone enhanced features in the config file. Does §lnot§r affect other Baritone mod functions.",
+    "chunkscanner.msg.baritone_risk_config_hint": "To hide this warning without disabling Baritone enhanced features, set 'baritoneRiskWarning' to \"HIDDEN\" in the config file. (Requires game restart to take effect.)",
+    "chunkscanner.msg.baritone_risk_disabled": "ChunkScanner has disabled Baritone enhanced features in the config file, and waypoint fallback mode is enabled. To re-enable, modify the config file and restart the game."
 }

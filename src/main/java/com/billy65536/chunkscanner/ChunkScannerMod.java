@@ -26,6 +26,7 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.ClickEvent;
+import net.minecraft.text.HoverEvent;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
@@ -237,16 +238,15 @@ public class ChunkScannerMod implements ClientModInitializer {
         // 标题行
         client.player.sendMessage(
                 Text.literal("")
-                        .append(Text.literal("=== ChunkScanner Baritone ").formatted(Formatting.GOLD))
+                        .append(Text.literal("==== ").formatted(Formatting.GOLD))
                         .append(Text.translatable("chunkscanner.msg.baritone_risk_title")
                                 .formatted(Formatting.RED, Formatting.BOLD))
-                        .append(Text.literal(" ===").formatted(Formatting.GOLD)),
+                        .append(Text.literal(" ====").formatted(Formatting.GOLD)),
                 false);
 
         // 功能说明
         client.player.sendMessage(
-                Text.translatable("chunkscanner.msg.baritone_risk_desc")
-                        .formatted(Formatting.GRAY),
+                Text.translatable("chunkscanner.msg.baritone_risk_desc"),
                 false);
 
         // 风险警告
@@ -261,9 +261,15 @@ public class ChunkScannerMod implements ClientModInitializer {
                 .append(Text.translatable("chunkscanner.msg.baritone_risk_disable")
                         .formatted(Formatting.RED, Formatting.UNDERLINE))
                 .append(Text.literal("]").formatted(Formatting.GRAY));
-        disableText.styled(s -> s.withClickEvent(
-                new ClickEvent(ClickEvent.Action.RUN_COMMAND,
-                        "/cs baritone risk disable")));
+        disableText.styled(s -> s
+                .withClickEvent(
+                    new ClickEvent(ClickEvent.Action.RUN_COMMAND,
+                        "/cs baritone risk disable"))
+                .withHoverEvent(
+                    new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                        Text.translatable("chunkscanner.msg.baritone_risk_disable_desc")
+                    )
+                ));
         client.player.sendMessage(disableText, false);
 
         // b) 配置提示

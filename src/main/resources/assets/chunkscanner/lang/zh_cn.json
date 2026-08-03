@@ -170,10 +170,11 @@
     "chunkscanner.msg.nav_dimension_resumed": "导航已在维度 %s 中恢复。",
     "chunkscanner.msg.nav_failed": "导航失败，请检查日志了解详情。",
     "chunkscanner.msg.nav_fallback_enabled": "已启用路径点回退模式：队头坐标将自动添加为路径点。",
-    "chunkscanner.msg.baritone_risk_title": "风险警告",
-    "chunkscanner.msg.baritone_risk_desc": "Baritone 提供自动寻路导航功能，可自动移动至扫描到的目标坐标。",
-    "chunkscanner.msg.baritone_risk_warning": "警告：在多人服务器上使用 Baritone 可能违反服务器规则，存在被封禁的风险。请自行承担使用后果。",
-    "chunkscanner.msg.baritone_risk_disable": "禁用 Baritone",
-    "chunkscanner.msg.baritone_risk_config_hint": "如需永久隐藏此警告但不禁用 Baritone，请在配置文件中将 baritoneRiskWarning 设为 \"HIDDEN\"。（需重启游戏生效）",
-    "chunkscanner.msg.baritone_risk_disabled": "Baritone 已禁用，路径点回退模式已启用。如需重新启用 Baritone，请在配置文件中修改并重启游戏。"
+    "chunkscanner.msg.baritone_risk_title": "Baritone 增强特性风险警告",
+    "chunkscanner.msg.baritone_risk_desc": "ChunkScanner 模组使用一些 Baritone 模组提供的特性提供增强的导航功能，包含：自动寻路、自动移动至目标坐标等。",
+    "chunkscanner.msg.baritone_risk_warning": "警告：在多人服务器上使用 Baritone 相关特性可能§l违反服务器规则，存在被封禁的风险§r。请自行承担使用后果。",
+    "chunkscanner.msg.baritone_risk_disable": "点击禁用 Baritone 增强特性",
+    "chunkscanner.msg.baritone_risk_disable_desc": "将在配置文件中禁止 ChunkScanner 使用§l任何§r Baritone 增强特性。§l不会§r影响 Baritone 模组的其他功能。",
+    "chunkscanner.msg.baritone_risk_config_hint": "如需隐藏此警告但不禁用 Baritone 增强特性，请在配置文件中将 baritoneRiskWarning 设为 \"HIDDEN\"。（重启游戏生效）",
+    "chunkscanner.msg.baritone_risk_disabled": "ChunkScanner 已在配置文件中禁用 Baritone 增强特性，路径点回退模式启用。如需重新启用，请修改配置文件并重启游戏。"
 }
