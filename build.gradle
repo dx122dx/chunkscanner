@@ -50,7 +50,10 @@ dependencies {
 
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-    modCompileOnly "me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}"
+    // Cloth Config / AutoConfig 是必需依赖：配置模型由 AutoConfig 驱动持久化与 GUI
+    modImplementation("me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}") {
+        exclude(group: "net.fabricmc.fabric-api")
+    }
     modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
 
     // Test dependencies — fabric-loader-junit 提供 Minecraft 环境引导，支持在单元测试中使用 Minecraft 类

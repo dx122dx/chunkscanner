@@ -142,7 +142,7 @@ public class ChunkScanner {
         }
         session.start(client);
 
-        int effectiveRevisit = session.sessionConfig.minRevisitIntervalSec;
+        int effectiveRevisit = session.sessionConfig.scanner.minRevisitIntervalSec;
 
         CoreUtil.sendMsg(client, Text.translatable(KEY_SCAN_STARTED).formatted(Formatting.GREEN)
                 .append(Text.literal(" | "))
@@ -404,8 +404,8 @@ public class ChunkScanner {
                     : this.config.copy());
 
             // clamp 自适应速率到新范围
-            if (s.tasksPerTick > s.sessionConfig.maxTasksPerTick) {
-                s.tasksPerTick = s.sessionConfig.maxTasksPerTick;
+            if (s.tasksPerTick > s.sessionConfig.scanner.maxTasksPerTick) {
+                s.tasksPerTick = s.sessionConfig.scanner.maxTasksPerTick;
             }
             if (s.tasksPerTick < 1) {
                 s.tasksPerTick = 1;
@@ -520,8 +520,8 @@ public class ChunkScanner {
         for (ScanSession s : sessions.values()) {
             if (!s.paused && s.active) {
                 activeSessions.add(s);
-                if (s.sessionConfig.scanRadiusMultiplier > maxMultiplier) {
-                    maxMultiplier = s.sessionConfig.scanRadiusMultiplier;
+                if (s.sessionConfig.scanner.scanRadiusMultiplier > maxMultiplier) {
+                    maxMultiplier = s.sessionConfig.scanner.scanRadiusMultiplier;
                 }
             }
         }

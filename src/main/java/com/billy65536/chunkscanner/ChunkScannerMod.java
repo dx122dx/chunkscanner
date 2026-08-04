@@ -39,9 +39,18 @@ public class ChunkScannerMod implements ClientModInitializer {
     public static final String MOD_ID = "chunkscanner";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
-    public static final ChunkScannerConfig CONFIG = new ChunkScannerConfig();
     private ChunkScanner scanner;
     private ChunkScannerCommands commands;
+
+    /**
+     * 返回 AutoConfig 持有的活动配置实例。
+     *
+     * <p>不可缓存返回值：AutoConfig 的 ConfigHolder 在 {@code load()} 时会替换内部实例，
+     * 缓存引用会读到陈旧对象。每次访问都应重新调用本方法。
+     */
+    public static ChunkScannerConfig getConfig() {
+        return ConfigLoader.get();
+    }
 
     private final ChunkScannerNavigation nav = ChunkScannerNavigation.get();
 
@@ -127,18 +136,20 @@ public class ChunkScannerMod implements ClientModInitializer {
         instance = this;
         LOGGER.info("ChunkScanner mod initializing...");
 
-        // 加载全局配置（优先 Cloth Config，fallback 到 JSON 文件）
-        ConfigLoader.load(CONFIG);
+        // 注册 AutoConfig（必须在任何 getConfig() 调用之前）
+        ConfigLoader.register();
+        ChunkScannerConfig config = getConfig();
 
         // 启动时检查 Baritone 风险警告配置，若为 BARITONE_DISABLED 则立即禁用
-        if (CONFIG.baritoneRiskWarning == ChunkScannerConfig.BaritoneRiskWarning.BARITONE_DISABLED) {
+        if (config.integration.baritone.riskWarning
+                == ChunkScannerConfig.BaritoneRiskWarning.BARITONE_DISABLED) {
             BaritoneNavigator.setConfigDisabled(true);
             LOGGER.info("Baritone disabled by config (BaritoneRiskWarning=BARITONE_DISABLED).");
         }
 
-        // 注入配置到导航门面并注册回调
-        ChunkScannerNavigation.ChunkScannerConfigHolder.set(CONFIG);
-        nav.setAutoEnabled(CONFIG.navAutoEnabled);
+        // 注入配置供给器到导航门面并注册回调（供给器而非实例，避免 reload 后引用失效）
+        ChunkScannerNavigation.ChunkScannerConfigHolder.set(ChunkScannerMod::getConfig);
+        nav.setAutoEnabled(config.integration.baritone.autoEnabled);
         nav.setOnNavFailed(() -> {
             MinecraftClient mc = MinecraftClient.getInstance();
             if (mc.player != null) {
@@ -166,7 +177,7 @@ public class ChunkScannerMod implements ClientModInitializer {
                         false);
             }
         });
-        scanner = new ChunkScanner(CONFIG);
+        scanner = new ChunkScanner(config);
 
         // 注册数据库工厂（必须最先注册，ScanSession 依赖它创建数据库）
         IChunkDb.FactoryRegistry.register(new BinaryChunkDb.Factory());
@@ -206,7 +217,8 @@ public class ChunkScannerMod implements ClientModInitializer {
             QShopChatListener.register();
 
             // 若 Baritone 可用且风险警告为 SHOWN，展示警告消息
-            if (CONFIG.baritoneRiskWarning == ChunkScannerConfig.BaritoneRiskWarning.SHOWN
+            if (getConfig().integration.baritone.riskWarning
+                    == ChunkScannerConfig.BaritoneRiskWarning.SHOWN
                     && BaritoneNavigator.isAvailable()) {
                 client.execute(() -> showBaritoneRiskWarning(client));
             }
@@ -264,7 +276,7 @@ public class ChunkScannerMod implements ClientModInitializer {
         disableText.styled(s -> s
                 .withClickEvent(
                     new ClickEvent(ClickEvent.Action.RUN_COMMAND,
-                        "/cs baritone risk disable"))
+                        "/cs config set integration.baritone.riskWarning BARITONE_DISABLED"))
                 .withHoverEvent(
                     new HoverEvent(HoverEvent.Action.SHOW_TEXT,
                         Text.translatable("chunkscanner.msg.baritone_risk_disable_desc")

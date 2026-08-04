@@ -3,6 +3,7 @@ package com.billy65536.chunkscanner.core.navigation;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Supplier;
 
 import net.minecraft.client.MinecraftClient;
 
@@ -340,33 +341,48 @@ public final class ChunkScannerNavigation {
 
     /**
      * 配置值访问中介，打破 core.navigation 对 config 包的硬引用。
-     * 由 ChunkScannerMod 在初始化时注入实际值。
+     * 由 ChunkScannerMod 在初始化时注入配置供给器。
+     *
+     * <p>注入的是 {@link Supplier} 而非实例：AutoConfig 的 ConfigHolder 在 reload 时
+     * 会替换内部实例，缓存实例引用会读到陈旧配置。
      */
     public static final class ChunkScannerConfigHolder {
-        private static volatile ChunkScannerConfig config;
+        private static volatile Supplier<ChunkScannerConfig> supplier;
 
-        public static void set(ChunkScannerConfig cfg) {
-            config = cfg;
+        public static void set(Supplier<ChunkScannerConfig> configSupplier) {
+            supplier = configSupplier;
+        }
+
+        private static ChunkScannerConfig cfg() {
+            Supplier<ChunkScannerConfig> s = supplier;
+            return s == null ? null : s.get();
         }
 
         static boolean navAutoEnabled() {
-            return config != null && config.navAutoEnabled;
+            ChunkScannerConfig c = cfg();
+            return c != null && c.integration.baritone.autoEnabled;
         }
 
         static double navReachDist() {
-            return config != null ? config.navReachDist : 3.0;
+            ChunkScannerConfig c = cfg();
+            return c != null ? c.integration.baritone.reachDist : 3.0;
         }
 
         static int navCompositeLimit() {
-            return config != null ? config.navCompositeLimit : 128;
+            ChunkScannerConfig c = cfg();
+            return c != null ? c.integration.baritone.compositeLimit : 128;
         }
 
         static String waypointName() {
-            return config != null && config.waypointName != null ? config.waypointName : "选中的坐标点";
+            ChunkScannerConfig c = cfg();
+            return c != null && c.integration.xaero.name != null
+                    ? c.integration.xaero.name : "选中的坐标点";
         }
 
         static String waypointInitials() {
-            return config != null && config.waypointInitials != null ? config.waypointInitials : "目标";
+            ChunkScannerConfig c = cfg();
+            return c != null && c.integration.xaero.initials != null
+                    ? c.integration.xaero.initials : "目标";
         }
     }
 }

@@ -1,123 +1,99 @@
 package com.billy65536.chunkscanner.config;
 
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * ChunkScannerConfig 单元测试。
- * 覆盖默认值和 copy() 方法。
+ * {@link ChunkScannerConfig} 嵌套结构与深拷贝测试。
+ *
+ * <p>深拷贝隔离性是最关键的一点：{@link TaskConfig#applyTo} 依赖 {@code copy()}
+ * 返回完全独立的对象图，否则任务级配置的修改会污染全局配置。
  */
-@DisplayName("ChunkScannerConfig")
 class ChunkScannerConfigTest {
 
-    // ==================== 默认值 ====================
+    @Test
+    void defaultsMatchDocumentedValues() {
+        ChunkScannerConfig c = new ChunkScannerConfig();
 
-    @Nested
-    @DisplayName("默认值")
-    class DefaultValuesTests {
-        @Test
-        @DisplayName("新实例应具有正确的扫描默认值")
-        void newInstance_shouldHaveScanDefaults() {
-            ChunkScannerConfig config = new ChunkScannerConfig();
-            assertEquals(60, config.minRevisitIntervalSec);
-            assertEquals(16, config.maxTasksPerTick);
-            assertEquals(2, config.initialTasksPerTick);
-            assertEquals(5_000_000L, config.targetTickNs);
-            assertEquals(100, config.flushIntervalTicks);
-            assertEquals(2, config.workerThreads);
-            assertEquals(1.0, config.scanRadiusMultiplier, 0.0001);
-        }
+        assertEquals(60, c.scanner.minRevisitIntervalSec);
+        assertEquals(16, c.scanner.maxTasksPerTick);
+        assertEquals(2, c.scanner.initialTasksPerTick);
+        assertEquals(5_000_000L, c.scanner.targetTickNs);
+        assertEquals(100, c.scanner.flushIntervalTicks);
+        assertEquals(2, c.scanner.workerThreads);
+        assertEquals(1.0, c.scanner.scanRadiusMultiplier);
 
-        @Test
-        @DisplayName("新实例应具有正确的路径点默认值")
-        void newInstance_shouldHaveWaypointDefaults() {
-            ChunkScannerConfig config = new ChunkScannerConfig();
-            assertEquals("选中的坐标点", config.waypointName);
-            assertEquals("目标", config.waypointInitials);
-            assertEquals("chunkscanner", config.waypointGroup);
-        }
+        assertEquals("选中的坐标点", c.integration.xaero.name);
+        assertEquals("目标", c.integration.xaero.initials);
+        assertEquals("chunkscanner", c.integration.xaero.group);
+
+        assertFalse(c.integration.baritone.autoEnabled);
+        assertEquals(3.0, c.integration.baritone.reachDist);
+        assertEquals(128, c.integration.baritone.compositeLimit);
+        assertEquals(ChunkScannerConfig.BaritoneRiskWarning.SHOWN,
+                c.integration.baritone.riskWarning);
+
+        assertEquals("出售", c.components.qshop.sellKeyword);
+        assertEquals("收购", c.components.qshop.buyKeyword);
+        assertFalse(c.components.qshop.highlightEnabled);
+        assertEquals(1, c.components.qshop.highlightRadius);
+        assertEquals(86400_000L, c.components.qshop.highlightGradientMs);
+        assertEquals(30_000L, c.components.qshop.manualEnhanceItemExpireMs);
+        assertEquals(ChunkScannerConfig.EnhanceMatchMode.StrictAutomatic,
+                c.components.qshop.enhanceMatchMode);
+        assertEquals(ChunkScannerConfig.ChatInterceptionMethod.BOTH,
+                c.components.qshop.chatInterceptionMethod);
     }
 
-    // ==================== copy() ====================
+    @Test
+    void copyPreservesAllValues() {
+        ChunkScannerConfig src = new ChunkScannerConfig();
+        src.scanner.maxTasksPerTick = 31;
+        src.scanner.scanRadiusMultiplier = 3.5;
+        src.integration.xaero.name = "shop";
+        src.integration.baritone.riskWarning = ChunkScannerConfig.BaritoneRiskWarning.HIDDEN;
+        src.components.qshop.sellKeyword = "SELL";
+        src.components.qshop.highlightEnabled = true;
 
-    @Nested
-    @DisplayName("copy()")
-    class CopyTests {
-        @Test
-        @DisplayName("copy() → 新对象与原始对象相等（值相等）")
-        void copy_shouldHaveSameValuesAsOriginal() {
-            ChunkScannerConfig original = new ChunkScannerConfig();
-            original.minRevisitIntervalSec = 120;
-            original.maxTasksPerTick = 32;
-            original.waypointName = "自定义名称";
+        ChunkScannerConfig dst = src.copy();
 
-            ChunkScannerConfig copy = original.copy();
+        assertEquals(31, dst.scanner.maxTasksPerTick);
+        assertEquals(3.5, dst.scanner.scanRadiusMultiplier);
+        assertEquals("shop", dst.integration.xaero.name);
+        assertEquals(ChunkScannerConfig.BaritoneRiskWarning.HIDDEN,
+                dst.integration.baritone.riskWarning);
+        assertEquals("SELL", dst.components.qshop.sellKeyword);
+        assertTrue(dst.components.qshop.highlightEnabled);
+    }
 
-            assertEquals(original.minRevisitIntervalSec, copy.minRevisitIntervalSec);
-            assertEquals(original.maxTasksPerTick, copy.maxTasksPerTick);
-            assertEquals(original.initialTasksPerTick, copy.initialTasksPerTick);
-            assertEquals(original.targetTickNs, copy.targetTickNs);
-            assertEquals(original.flushIntervalTicks, copy.flushIntervalTicks);
-            assertEquals(original.workerThreads, copy.workerThreads);
-            assertEquals(original.scanRadiusMultiplier, copy.scanRadiusMultiplier, 0.0001);
-            assertEquals(original.waypointName, copy.waypointName);
-            assertEquals(original.waypointInitials, copy.waypointInitials);
-            assertEquals(original.waypointGroup, copy.waypointGroup);
-        }
+    @Test
+    void copyIsDeepSoSubObjectsAreNotShared() {
+        ChunkScannerConfig src = new ChunkScannerConfig();
+        ChunkScannerConfig dst = src.copy();
 
-        @Test
-        @DisplayName("copy() → 修改副本不影响原对象（独立副本）")
-        void copyModification_shouldNotAffectOriginal() {
-            ChunkScannerConfig original = new ChunkScannerConfig();
-            ChunkScannerConfig copy = original.copy();
+        assertNotSame(src.scanner, dst.scanner);
+        assertNotSame(src.integration, dst.integration);
+        assertNotSame(src.integration.xaero, dst.integration.xaero);
+        assertNotSame(src.integration.baritone, dst.integration.baritone);
+        assertNotSame(src.components, dst.components);
+        assertNotSame(src.components.qshop, dst.components.qshop);
+    }
 
-            copy.minRevisitIntervalSec = 999;
-            copy.maxTasksPerTick = 999;
-            copy.waypointName = "被修改的名称";
-            copy.waypointInitials = "XX";
+    @Test
+    void mutatingCopyDoesNotPolluteSource() {
+        ChunkScannerConfig global = new ChunkScannerConfig();
+        ChunkScannerConfig task = global.copy();
 
-            // 原始对象保持不变
-            assertEquals(60, original.minRevisitIntervalSec);
-            assertEquals(16, original.maxTasksPerTick);
-            assertEquals("选中的坐标点", original.waypointName);
-            assertEquals("目标", original.waypointInitials);
+        task.scanner.maxTasksPerTick = 32;
+        task.integration.xaero.name = "task-local";
+        task.components.qshop.highlightEnabled = true;
 
-            // 副本已修改
-            assertEquals(999, copy.minRevisitIntervalSec);
-            assertEquals(999, copy.maxTasksPerTick);
-            assertEquals("被修改的名称", copy.waypointName);
-            assertEquals("XX", copy.waypointInitials);
-        }
-
-        @Test
-        @DisplayName("copy() → 返回不同引用")
-        void copy_shouldReturnDifferentReference() {
-            ChunkScannerConfig original = new ChunkScannerConfig();
-            ChunkScannerConfig copy = original.copy();
-
-            assertNotSame(original, copy);
-        }
-
-        @Test
-        @DisplayName("copy() → 整数字段使用值类型，互不影响")
-        void copyPrimitiveFields_shouldBeIndependent() {
-            ChunkScannerConfig original = new ChunkScannerConfig();
-            original.targetTickNs = 10_000_000L;
-            original.flushIntervalTicks = 200;
-            original.scanRadiusMultiplier = 2.5;
-
-            ChunkScannerConfig copy = original.copy();
-
-            copy.targetTickNs = 1L;
-            copy.flushIntervalTicks = 1;
-            copy.scanRadiusMultiplier = 0.1;
-
-            assertEquals(10_000_000L, original.targetTickNs);
-            assertEquals(200, original.flushIntervalTicks);
-            assertEquals(2.5, original.scanRadiusMultiplier, 0.0001);
-        }
+        assertEquals(16, global.scanner.maxTasksPerTick);
+        assertEquals("选中的坐标点", global.integration.xaero.name);
+        assertFalse(global.components.qshop.highlightEnabled);
     }
 }

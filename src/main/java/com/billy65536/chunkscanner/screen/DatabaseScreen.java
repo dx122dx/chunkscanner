@@ -894,17 +894,17 @@ public class DatabaseScreen extends Screen {
             if (pos != null) {
                 // 合并全局配置与 DB 中存储的任务配置（任务配置优先）
                 ChunkScannerConfig cfg = cachedTaskConfig != null
-                        ? cachedTaskConfig.applyTo(ChunkScannerMod.CONFIG)
-                        : ChunkScannerMod.CONFIG;
+                        ? cachedTaskConfig.applyTo(ChunkScannerMod.getConfig())
+                        : ChunkScannerMod.getConfig();
                 String[] headers = layout.getHeaders();
                 String[] row = layout.getRowAt(hoveredKvIdx);
                 if (headers == null || row == null) return true;
-                String wpName = CoreUtil.replacePlaceholders(cfg.waypointName, headers, row);
-                String wpInit = CoreUtil.replacePlaceholders(cfg.waypointInitials, headers, row);
-                String wpGroup = CoreUtil.replacePlaceholders(cfg.waypointGroup, headers, row);
+                String wpName = CoreUtil.replacePlaceholders(cfg.integration.xaero.name, headers, row);
+                String wpInit = CoreUtil.replacePlaceholders(cfg.integration.xaero.initials, headers, row);
+                String wpGroup = CoreUtil.replacePlaceholders(cfg.integration.xaero.group, headers, row);
                 XaeroWaypointHelper.tryCreateWaypoint(pos, wpName, wpInit, wpGroup);
                 ChunkScannerMod.LOGGER.info("Waypoint created: name template='{}' -> '{}', initials='{}', group='{}'",
-                        cfg.waypointName, wpName, wpInit, wpGroup);
+                        cfg.integration.xaero.name, wpName, wpInit, wpGroup);
                 return true;
             }
         }

@@ -109,19 +109,21 @@ public class TaskConfig {
     /**
      * 将此任务配置合并到全局配置，返回最终生效的配置值。
      * 此任务配置中为 null 的字段使用 defaults 中的值。
+     *
+     * <p>注意：{@code defaults.copy()} 是深拷贝，写入 result 不会污染全局配置。
      */
     public ChunkScannerConfig applyTo(ChunkScannerConfig defaults) {
         ChunkScannerConfig result = defaults.copy();
-        if (minRevisitIntervalSec != null) result.minRevisitIntervalSec = minRevisitIntervalSec;
-        if (maxTasksPerTick != null) result.maxTasksPerTick = maxTasksPerTick;
-        if (initialTasksPerTick != null) result.initialTasksPerTick = initialTasksPerTick;
-        if (targetTickNs != null) result.targetTickNs = targetTickNs;
-        if (flushIntervalTicks != null) result.flushIntervalTicks = flushIntervalTicks;
-        if (workerThreads != null) result.workerThreads = workerThreads;
-        if (scanRadiusMultiplier != null) result.scanRadiusMultiplier = scanRadiusMultiplier;
-        if (waypointName != null) result.waypointName = waypointName;
-        if (waypointInitials != null) result.waypointInitials = waypointInitials;
-        if (waypointGroup != null) result.waypointGroup = waypointGroup;
+        if (minRevisitIntervalSec != null) result.scanner.minRevisitIntervalSec = minRevisitIntervalSec;
+        if (maxTasksPerTick != null) result.scanner.maxTasksPerTick = maxTasksPerTick;
+        if (initialTasksPerTick != null) result.scanner.initialTasksPerTick = initialTasksPerTick;
+        if (targetTickNs != null) result.scanner.targetTickNs = targetTickNs;
+        if (flushIntervalTicks != null) result.scanner.flushIntervalTicks = flushIntervalTicks;
+        if (workerThreads != null) result.scanner.workerThreads = workerThreads;
+        if (scanRadiusMultiplier != null) result.scanner.scanRadiusMultiplier = scanRadiusMultiplier;
+        if (waypointName != null) result.integration.xaero.name = waypointName;
+        if (waypointInitials != null) result.integration.xaero.initials = waypointInitials;
+        if (waypointGroup != null) result.integration.xaero.group = waypointGroup;
         return result;
     }
 

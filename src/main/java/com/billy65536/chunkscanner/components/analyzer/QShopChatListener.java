@@ -181,7 +181,7 @@ public final class QShopChatListener {
         // 通过 SystemChatMixin 注入拦截（根据 qshopChatInterceptionMethod 配置决定是否转发）
 
         // GAME 消息通道：仅在 GAME_EVENT 或 BOTH 模式下注册
-        ChunkScannerConfig.ChatInterceptionMethod method = ChunkScannerMod.CONFIG.qshopChatInterceptionMethod;
+        ChunkScannerConfig.ChatInterceptionMethod method = ChunkScannerMod.getConfig().components.qshop.chatInterceptionMethod;
         if (method == ChunkScannerConfig.ChatInterceptionMethod.GAME_EVENT
                 || method == ChunkScannerConfig.ChatInterceptionMethod.BOTH) {
             ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
@@ -256,7 +256,7 @@ public final class QShopChatListener {
         }
 
         // NonAutomatic / SemiAutomatic / Disabled 模式不自动检测点击
-        ChunkScannerConfig.EnhanceMatchMode mode = ChunkScannerMod.CONFIG.qshopEnhanceMatchMode;
+        ChunkScannerConfig.EnhanceMatchMode mode = ChunkScannerMod.getConfig().components.qshop.enhanceMatchMode;
         if (mode == ChunkScannerConfig.EnhanceMatchMode.Disabled
                 || mode == ChunkScannerConfig.EnhanceMatchMode.NonAutomatic
                 || mode == ChunkScannerConfig.EnhanceMatchMode.SemiAutomatic) {
@@ -332,7 +332,7 @@ public final class QShopChatListener {
         if (message == null) return;
 
         // 增强匹配已禁用，直接跳过
-        ChunkScannerConfig.EnhanceMatchMode mode = ChunkScannerMod.CONFIG.qshopEnhanceMatchMode;
+        ChunkScannerConfig.EnhanceMatchMode mode = ChunkScannerMod.getConfig().components.qshop.enhanceMatchMode;
         if (mode == ChunkScannerConfig.EnhanceMatchMode.Disabled) return;
 
         ChatItemExtractor.ExtractedItem item = ChatItemExtractor.extract(message);
@@ -599,7 +599,7 @@ public final class QShopChatListener {
 
         // 检查物品是否过期（快照保证时间戳与物品引用一致）
         ChatItemExtractor.ExtractedItem item = snapshot.item;
-        long expireMs = ChunkScannerMod.CONFIG.qshopManualEnhanceItemExpireMs;
+        long expireMs = ChunkScannerMod.getConfig().components.qshop.manualEnhanceItemExpireMs;
         long now = System.currentTimeMillis();
         if (now - snapshot.capturedAt > expireMs) {
             return Text.translatable("chunkscanner.msg.qshop.enhance.manual.item_expired", expireMs / 1000)
@@ -658,7 +658,7 @@ public final class QShopChatListener {
     public static boolean hasLastManualItem() {
         ManualItemSnapshot snapshot = lastManualSnapshot;
         if (snapshot == null || snapshot.item == null) return false;
-        return (System.currentTimeMillis() - snapshot.capturedAt) <= ChunkScannerMod.CONFIG.qshopManualEnhanceItemExpireMs;
+        return (System.currentTimeMillis() - snapshot.capturedAt) <= ChunkScannerMod.getConfig().components.qshop.manualEnhanceItemExpireMs;
     }
 
     /**

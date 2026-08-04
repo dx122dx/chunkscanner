@@ -1,244 +1,29 @@
 package com.billy65536.chunkscanner.integration;
 
-import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
-import com.billy65536.chunkscanner.config.ConfigLoader;
 
-import net.fabricmc.loader.api.FabricLoader;
+import me.shedaniel.autoconfig.AutoConfig;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.text.Text;
 
 /**
- * Cloth Config API 集成。
+ * Cloth Config / AutoConfig 集成。
  *
- * 提供图形化配置界面，当 Cloth Config 模组被加载时，
- * 通过 ModMenu 入口可打开此配置界面。
+ * <p>配置界面由 {@link ChunkScannerConfig} 的对象结构自动生成，分组与
+ * {@code /cs get|set|reset} 的点分路径一一对应。条目标签与工具提示来自语言文件
+ * （{@code text.autoconfig.chunkscanner.option.*} 及其 {@code .@Tooltip} 后缀）。
  *
- * 配置界面分为三个分类：
- * - 扫描：基本扫描参数（重访间隔、速率、视距倍率等）
- * - 路径点：Xaero 路径点联动参数（名称、缩写、组）
- * - 高级：底层性能参数（线程数、目标 tick 耗时）
+ * <p>Cloth Config 是必需依赖（见 {@code fabric.mod.json}），无需运行时降级检测。
  */
 public class ClothConfigIntegration {
 
+    private ClothConfigIntegration() {}
+
     /**
-     * 创建 Cloth Config 配置界面。如果 Cloth Config 未加载则返回 null。
+     * 创建配置界面。
+     *
      * @param parent 返回时的父界面
      */
     public static Screen createConfigScreen(Screen parent) {
-        if (!FabricLoader.getInstance().isModLoaded("cloth-config")) return null;
-
-        var builder = me.shedaniel.clothconfig2.api.ConfigBuilder.create()
-                .setParentScreen(parent)
-                .setTitle(Text.literal("ChunkScanner 设置"));
-
-        // 保存时将配置写回 JSON 文件（Cloth Config 内部已管理内存中的值）
-        builder.setSavingRunnable(() -> ConfigLoader.save(ChunkScannerMod.CONFIG));
-
-        // === 扫描分类 ===
-        var general = builder.getOrCreateCategory(Text.literal("扫描"));
-
-        general.addEntry(builder.entryBuilder()
-                .startIntSlider(Text.literal("最小重访间隔（秒）"),
-                        ChunkScannerMod.CONFIG.minRevisitIntervalSec, 0, 3600)
-                .setDefaultValue(60)
-                .setTooltip(Text.literal("同一区块在此时间内不会被重新扫描。0 = 不禁用"))
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.minRevisitIntervalSec = v)
-                .build());
-
-        general.addEntry(builder.entryBuilder()
-                .startIntSlider(Text.literal("最大扫描速率（chunk/tick）"),
-                        ChunkScannerMod.CONFIG.maxTasksPerTick, 1, 32)
-                .setDefaultValue(16)
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.maxTasksPerTick = v)
-                .build());
-
-        general.addEntry(builder.entryBuilder()
-                .startIntSlider(Text.literal("初始扫描速率（chunk/tick）"),
-                        ChunkScannerMod.CONFIG.initialTasksPerTick, 1, 16)
-                .setDefaultValue(2)
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.initialTasksPerTick = v)
-                .build());
-
-        general.addEntry(builder.entryBuilder()
-                .startIntSlider(Text.literal("刷写间隔（tick）"),
-                        ChunkScannerMod.CONFIG.flushIntervalTicks, 10, 1000)
-                .setDefaultValue(100)
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.flushIntervalTicks = v)
-                .build());
-
-        general.addEntry(builder.entryBuilder()
-                .startDoubleField(Text.literal("扫描视距倍率"),
-                        ChunkScannerMod.CONFIG.scanRadiusMultiplier)
-                .setDefaultValue(1.0).setMin(0.1).setMax(4.0)
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.scanRadiusMultiplier = v)
-                .build());
-
-        // === QShop 分类 ===
-        var qshop = builder.getOrCreateCategory(Text.literal("QShop"));
-
-        qshop.addEntry(builder.entryBuilder()
-                .startStrField(Text.literal("出售关键词"),
-                        ChunkScannerMod.CONFIG.qshopSellKeyword)
-                .setDefaultValue("出售")
-                .setTooltip(Text.literal("告示牌第二行中表示出售的关键词"))
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopSellKeyword = v)
-                .build());
-
-        qshop.addEntry(builder.entryBuilder()
-                .startStrField(Text.literal("收购关键词"),
-                        ChunkScannerMod.CONFIG.qshopBuyKeyword)
-                .setDefaultValue("收购")
-                .setTooltip(Text.literal("告示牌第二行中表示收购的关键词"))
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopBuyKeyword = v)
-                .build());
-
-        qshop.addEntry(builder.entryBuilder()
-                .startStrField(Text.literal("出售/收购 数量 模式"),
-                        ChunkScannerMod.CONFIG.qshopSellBuyPattern)
-                .setDefaultValue("^\\s*(出售|收购)\\s+(\\d+)")
-                .setTooltip(Text.literal("正则：group(1)=出售/收购关键词，group(2)=数量"))
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopSellBuyPattern = v)
-                .build());
-
-        qshop.addEntry(builder.entryBuilder()
-                .startStrField(Text.literal("无限库存 模式"),
-                        ChunkScannerMod.CONFIG.qshopInfinitePattern)
-                .setDefaultValue("^\\s*(出售|收购)\\s+无限")
-                .setTooltip(Text.literal("正则：group(1)=出售/收购关键词"))
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopInfinitePattern = v)
-                .build());
-
-        qshop.addEntry(builder.entryBuilder()
-                .startStrField(Text.literal("缺货 模式"),
-                        ChunkScannerMod.CONFIG.qshopOutOfStockPattern)
-                .setDefaultValue("^\\s*缺货")
-                .setTooltip(Text.literal("正则：匹配出售模式下缺货状态"))
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopOutOfStockPattern = v)
-                .build());
-
-        qshop.addEntry(builder.entryBuilder()
-                .startStrField(Text.literal("空间不足 模式"),
-                        ChunkScannerMod.CONFIG.qshopOutOfSpacePattern)
-                .setDefaultValue("^\\s*空间不足")
-                .setTooltip(Text.literal("正则：匹配收购模式下空间不足状态"))
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopOutOfSpacePattern = v)
-                .build());
-
-        qshop.addEntry(builder.entryBuilder()
-                .startStrField(Text.literal("价格 模式"),
-                        ChunkScannerMod.CONFIG.qshopPricePattern)
-                .setDefaultValue("单价[：:]\\s*(.+)")
-                .setTooltip(Text.literal("正则：group(1)=价格文本"))
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopPricePattern = v)
-                .build());
-
-        qshop.addEntry(builder.entryBuilder()
-                .startBooleanToggle(Text.literal("告示牌高亮显示"),
-                        ChunkScannerMod.CONFIG.qshopHighlightEnabled)
-                .setDefaultValue(false)
-                .setTooltip(Text.literal("开启后在玩家周围高亮显示 QShop 告示牌边框。红色=无增强信息，绿色→黄色=增强信息新鲜度渐变"))
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopHighlightEnabled = v)
-                .build());
-
-        qshop.addEntry(builder.entryBuilder()
-                .startIntSlider(Text.literal("高亮范围"),
-                        ChunkScannerMod.CONFIG.qshopHighlightRadius, 0, 8)
-                .setDefaultValue(1)
-                .setTooltip(Text.literal("高亮显示的 chunk 环数。0 = 仅当前 chunk，1 = 周围 1 环"))
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopHighlightRadius = v)
-                .build());
-
-        qshop.addEntry(builder.entryBuilder()
-                .startLongField(Text.literal("高亮渐变时长（毫秒）"),
-                        ChunkScannerMod.CONFIG.qshopHighlightGradientMs)
-                .setDefaultValue(86400_000L).setMin(0L).setMax(604800_000L)
-                .setTooltip(Text.literal("增强数据在此时间内从绿色渐变到黄色。86400000 = 1 天，0 = 始终绿色"))
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopHighlightGradientMs = v)
-                .build());
-
-        qshop.addEntry(builder.entryBuilder()
-                .startEnumSelector(Text.literal("聊天增强信息获取模式"),
-                        ChunkScannerConfig.EnhanceMatchMode.class,
-                        ChunkScannerMod.CONFIG.qshopEnhanceMatchMode)
-                .setDefaultValue(ChunkScannerConfig.EnhanceMatchMode.StrictAutomatic)
-                .setTooltip(Text.literal("StrictAutomatic=时间窗口+商品名匹配，WeakAutomatic=仅时间窗口，SemiAutomatic=捕获后自动提交，NonAutomatic=仅手动提交，Disabled=禁用增强"))
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopEnhanceMatchMode = v)
-                .build());
-
-        qshop.addEntry(builder.entryBuilder()
-                .startEnumSelector(Text.literal("聊天消息拦截方式"),
-                        ChunkScannerConfig.ChatInterceptionMethod.class,
-                        ChunkScannerMod.CONFIG.qshopChatInterceptionMethod)
-                .setDefaultValue(ChunkScannerConfig.ChatInterceptionMethod.BOTH)
-                .setTooltip(Text.literal("SYSTEM_MIXIN=仅Mixin拦截系统聊天包，GAME_EVENT=仅Fabric事件，BOTH=双通道。若消息被重复捕获可切换为单一通道"))
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopChatInterceptionMethod = v)
-                .build());
-
-        qshop.addEntry(builder.entryBuilder()
-                .startLongField(Text.literal("Non-Automatic / Semi-Automatic 模式物品过期时间（毫秒）"),
-                        ChunkScannerMod.CONFIG.qshopManualEnhanceItemExpireMs)
-                .setDefaultValue(30_000L).setMin(5_000L).setMax(300_000L)
-                .setTooltip(Text.literal("Non-Automatic / Semi-Automatic 模式下缓存的聊天物品在此时间后过期。30000 = 30 秒"))
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.qshopManualEnhanceItemExpireMs = v)
-                .build());
-
-        // === 路径点分类 ===
-        var waypoint = builder.getOrCreateCategory(Text.literal("路径点"));
-
-        waypoint.addEntry(builder.entryBuilder()
-                .startStrField(Text.literal("路径点名称"),
-                        ChunkScannerMod.CONFIG.waypointName)
-                .setDefaultValue("选中的坐标点")
-                .setTooltip(Text.literal("Xaero 路径点的显示名称"))
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.waypointName = v)
-                .build());
-
-        waypoint.addEntry(builder.entryBuilder()
-                .startStrField(Text.literal("路径点缩写"),
-                        ChunkScannerMod.CONFIG.waypointInitials)
-                .setDefaultValue("目标")
-                .setTooltip(Text.literal("Xaero 路径点的缩写/符号"))
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.waypointInitials = v)
-                .build());
-
-        waypoint.addEntry(builder.entryBuilder()
-                .startStrField(Text.literal("路径点组名"),
-                        ChunkScannerMod.CONFIG.waypointGroup)
-                .setDefaultValue("chunkscanner")
-                .setTooltip(Text.literal("Xaero 路径点所在组（WaypointSet 名称）。留空则添加到当前组"))
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.waypointGroup = v)
-                .build());
-
-        // === 高级分类 ===
-        var advanced = builder.getOrCreateCategory(Text.literal("高级"));
-
-        advanced.addEntry(builder.entryBuilder()
-                .startIntSlider(Text.literal("工作线程数"),
-                        ChunkScannerMod.CONFIG.workerThreads, 1, 8)
-                .setDefaultValue(2)
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.workerThreads = v)
-                .build());
-
-        advanced.addEntry(builder.entryBuilder()
-                .startLongField(Text.literal("目标 tick 耗时（纳秒）"),
-                        ChunkScannerMod.CONFIG.targetTickNs)
-                .setDefaultValue(5_000_000L).setMin(1_000_000L).setMax(50_000_000L)
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.targetTickNs = v)
-                .build());
-
-        // === Baritone 分类 ===
-        var baritone = builder.getOrCreateCategory(Text.literal("Baritone"));
-
-        baritone.addEntry(builder.entryBuilder()
-                .startEnumSelector(Text.literal("Baritone 风险警告"),
-                        ChunkScannerConfig.BaritoneRiskWarning.class,
-                        ChunkScannerMod.CONFIG.baritoneRiskWarning)
-                .setDefaultValue(ChunkScannerConfig.BaritoneRiskWarning.SHOWN)
-                .setTooltip(Text.literal("Shown=加入服务器时显示警告，Hidden=隐藏警告，BaritoneDisabled=禁用Baritone并启用路径点回退。修改后需重启游戏生效。"))
-                .setSaveConsumer(v -> ChunkScannerMod.CONFIG.baritoneRiskWarning = v)
-                .build());
-
-        return builder.build();
+        return AutoConfig.getConfigScreen(ChunkScannerConfig.class, parent).get();
     }
 }

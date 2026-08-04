@@ -40,12 +40,12 @@ public final class QShopHighlightRenderer {
 
     public static void initialize() {
         LOGGER.info("QShop highlight renderer initialized, enabled={}",
-                ChunkScannerMod.CONFIG.qshopHighlightEnabled);
+                ChunkScannerMod.getConfig().components.qshop.highlightEnabled);
         WorldRenderEvents.LAST.register(QShopHighlightRenderer::doRender);
     }
 
     private static void doRender(WorldRenderContext context) {
-        if (!ChunkScannerMod.CONFIG.qshopHighlightEnabled) return;
+        if (!ChunkScannerMod.getConfig().components.qshop.highlightEnabled) return;
 
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.player == null || client.world == null) return;
@@ -158,7 +158,7 @@ public final class QShopHighlightRenderer {
         int playerCZ = playerPos.getZ() >> 4;
         String playerDim = client.world.getRegistryKey().getValue().toString();
 
-        int highlightRadius = ChunkScannerMod.CONFIG.qshopHighlightRadius;
+        int highlightRadius = ChunkScannerMod.getConfig().components.qshop.highlightRadius;
         List<HighlightEntry> entries = new ArrayList<>();
         List<ScanSession> sessions = new ArrayList<>(scanner.getActiveSessions());
 
@@ -196,7 +196,7 @@ public final class QShopHighlightRenderer {
 
     private static int computeColor(long enhancementTimestamp, long now) {
         if (enhancementTimestamp <= 0) return 0xFFFF0000;
-        long gradientMs = ChunkScannerMod.CONFIG.qshopHighlightGradientMs;
+        long gradientMs = ChunkScannerMod.getConfig().components.qshop.highlightGradientMs;
         if (gradientMs <= 0) return 0xFF00FF00; // 无渐变，始终绿色
         long ageMs = now - enhancementTimestamp;
         if (ageMs >= gradientMs) return 0xFFFFFF00;

@@ -2,6 +2,7 @@ package com.billy65536.chunkscanner;
 
 import com.billy65536.chunkscanner.components.analyzer.QShopChatListener;
 import com.billy65536.chunkscanner.config.ConfigLoader;
+import com.billy65536.chunkscanner.config.ConfigReflectionAccessor;
 import com.billy65536.chunkscanner.config.TaskConfig;
 import com.billy65536.chunkscanner.core.AnalyzerRegistry;
 import com.billy65536.chunkscanner.core.IChunkAnalyzer;
@@ -80,6 +81,40 @@ public class ChunkScannerCommands {
                 for (String id : DbFileUtil.listAllScanIds()) {
                     if (id.toLowerCase().startsWith(remaining)) {
                         builder.suggest(id);
+                    }
+                }
+                return builder.buildFuture();
+            };
+
+    /** 配置项点分路径补全（用于 /cs get|set|reset 的 [name] 参数）。 */
+    private static final SuggestionProvider<FabricClientCommandSource> CONFIG_PATH_SUGGESTIONS =
+            (ctx, builder) -> {
+                String remaining = builder.getRemaining().toLowerCase();
+                for (String path : ConfigReflectionAccessor.listPaths()) {
+                    if (path.toLowerCase().startsWith(remaining)) {
+                        builder.suggest(path);
+                    }
+                }
+                return builder.buildFuture();
+            };
+
+    /**
+     * 配置值补全（用于 /cs set 的 [value] 参数）。
+     * boolean 提供 true/false，enum 提供全部常量名，其余类型提供当前值作为可编辑起点。
+     * name 尚未输入完整时安全降级为空建议。
+     */
+    private static final SuggestionProvider<FabricClientCommandSource> CONFIG_VALUE_SUGGESTIONS =
+            (ctx, builder) -> {
+                String remaining = builder.getRemaining().toLowerCase();
+                String path;
+                try {
+                    path = StringArgumentType.getString(ctx, "name");
+                } catch (IllegalArgumentException e) {
+                    return builder.buildFuture();
+                }
+                for (String v : ConfigReflectionAccessor.suggestValues(ChunkScannerMod.getConfig(), path)) {
+                    if (v.toLowerCase().startsWith(remaining)) {
+                        builder.suggest(v);
                     }
                 }
                 return builder.buildFuture();
@@ -219,6 +254,31 @@ public class ChunkScannerCommands {
                 .executes(ctx -> reloadConfig(ctx.getSource().getClient(), false)));
         configNode.then(configReloadNode);
 
+        // /cs config get <name> → 展示当前值、默认值与类型
+        configNode.then(ClientCommandManager.literal("get")
+                    .then(ClientCommandManager.argument("name", StringArgumentType.string())
+                        .suggests(CONFIG_PATH_SUGGESTIONS)
+                        .executes(ctx -> configGet(ctx.getSource().getClient(),
+                                StringArgumentType.getString(ctx, "name")))));
+
+        // /cs config set <name> <value> → 修改并立即持久化
+        // value 用 greedyString：正则与含空格的中文名可直接输入，无需引号转义
+        configNode.then(ClientCommandManager.literal("set")
+                    .then(ClientCommandManager.argument("name", StringArgumentType.string())
+                        .suggests(CONFIG_PATH_SUGGESTIONS)
+                        .then(ClientCommandManager.argument("value", StringArgumentType.greedyString())
+                                .suggests(CONFIG_VALUE_SUGGESTIONS)
+                                .executes(ctx -> configSet(ctx.getSource().getClient(),
+                                        StringArgumentType.getString(ctx, "name"),
+                                        StringArgumentType.getString(ctx, "value"))))));
+
+        // /cs config reset <name> → 恢复默认值
+        configNode.then(ClientCommandManager.literal("reset")
+                    .then(ClientCommandManager.argument("name", StringArgumentType.string())
+                        .suggests(CONFIG_PATH_SUGGESTIONS)
+                        .executes(ctx -> configReset(ctx.getSource().getClient(),
+                                StringArgumentType.getString(ctx, "name")))));
+        
         root.then(configNode);
 
         // ===== /cs nav =====
@@ -249,19 +309,6 @@ public class ChunkScannerCommands {
                 }));
 
         root.then(navNode);
-
-        // ===== /cs baritone =====
-        var baritoneNode = ClientCommandManager.literal("baritone");
-
-        var baritoneRiskNode = ClientCommandManager.literal("risk");
-        baritoneRiskNode.then(ClientCommandManager.literal("disable")
-                .executes(ctx -> {
-                    disableBaritoneRisk(ctx.getSource().getClient());
-                    return 1;
-                }));
-        baritoneNode.then(baritoneRiskNode);
-
-        root.then(baritoneNode);
 
         // ===== /cs components =====
         // 可扩展的组件命令入口：/cs components <componentName> <action> [args...]
@@ -368,17 +415,12 @@ public class ChunkScannerCommands {
 
     private static int openConfigGui(MinecraftClient client) {
         Screen configScreen = ClothConfigIntegration.createConfigScreen(client.currentScreen);
-        if (configScreen == null) {
-            sendMsg(client, Text.translatable("chunkscanner.msg.cloth_config_not_available")
-                    .formatted(Formatting.RED));
-        } else {
-            client.send(() -> client.setScreen(configScreen));
-        }
+        client.send(() -> client.setScreen(configScreen));
         return 1;
     }
 
     private int reloadConfig(MinecraftClient client, boolean restart) {
-        ConfigLoader.load(ChunkScannerMod.CONFIG);
+        ConfigLoader.load();
         if (restart) {
             int restarted = scanner.restartAllSessions(client);
             sendMsg(client, Text.translatable("chunkscanner.msg.config_restarted", restarted)
@@ -389,6 +431,81 @@ public class ChunkScannerCommands {
                     .formatted(Formatting.GREEN));
         }
         return 1;
+    }
+
+    // ==================== 配置项反射读写 ====================
+
+    /** /cs get &lt;name&gt; — 展示配置项的当前值、默认值与类型。 */
+    private int configGet(MinecraftClient client, String path) {
+        if (!ConfigReflectionAccessor.hasPath(path)) {
+            sendUnknownPath(client, path);
+            return 0;
+        }
+        Object cur = ConfigReflectionAccessor.getValue(ChunkScannerMod.getConfig(), path);
+        Object def = ConfigReflectionAccessor.getDefaultValue(path);
+        sendMsg(client, Text.translatable("chunkscanner.msg.config_get",
+                        Text.literal(path).formatted(Formatting.AQUA),
+                        Text.literal(String.valueOf(cur)).formatted(Formatting.WHITE),
+                        Text.literal(String.valueOf(def)).formatted(Formatting.GRAY),
+                        Text.literal(ConfigReflectionAccessor.getTypeName(path)).formatted(Formatting.DARK_GRAY))
+                .formatted(Formatting.GREEN));
+        return 1;
+    }
+
+    /** /cs set &lt;name&gt; &lt;value&gt; — 修改配置项并立即持久化。 */
+    private int configSet(MinecraftClient client, String path, String value) {
+        if (!ConfigReflectionAccessor.hasPath(path)) {
+            sendUnknownPath(client, path);
+            return 0;
+        }
+        ChunkScannerConfig config = ChunkScannerMod.getConfig();
+        Object old = ConfigReflectionAccessor.getValue(config, path);
+        try {
+            ConfigReflectionAccessor.setValue(config, path, value);
+        } catch (ConfigReflectionAccessor.ConfigAccessException e) {
+            sendMsg(client, Text.translatable("chunkscanner.msg.config_invalid_value", e.getMessage())
+                    .formatted(Formatting.RED));
+            return 0;
+        }
+        ConfigLoader.save();
+        sendMsg(client, Text.translatable("chunkscanner.msg.config_set",
+                        Text.literal(path).formatted(Formatting.AQUA),
+                        Text.literal(String.valueOf(old)).formatted(Formatting.GRAY),
+                        Text.literal(String.valueOf(
+                                ConfigReflectionAccessor.getValue(config, path))).formatted(Formatting.WHITE))
+                .formatted(Formatting.GREEN));
+        sendMsg(client, Text.translatable("chunkscanner.msg.config_apply_hint").formatted(Formatting.GRAY));
+        return 1;
+    }
+
+    /** /cs reset &lt;name&gt; — 恢复配置项的默认值。 */
+    private int configReset(MinecraftClient client, String path) {
+        if (!ConfigReflectionAccessor.hasPath(path)) {
+            sendUnknownPath(client, path);
+            return 0;
+        }
+        ChunkScannerConfig config = ChunkScannerMod.getConfig();
+        try {
+            ConfigReflectionAccessor.resetValue(config, path);
+        } catch (ConfigReflectionAccessor.ConfigAccessException e) {
+            sendMsg(client, Text.translatable("chunkscanner.msg.config_invalid_value", e.getMessage())
+                    .formatted(Formatting.RED));
+            return 0;
+        }
+        ConfigLoader.save();
+        sendMsg(client, Text.translatable("chunkscanner.msg.config_reset",
+                        Text.literal(path).formatted(Formatting.AQUA),
+                        Text.literal(String.valueOf(
+                                ConfigReflectionAccessor.getValue(config, path))).formatted(Formatting.WHITE))
+                .formatted(Formatting.GREEN));
+        sendMsg(client, Text.translatable("chunkscanner.msg.config_apply_hint").formatted(Formatting.GRAY));
+        return 1;
+    }
+
+    private void sendUnknownPath(MinecraftClient client, String path) {
+        sendMsg(client, Text.translatable("chunkscanner.msg.config_unknown_path",
+                        Text.literal(path).formatted(Formatting.YELLOW))
+                .formatted(Formatting.RED));
     }
 
     // ==================== 导出辅助接口 ====================
@@ -597,22 +714,15 @@ public class ChunkScannerCommands {
         }
     }
 
-    /** 通过命令禁用 Baritone 风险警告（设置 BARITONE_DISABLED + 立即禁用）。 */
-    private void disableBaritoneRisk(MinecraftClient client) {
-        ChunkScannerMod.CONFIG.baritoneRiskWarning = ChunkScannerConfig.BaritoneRiskWarning.BARITONE_DISABLED;
-        BaritoneNavigator.setConfigDisabled(true);
-        ConfigLoader.save(ChunkScannerMod.CONFIG);
-        sendMsg(client, Text.translatable("chunkscanner.msg.baritone_risk_disabled")
-                .formatted(Formatting.GREEN));
-    }
-
     private void navToggle(MinecraftClient client) {
-        ChunkScannerMod.CONFIG.navAutoEnabled = !ChunkScannerMod.CONFIG.navAutoEnabled;
-        ConfigLoader.save(ChunkScannerMod.CONFIG);
+        ChunkScannerConfig.Integration.Baritone baritone =
+                ChunkScannerMod.getConfig().integration.baritone;
+        baritone.autoEnabled = !baritone.autoEnabled;
+        ConfigLoader.save();
         ChunkScannerNavigation nav = ChunkScannerNavigation.get();
-        nav.setAutoEnabled(ChunkScannerMod.CONFIG.navAutoEnabled);
+        nav.setAutoEnabled(baritone.autoEnabled);
         sendMsg(client, Text.translatable("chunkscanner.msg.nav_toggle",
-                ChunkScannerMod.CONFIG.navAutoEnabled
+                baritone.autoEnabled
                         ? Text.translatable("chunkscanner.gui.nav.mode.composite").formatted(Formatting.AQUA)
                         : Text.translatable("chunkscanner.gui.nav.mode.relay").formatted(Formatting.YELLOW))
                 .formatted(Formatting.GREEN));

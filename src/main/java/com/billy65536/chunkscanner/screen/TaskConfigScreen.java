@@ -171,16 +171,16 @@ public class TaskConfigScreen extends Screen {
 
     private String[] buildDefaults() {
         return new String[]{
-                String.valueOf(globalConfig.minRevisitIntervalSec),
-                String.valueOf(globalConfig.maxTasksPerTick),
-                String.valueOf(globalConfig.initialTasksPerTick),
-                String.valueOf(globalConfig.targetTickNs),
-                String.valueOf(globalConfig.flushIntervalTicks),
-                String.valueOf(globalConfig.workerThreads),
-                String.valueOf(globalConfig.scanRadiusMultiplier),
-                globalConfig.waypointName,
-                globalConfig.waypointInitials,
-                globalConfig.waypointGroup
+                String.valueOf(globalConfig.scanner.minRevisitIntervalSec),
+                String.valueOf(globalConfig.scanner.maxTasksPerTick),
+                String.valueOf(globalConfig.scanner.initialTasksPerTick),
+                String.valueOf(globalConfig.scanner.targetTickNs),
+                String.valueOf(globalConfig.scanner.flushIntervalTicks),
+                String.valueOf(globalConfig.scanner.workerThreads),
+                String.valueOf(globalConfig.scanner.scanRadiusMultiplier),
+                globalConfig.integration.xaero.name,
+                globalConfig.integration.xaero.initials,
+                globalConfig.integration.xaero.group
         };
     }
 

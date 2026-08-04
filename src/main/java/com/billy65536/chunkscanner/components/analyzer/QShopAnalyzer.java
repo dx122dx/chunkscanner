@@ -85,27 +85,27 @@ public class QShopAnalyzer implements IChunkAnalyzer {
 
     /** 从当前全局配置构建（或复用缓存）LocalePatterns。 */
     private static LocalePatterns getPatterns() {
-        com.billy65536.chunkscanner.config.ChunkScannerConfig cfg = ChunkScannerMod.CONFIG;
-        String hash = cfg.qshopSellBuyPattern + "\0"
-                + cfg.qshopInfinitePattern + "\0"
-                + cfg.qshopOutOfStockPattern + "\0"
-                + cfg.qshopOutOfSpacePattern + "\0"
-                + cfg.qshopPricePattern + "\0"
-                + cfg.qshopSellKeyword + "\0"
-                + cfg.qshopBuyKeyword;
+        com.billy65536.chunkscanner.config.ChunkScannerConfig cfg = ChunkScannerMod.getConfig();
+        String hash = cfg.components.qshop.sellBuyPattern + "\0"
+                + cfg.components.qshop.infinitePattern + "\0"
+                + cfg.components.qshop.outOfStockPattern + "\0"
+                + cfg.components.qshop.outOfSpacePattern + "\0"
+                + cfg.components.qshop.pricePattern + "\0"
+                + cfg.components.qshop.sellKeyword + "\0"
+                + cfg.components.qshop.buyKeyword;
         LocalePatterns p = cachedPatterns;
         if (p != null && hash.equals(cachedConfigHash)) {
             return p;
         }
         try {
             p = new LocalePatterns(
-                    Pattern.compile(cfg.qshopSellBuyPattern),
-                    Pattern.compile(cfg.qshopInfinitePattern),
-                    Pattern.compile(cfg.qshopOutOfStockPattern),
-                    Pattern.compile(cfg.qshopOutOfSpacePattern),
-                    Pattern.compile(cfg.qshopPricePattern),
-                    cfg.qshopSellKeyword,
-                    cfg.qshopBuyKeyword
+                    Pattern.compile(cfg.components.qshop.sellBuyPattern),
+                    Pattern.compile(cfg.components.qshop.infinitePattern),
+                    Pattern.compile(cfg.components.qshop.outOfStockPattern),
+                    Pattern.compile(cfg.components.qshop.outOfSpacePattern),
+                    Pattern.compile(cfg.components.qshop.pricePattern),
+                    cfg.components.qshop.sellKeyword,
+                    cfg.components.qshop.buyKeyword
             );
         } catch (java.util.regex.PatternSyntaxException e) {
             ChunkScannerMod.LOGGER.error("QShopAnalyzer: invalid regex pattern in config, using defaults", e);

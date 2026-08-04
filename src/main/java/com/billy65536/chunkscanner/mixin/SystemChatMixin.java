@@ -26,7 +26,7 @@ public class SystemChatMixin {
     @Inject(method = "onChatMessage", at = @At("HEAD"))
     private void chunkscanner$onSystemChatMessage(ChatMessageS2CPacket packet, CallbackInfo ci) {
         // 仅在 SYSTEM_MIXIN 或 BOTH 模式下转发
-        ChunkScannerConfig.ChatInterceptionMethod method = ChunkScannerMod.CONFIG.qshopChatInterceptionMethod;
+        ChunkScannerConfig.ChatInterceptionMethod method = ChunkScannerMod.getConfig().components.qshop.chatInterceptionMethod;
         if (method == ChunkScannerConfig.ChatInterceptionMethod.GAME_EVENT) return;
 
         Text text = packet.unsignedContent();

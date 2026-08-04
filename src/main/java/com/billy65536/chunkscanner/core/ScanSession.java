@@ -129,7 +129,7 @@ public class ScanSession {
         this.pendingChunks = new PriorityBlockingQueue<>(1024);
         this.enqueuedChunks = ConcurrentHashMap.newKeySet();
         this.resultQueue = new LinkedBlockingQueue<>(512);
-        this.tasksPerTick = sessionConfig.initialTasksPerTick;
+        this.tasksPerTick = sessionConfig.scanner.initialTasksPerTick;
         // 保存原始任务配置引用（用于显示和数据库持久化）
         this.taskConfig = taskConfig;
     }
@@ -139,7 +139,7 @@ public class ScanSession {
      * 工作线程设为 daemon 并降低优先级，避免影响游戏主循环。
      */
     void start(MinecraftClient client) {
-        this.scanExecutor = Executors.newFixedThreadPool(sessionConfig.workerThreads, r -> {
+        this.scanExecutor = Executors.newFixedThreadPool(sessionConfig.scanner.workerThreads, r -> {
             Thread t = new Thread(r, "ChunkScanner-" + scanId);
             t.setDaemon(true);
             t.setPriority(Thread.NORM_PRIORITY - 1);
@@ -152,7 +152,7 @@ public class ScanSession {
         // 将任务配置序列化到数据库，便于后续恢复
         db.setTaskConfig(this.taskConfig);
         ChunkScannerMod.LOGGER.debug("[scan:{}] Session started (analyzer={}, threads={}, radius={})",
-                scanId, analyzer.getId(), sessionConfig.workerThreads, sessionConfig.scanRadiusMultiplier);
+                scanId, analyzer.getId(), sessionConfig.scanner.workerThreads, sessionConfig.scanner.scanRadiusMultiplier);
     }
 
     /**
@@ -196,8 +196,8 @@ public class ScanSession {
         if (enqueuedChunks.contains(packed)) return;
 
         long lastMs = db.getChunkScanTime(dimId, cx, cz);
-        if (lastMs > 0 && sessionConfig.minRevisitIntervalSec > 0) {
-            if (nowSec - (lastMs / 1000) < sessionConfig.minRevisitIntervalSec) return;
+        if (lastMs > 0 && sessionConfig.scanner.minRevisitIntervalSec > 0) {
+            if (nowSec - (lastMs / 1000) < sessionConfig.scanner.minRevisitIntervalSec) return;
         }
         pendingChunks.offer(new ChunkEntry(dimId, cx, cz, lastMs));
         enqueuedChunks.add(packed);
@@ -226,7 +226,7 @@ public class ScanSession {
 
         // 暂停状态下不处理任务，仅排空结果（确保进度不丢失）
         if (paused) {
-            if (++flushCounter >= sessionConfig.flushIntervalTicks) {
+            if (++flushCounter >= sessionConfig.scanner.flushIntervalTicks) {
                 flushCounter = 0;
                 db.flush();
             }
@@ -283,15 +283,15 @@ public class ScanSession {
 
         // 自适应速率：基于本 tick 耗时与目标耗时的比较
         long dur = System.nanoTime() - tickStart;
-        if (dur < sessionConfig.targetTickNs / 2 && submitted >= tasksPerTick) {
+        if (dur < sessionConfig.scanner.targetTickNs / 2 && submitted >= tasksPerTick) {
             // 负载很轻，可以加速
-            tasksPerTick = Math.min(tasksPerTick + 1, sessionConfig.maxTasksPerTick);
-        } else if (dur > sessionConfig.targetTickNs * 2) {
+            tasksPerTick = Math.min(tasksPerTick + 1, sessionConfig.scanner.maxTasksPerTick);
+        } else if (dur > sessionConfig.scanner.targetTickNs * 2) {
             // 负载过重，需要减速
             tasksPerTick = Math.max(tasksPerTick - 1, 1);
         }
 
-        if (++flushCounter >= sessionConfig.flushIntervalTicks) {
+        if (++flushCounter >= sessionConfig.scanner.flushIntervalTicks) {
             flushCounter = 0;
             db.flush();
         }
@@ -351,7 +351,7 @@ public class ScanSession {
         }
 
         int vd = (int) Math.round(client.options.getViewDistance().getValue()
-                * sessionConfig.scanRadiusMultiplier);
+                * sessionConfig.scanner.scanRadiusMultiplier);
         BlockPos pp = client.player.getBlockPos();
         int minCX = ChunkSectionPos.getSectionCoord(pp.getX()) - vd;
         int maxCX = ChunkSectionPos.getSectionCoord(pp.getX()) + vd;
@@ -360,7 +360,7 @@ public class ScanSession {
 
         String dimId = currentDimensionId;
         long nowSec = System.currentTimeMillis() / 1000;
-        long revisitSec = sessionConfig.minRevisitIntervalSec;
+        long revisitSec = sessionConfig.scanner.minRevisitIntervalSec;
 
         int pending = 0, scannedNoFind = 0, scannedFound = 0;
         int pastRevisitNoFind = 0, pastRevisitFound = 0, error = 0, foundError = 0;
@@ -421,7 +421,7 @@ public class ScanSession {
         ChunkScannerConfig cfg = this.sessionConfig;
 
         // clamp 当前速率到新范围
-        if (tasksPerTick > cfg.maxTasksPerTick) tasksPerTick = cfg.maxTasksPerTick;
+        if (tasksPerTick > cfg.scanner.maxTasksPerTick) tasksPerTick = cfg.scanner.maxTasksPerTick;
         if (tasksPerTick < 1) tasksPerTick = 1;
 
         // 清除已入队记录，下次 dispatch 会用新的 revisitInterval 重入队
