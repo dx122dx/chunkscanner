@@ -14,11 +14,11 @@ import com.billy65536.chunkscanner.core.db.DbFileUtil;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.core.navigation.ChunkScannerNavigation;
 import com.billy65536.chunkscanner.core.navigation.NavigationEntry;
-import com.billy65536.chunkscanner.integration.BaritoneNavigator;
 import com.billy65536.chunkscanner.gui.GuiUtil;
 import com.billy65536.chunkscanner.integration.ClothConfigIntegration;
 import com.billy65536.chunkscanner.screen.ChunkScannerScreen;
 import com.billy65536.chunkscanner.screen.DatabaseScreen;
+import com.billy65536.chunkscanner.security.server_optin.ServerAuthorizationRequiredException;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
@@ -466,6 +466,11 @@ public class ChunkScannerCommands {
             sendMsg(client, Text.translatable("chunkscanner.msg.config_invalid_value", e.getMessage())
                     .formatted(Formatting.RED));
             return 0;
+        } catch (ServerAuthorizationRequiredException e) {
+            sendMsg(client, Text.translatable("chunkscanner.msg.config_locked_server",
+                            Text.literal(path).formatted(Formatting.AQUA))
+                    .formatted(Formatting.RED));
+            return 0;
         }
         ConfigLoader.save();
         sendMsg(client, Text.translatable("chunkscanner.msg.config_set",
@@ -489,6 +494,11 @@ public class ChunkScannerCommands {
             ConfigReflectionAccessor.resetValue(config, path);
         } catch (ConfigReflectionAccessor.ConfigAccessException e) {
             sendMsg(client, Text.translatable("chunkscanner.msg.config_invalid_value", e.getMessage())
+                    .formatted(Formatting.RED));
+            return 0;
+        } catch (ServerAuthorizationRequiredException e) {
+            sendMsg(client, Text.translatable("chunkscanner.msg.config_locked_server",
+                            Text.literal(path).formatted(Formatting.AQUA))
                     .formatted(Formatting.RED));
             return 0;
         }

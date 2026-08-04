@@ -241,5 +241,6 @@
     "text.autoconfig.chunkscanner.option.components.qshop.manualEnhanceItemExpireMs": "Manual Enhancement Item Expiry (ms)",
     "text.autoconfig.chunkscanner.option.components.qshop.manualEnhanceItemExpireMs.@Tooltip": "Cached chat items expire after this duration in Non-Automatic / Semi-Automatic mode. 30000 = 30 s",
     "text.autoconfig.chunkscanner.option.components.qshop.chatInterceptionMethod": "Chat Interception Method",
-    "text.autoconfig.chunkscanner.option.components.qshop.chatInterceptionMethod.@Tooltip": "SYSTEM_MIXIN = mixin on system chat packets only, GAME_EVENT = Fabric event only, BOTH = dual channel. Switch to a single channel if messages are captured twice"
+    "text.autoconfig.chunkscanner.option.components.qshop.chatInterceptionMethod.@Tooltip": "SYSTEM_MIXIN = mixin on system chat packets only, GAME_EVENT = Fabric event only, BOTH = dual channel. Switch to a single channel if messages are captured twice",
+    "chunkscanner.msg.config_locked_server": "Configuration item %s is currently locked: In multiplayer servers, some hazardous configuration options require server authorization before modification and will revert after disconnection."
 }

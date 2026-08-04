@@ -9,6 +9,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.billy65536.chunkscanner.security.server_optin.ConfigurationLocker;
+import com.billy65536.chunkscanner.security.server_optin.ServerAuthorizationRequiredException;
+
 /**
  * 配置项的反射访问器，为 {@code /cs get|set|reset} 命令提供支撑。
  *
@@ -125,17 +128,34 @@ public final class ConfigReflectionAccessor {
     /**
      * 解析字符串并写入活动配置。
      *
+     * @throws ServerAuthorizationRequiredException 尝试修改未被服务器授权的危险配置项目
      * @throws ConfigAccessException 路径不存在、值格式非法或反射失败
      */
     public static void setValue(ChunkScannerConfig config, String path, String rawValue)
-            throws ConfigAccessException {
+            throws ConfigAccessException, ServerAuthorizationRequiredException {
+        if (ConfigurationLocker.isLocked(path)) {
+            throw new ServerAuthorizationRequiredException(
+                "Unable to modify configuration '" + path + "': not authorized by the server.");
+        }
+
         Field[] chain = requireChain(path);
         Field leaf = chain[chain.length - 1];
         write(config, chain, parseValue(leaf.getType(), rawValue, path));
     }
 
-    /** 从默认值快照恢复该路径的值。 */
-    public static void resetValue(ChunkScannerConfig config, String path) throws ConfigAccessException {
+    /**
+     * 从默认值快照恢复该路径的值
+     * 
+     * @throws ServerAuthorizationRequiredException 尝试重置未被服务器授权的危险配置项目
+     * @throws ConfigAccessException 路径不存在、值格式非法或反射失败
+     */
+    public static void resetValue(ChunkScannerConfig config, String path)
+            throws ConfigAccessException, ServerAuthorizationRequiredException {
+        if (ConfigurationLocker.isLocked(path)) {
+            throw new ServerAuthorizationRequiredException(
+                "Unable to reset configuration '" + path + "': not authorized by the server.");
+        }
+
         Field[] chain = requireChain(path);
         write(config, chain, read(PRISTINE, path));
     }
