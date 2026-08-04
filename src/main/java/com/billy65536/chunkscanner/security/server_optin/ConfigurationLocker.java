@@ -121,12 +121,11 @@ public final class ConfigurationLocker {
         // value 为 null 表示「仅锁定无强制值」（空串 "" 是合法强制值，需保留）。
         // 是否锁定以 key 是否存在（isLocked）为准，与 value 是否为 null 无关。
         lockStatus.putAll(locks);
-        applyAll();
+        applyAll(ChunkScannerMod.getConfig());
     }
 
-    /** 立即强制重置所有锁定值。 */
-    public static void applyAll() {
-        ChunkScannerConfig config = ChunkScannerMod.getConfig();
+    /** 立即强制重置该配置中所有锁定值。 */
+    public static void applyAll(ChunkScannerConfig config) {
         for (Entry<String, String> entry : lockStatus.entrySet()) {
             try {
                 ConfigReflectionAccessor.applyLockedValue(config, entry.getKey());

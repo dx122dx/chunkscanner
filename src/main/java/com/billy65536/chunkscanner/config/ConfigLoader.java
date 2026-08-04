@@ -52,7 +52,7 @@ public class ConfigLoader {
     /** 从磁盘重新加载配置。 */
     public static void load() {
         holder().load();
-        ConfigurationLocker.applyAll();
+        ConfigurationLocker.applyAll(get());
         ChunkScannerMod.LOGGER.info("Config reloaded from disk.");
     }
 
