@@ -1,6 +1,8 @@
 package com.billy65536.chunkscanner.config;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
+import com.billy65536.chunkscanner.security.server_optin.ConfigurationLocker;
+
 import me.shedaniel.autoconfig.AutoConfig;
 import me.shedaniel.autoconfig.ConfigHolder;
 import me.shedaniel.autoconfig.serializer.GsonConfigSerializer;
@@ -50,6 +52,7 @@ public class ConfigLoader {
     /** 从磁盘重新加载配置。 */
     public static void load() {
         holder().load();
+        ConfigurationLocker.applyAll();
         ChunkScannerMod.LOGGER.info("Config reloaded from disk.");
     }
 

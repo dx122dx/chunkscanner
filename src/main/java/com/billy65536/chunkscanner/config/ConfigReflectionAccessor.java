@@ -160,6 +160,28 @@ public final class ConfigReflectionAccessor {
         write(config, chain, read(PRISTINE, path));
     }
 
+    /**
+     * 服务器锁定重放：强制写入被锁配置项的锁定值。
+     * 不检查锁定状态，专供 {@link ConfigurationLocker} 内部施加 / 重放强制值使用。
+     *
+     * <p>强制值约定见 {@link ConfigurationLocker#getValueLocked}：{@code null} 表示
+     * 「仅锁定无强制值」（不写入，返回 null）；空串 {@code ""} 是合法强制值（会写入空串）。
+     *
+     * @return 实际写入的值；若该项仅锁定无强制值（{@code getValueLocked} 返回 null）则返回 null
+     * @throws ConfigAccessException 路径不存在、值格式非法或反射失败
+     */
+    public static Object applyLockedValue(ChunkScannerConfig config, String path)
+            throws ConfigAccessException {
+        Field[] chain = requireChain(path);
+        String forced = ConfigurationLocker.getValueLocked(path);
+        if (forced == null) {
+            return null; // 仅锁定无强制值，不写入
+        }
+        Object value = parseValue(chain[chain.length - 1].getType(), forced, path);
+        write(config, chain, value);
+        return value;
+    }
+
     private static Field[] requireChain(String path) throws ConfigAccessException {
         Field[] chain = PATHS.get(path);
         if (chain == null) {
