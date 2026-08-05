@@ -41,6 +41,7 @@
     "suggests": {
         "modmenu": "*",
         "xaerominimap": "*",
+        "xaeroworldmap": "*",
         "baritone": "*"
     }
 }

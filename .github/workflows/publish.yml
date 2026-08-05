@@ -2,6 +2,16 @@ name: Publish Mod
 
 on:
   workflow_dispatch:
+    inputs:
+      version-type:
+        description: "发布类型：RC 用 beta，正式发布用 release"
+        required: true
+        default: "beta"
+        type: choice
+        options:
+          - release
+          - beta
+          - alpha
 
 jobs:
   build:
@@ -51,5 +61,11 @@ jobs:
 
           # GitHub Release
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+          # 元数据
+          version-type: ${{ github.event.inputs.version-type }}
+          game-versions: "1.20.1"
+          loaders: fabric
+          changelog-file: CHANGELOG.md
 
           files: build/libs/!(*-sources).jar

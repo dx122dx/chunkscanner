@@ -51,6 +51,21 @@ Chunk Scanner 是一个纯客户端的 Fabric 模组，能够在后台异步扫�
 - **Cloth Config + ModMenu** — 可选依赖，提供图形化配置界面
 - **完整国际化** — 支持简体中文和英文
 
+### 1.1.0 新增能力
+
+- **对外公共 API** — 新增 `com.billy65536.chunkscanner.api` 包，作为第三方模组接入的唯一稳定契约
+  （`ChunkScannerApi` / `DatabaseApi` / `NavigationApi` / `RegistryApi`）。详见 [`docs/API.md`](docs/API.md)。
+- **多实例导航** — 第三方模组可创建独立的导航实例（`NavigationApi.createNavigation(name)`），
+  与全局 `/cs nav` 队列互不干扰；条件注册支持自定义 `Identifier`。
+- **服务端 opt-in 配置锁定（实验性）** — `ConfigurationLocker` 锁定登记、强制值重放与防绕过已闭环；
+  网络接收层尚未实现，需由外部模组或调试工具主动调用（不在公共 API 契约内）。
+- **配置系统升级** — 全面迁移至 Cloth Config AutoConfig，支持嵌套结构与自动持久化；
+  新增 `/cs config get|set|reset` 反射访问任意配置路径（带补全）。
+- **数据库 ZIP 跨模组共享** — `metadata.json` 携带 `databaseType`/`sha256` 完整性字段，
+  导入方通过 `IChunkDb.FactoryRegistry` 按工厂 ID 创建实例。
+- **测试体系扩展** — 22 个测试文件、340 个用例，零失败（涵盖公共 API、导航多实例隔离、
+  配置锁、数据库包校验与导出契约等关键路径）。
+
 ---
 
 ## 安装
@@ -383,9 +398,16 @@ cd chunkscanner
 src/main/
 ├── java/com/billy65536/chunkscanner/
 │   ├── ChunkScannerMod.java              # 主入口：初始化、命令注册、回调
+│   ├── api/                              # 公共 API（对外契约，自 1.1.0 起稳定）
+│   │   ├── ChunkScannerApi.java           #   总入口门面
+│   │   ├── DatabaseApi.java               #   数据库查询/加载/导出包/GUI
+│   │   ├── NavigationApi.java             #   导航实例/入队/条件注册
+│   │   ├── RegistryApi.java               #   三注册器统一入口
+│   │   └── package-info.java              #   包级文档
 │   ├── config/
-│   │   ├── ChunkScannerConfig.java        # 全局配置数据模型
+│   │   ├── ChunkScannerConfig.java        # 全局配置数据模型（AutoConfig）
 │   │   ├── ConfigLoader.java              # 配置加载/保存
+│   │   ├── ConfigReflectionAccessor.java  # 配置路径反射访问
 │   │   └── TaskConfig.java                # 任务级配置
 │   ├── core/
 │   │   ├── ChunkScanner.java              # 扫描引擎核心
@@ -395,17 +417,29 @@ src/main/
 │   │   ├── AnalyzeResult.java             # 分析结果
 │   │   ├── DbViewProvider.java            # 数据库视图提供者接口 + 注册表
 │   │   ├── LocatedPosition.java           # 世界位置记录
-│   │   └── CoreUtil.java                  # 工具方法
+│   │   ├── CoreUtil.java                  # 工具方法
+│   │   ├── db/
+│   │   │   ├── DbPackage.java             # 跨模组数据库包（ZIP 导入/校验）
+│   │   │   ├── DbValidationResult.java    # 校验结果聚合
+│   │   │   ├── DbFileUtil.java            # 文件元数据读取
+│   │   │   └── DbExportUtil.java          # ZIP / TSV 导出工具
+│   │   └── navigation/                    # 导航子系统（多实例）
+│   │       ├── ChunkScannerNavigation.java#   导航实例（独立 / 全局）
+│   │       ├── NavigationQueue.java       #   FIFO 路径点队列
+│   │       ├── NavigationTickDispatcher.java# 托管 tick 调度
+│   │       ├── NavigationConditionRegistry.java
+│   │       └── NavigationEntry.java       #   单条目（坐标 + 条件）
 │   ├── components/
 │   │   ├── analyzer/
 │   │   │   ├── SignAnalyzer.java          # 告示牌分析器
-│   │   │   └── QShopAnalyzer.java         # QShop 商店分析器
+│   │   │   ├── QShopAnalyzer.java         # QShop 商店分析器
+│   │   │   └── ChatItemExtractor.java     # 聊天物品信息提取
 │   │   ├── db/
-│   │   │   ├── BinaryChunkDb.java         # 二进制数据库实现
-│   │   │   └── DbFileUtil.java            # 数据库文件工具
+│   │   │   └── BinaryChunkDb.java         # 二进制数据库实现
 │   │   └── view_provider/
 │   │       ├── SignDbViewProvider.java    # 告示牌特化视图
 │   │       ├── QShopDbViewProvider.java   # QShop 特化视图
+│   │       ├── QShopDbAdapter.java        # QShop 数据适配
 │   │       └── QShopFilterScreen.java     # QShop 筛选界面
 │   ├── screen/
 │   │   ├── ChunkScannerScreen.java        # 任务管理 GUI
@@ -417,11 +451,16 @@ src/main/
 │   │   ├── PlaceholderTextField.java      # Placeholder 输入框
 │   │   ├── ScrollManager.java             # 滚动管理器
 │   │   ├── ScrollableListPanel.java       # 可滚动列表面板
-│   │   └── ScrollbarUtil.java             # 滚动条渲染
-│   └── integration/
-│       ├── ClothConfigIntegration.java     # Cloth Config 集成
-│       ├── ModMenuIntegration.java         # ModMenu 集成
-│       └── XaeroWaypointHelper.java       # Xaero 路径点集成
+│   │   ├── ScrollbarUtil.java             # 滚动条渲染
+│   │   └── layout/TableLayout.java        # 表格布局
+│   ├── integration/
+│   │   ├── ClothConfigIntegration.java     # Cloth Config 集成
+│   │   ├── ModMenuIntegration.java         # ModMenu 集成
+│   │   └── XaeroWaypointHelper.java       # Xaero 路径点集成
+│   └── security/
+│       └── server_optin/                   # 服务端 opt-in 配置锁定（实验性）
+│           ├── ConfigurationLocker.java
+│           └── ServerAuthorizationRequiredException.java
 └── resources/
     ├── assets/chunkscanner/
     │   ├── icon.png                       # 模组图标
@@ -431,18 +470,34 @@ src/main/
     └── fabric.mod.json                    # 模组元数据
 ```
 
-此外，项目包含 **8 个 JUnit 5 单元测试** (`src/test/java/com/billy65536/chunkscanner/`)：
+此外，项目包含 **22 个 JUnit 5 单元测试**（340 个用例，零失败），位于 `src/test/java/com/billy65536/chunkscanner/`：
 
 | 测试类 | 覆盖范围 |
 |--------|---------|
+| `api/ChunkScannerApiTest` | 公共 API 总入口（API_VERSION、id、unknownId、isReady） |
+| `api/DatabaseApiTest` | 数据库 API 路径与导出契约 |
+| `api/NavigationApiTest` | 公共导航 API（实例隔离、托管、条件注册） |
+| `api/RegistryApiTest` | 三注册器视图契约（universal vs 特化） |
+| `components/db/DbFileUtilTest` | 数据库文件元数据读取 |
+| `components/view_provider/QShopDbViewProviderTest` | QShop 视图提供者 |
 | `config/ChunkScannerConfigTest` | 全局配置默认值与拷贝 |
-| `config/TaskConfigTest` | 任务配置解析、序列化、拷贝 |
+| `config/ConfigReflectionAccessorTest` | 反射访问路径与锁校验 |
+| `config/TaskConfigTest` | 任务配置解析、序列化、持久化键名 |
 | `core/AnalyzeResultTest` | 分析结果工厂方法与状态 |
+| `core/AnalyzerRegistryTest` | 分析器注册表 |
 | `core/ChunkDbTest` | 数据库接口默认方法 |
 | `core/ChunkStatusBreakdownTest` | 区块状态分类 |
 | `core/CoreUtilTest` | 工具方法（位打包等） |
 | `core/DbViewProviderRegistryTest` | 视图提供者注册表 |
 | `core/LocatedPositionTest` | 位置记录 |
+| `core/db/DbExportUtilTest` | ZIP/TSV 导出契约与 SHA-256 |
+| `core/db/DbPackageTest` | 跨模组数据库包校验（Identifier 解析、完整性） |
+| `core/db/DbValidationResultTest` | 校验结果聚合逻辑 |
+| `core/navigation/ChunkScannerNavigationTest` | 导航实例队列隔离与并发安全 |
+| `core/navigation/NavigationConditionRegistryTest` | 条件注册（内置不可注销、未注册回退） |
+| `core/navigation/NavigationQueueTest` | 队列纯逻辑（FIFO / peek / clear） |
+| `core/navigation/NavigationTickDispatcherTest` | Tick 托管（拒绝全局实例） |
+| `security/server_optin/ConfigurationLockerTest` | 配置锁定语义、生命周期、授权与强制值重放 |
 
 ---
 

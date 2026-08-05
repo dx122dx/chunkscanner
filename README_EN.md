@@ -51,6 +51,24 @@ All scan results are persisted in a custom compact binary format and can be view
 - **Cloth Config + ModMenu** — Optional dependencies providing a graphical configuration interface
 - **Full I18n** — Supports Simplified Chinese and English
 
+### New in 1.1.0
+
+- **Public API** — New `com.billy65536.chunkscanner.api` package as the **only stable contract**
+  for third-party mods (`ChunkScannerApi` / `DatabaseApi` / `NavigationApi` / `RegistryApi`).
+  See [`docs/API.md`](docs/API.md).
+- **Multi-instance Navigation** — Third-party mods can create independent navigation instances
+  via `NavigationApi.createNavigation(name)` that do not interfere with the global `/cs nav` queue.
+- **Server opt-in Config Lock (experimental)** — Lock registration, forced value replay, and
+  bypass-prevention are complete. The network receiver is not yet implemented; the API must be
+  invoked by external mods / debug tools (not part of the public API contract).
+- **Configuration System Upgrade** — Migrated fully to Cloth Config AutoConfig with nested
+  structures and automatic persistence. New `/cs config get|set|reset` commands with path/value
+  completion via reflection.
+- **Cross-mod Database ZIP Sharing** — `metadata.json` carries `databaseType` / `sha256`
+  integrity fields; importers create instances via `IChunkDb.FactoryRegistry` by factory ID.
+- **Expanded Test Suite** — 22 test files / 340 cases, zero failures (covering public API,
+  multi-instance navigation isolation, config lock, DB package validation and export contracts).
+
 ---
 
 ## Installation
@@ -383,9 +401,16 @@ cd chunkscanner
 src/main/
 ├── java/com/billy65536/chunkscanner/
 │   ├── ChunkScannerMod.java              # Main entry: initialization, command registration, callbacks
+│   ├── api/                              # Public API (external contract, stable since 1.1.0)
+│   │   ├── ChunkScannerApi.java           #   Facade entry point
+│   │   ├── DatabaseApi.java               #   DB queries / load / export package / GUI
+│   │   ├── NavigationApi.java             #   Navigation instance / enqueue / condition registry
+│   │   ├── RegistryApi.java               #   Unified entry for three registries
+│   │   └── package-info.java              #   Package-level docs
 │   ├── config/
-│   │   ├── ChunkScannerConfig.java        # Global config data model
+│   │   ├── ChunkScannerConfig.java        # Global config (AutoConfig)
 │   │   ├── ConfigLoader.java              # Config load/save
+│   │   ├── ConfigReflectionAccessor.java  # Config path reflection
 │   │   └── TaskConfig.java                # Task-level config
 │   ├── core/
 │   │   ├── ChunkScanner.java              # Scan engine core
@@ -395,17 +420,29 @@ src/main/
 │   │   ├── AnalyzeResult.java             # Analysis result
 │   │   ├── DbViewProvider.java            # DB view provider interface + registry
 │   │   ├── LocatedPosition.java           # World location record
-│   │   └── CoreUtil.java                  # Utility methods
+│   │   ├── CoreUtil.java                  # Utility methods
+│   │   ├── db/
+│   │   │   ├── DbPackage.java             # Cross-mod DB package (ZIP import/validate)
+│   │   │   ├── DbValidationResult.java    # Validation result aggregation
+│   │   │   ├── DbFileUtil.java            # File metadata read
+│   │   │   └── DbExportUtil.java          # ZIP / TSV export utilities
+│   │   └── navigation/                    # Navigation subsystem (multi-instance)
+│   │       ├── ChunkScannerNavigation.java#   Navigation instance (independent / global)
+│   │       ├── NavigationQueue.java       #   FIFO waypoint queue
+│   │       ├── NavigationTickDispatcher.java# Managed tick dispatcher
+│   │       ├── NavigationConditionRegistry.java
+│   │       └── NavigationEntry.java       #   Single entry (coordinate + condition)
 │   ├── components/
 │   │   ├── analyzer/
 │   │   │   ├── SignAnalyzer.java          # Sign analyzer
-│   │   │   └── QShopAnalyzer.java         # QShop store analyzer
+│   │   │   ├── QShopAnalyzer.java         # QShop store analyzer
+│   │   │   └── ChatItemExtractor.java     # Chat item info extraction
 │   │   ├── db/
-│   │   │   ├── BinaryChunkDb.java         # Binary database implementation
-│   │   │   └── DbFileUtil.java            # Database file utilities
+│   │   │   └── BinaryChunkDb.java         # Binary database implementation
 │   │   └── view_provider/
 │   │       ├── SignDbViewProvider.java    # Sign specialized view
 │   │       ├── QShopDbViewProvider.java   # QShop specialized view
+│   │       ├── QShopDbAdapter.java        # QShop data adapter
 │   │       └── QShopFilterScreen.java     # QShop filter screen
 │   ├── screen/
 │   │   ├── ChunkScannerScreen.java        # Task management GUI
@@ -417,11 +454,16 @@ src/main/
 │   │   ├── PlaceholderTextField.java      # Placeholder text field
 │   │   ├── ScrollManager.java             # Scroll manager
 │   │   ├── ScrollableListPanel.java       # Scrollable list panel
-│   │   └── ScrollbarUtil.java             # Scrollbar renderer
-│   └── integration/
-│       ├── ClothConfigIntegration.java     # Cloth Config integration
-│       ├── ModMenuIntegration.java         # ModMenu integration
-│       └── XaeroWaypointHelper.java       # Xaero waypoint integration
+│   │   ├── ScrollbarUtil.java             # Scrollbar renderer
+│   │   └── layout/TableLayout.java        # Table layout
+│   ├── integration/
+│   │   ├── ClothConfigIntegration.java     # Cloth Config integration
+│   │   ├── ModMenuIntegration.java         # ModMenu integration
+│   │   └── XaeroWaypointHelper.java       # Xaero waypoint integration
+│   └── security/
+│       └── server_optin/                   # Server opt-in config lock (experimental)
+│           ├── ConfigurationLocker.java
+│           └── ServerAuthorizationRequiredException.java
 └── resources/
     ├── assets/chunkscanner/
     │   ├── icon.png                       # Mod icon
@@ -431,18 +473,35 @@ src/main/
     └── fabric.mod.json                    # Mod metadata
 ```
 
-Additionally, the project includes **8 JUnit 5 unit tests** (`src/test/java/com/billy65536/chunkscanner/`):
+Additionally, the project includes **22 JUnit 5 unit tests** (340 cases, zero failures),
+located at `src/test/java/com/billy65536/chunkscanner/`:
 
 | Test Class | Coverage |
 |------------|----------|
+| `api/ChunkScannerApiTest` | Public API entry point (API_VERSION, id, unknownId, isReady) |
+| `api/DatabaseApiTest` | DB API paths & export contracts |
+| `api/NavigationApiTest` | Public Navigation API (instance isolation, manage, condition registration) |
+| `api/RegistryApiTest` | Three-registry view contract (universal vs specialized) |
+| `components/db/DbFileUtilTest` | DB file metadata reading |
+| `components/view_provider/QShopDbViewProviderTest` | QShop view provider |
 | `config/ChunkScannerConfigTest` | Global config defaults & copy |
-| `config/TaskConfigTest` | Task config parsing, serialization, copy |
+| `config/ConfigReflectionAccessorTest` | Reflection access path & lock check |
+| `config/TaskConfigTest` | Task config parsing, serialization, persistence keys |
 | `core/AnalyzeResultTest` | Result factory methods & states |
-| `core/ChunkDbTest` | Database interface default methods |
+| `core/AnalyzerRegistryTest` | Analyzer registry |
+| `core/ChunkDbTest` | DB interface default methods |
 | `core/ChunkStatusBreakdownTest` | Chunk status breakdown |
 | `core/CoreUtilTest` | Utility methods (bit packing, etc.) |
 | `core/DbViewProviderRegistryTest` | View provider registry |
 | `core/LocatedPositionTest` | Location record |
+| `core/db/DbExportUtilTest` | ZIP/TSV export contracts & SHA-256 |
+| `core/db/DbPackageTest` | Cross-mod DB package validation (Identifier parsing, integrity) |
+| `core/db/DbValidationResultTest` | Validation result aggregation logic |
+| `core/navigation/ChunkScannerNavigationTest` | Navigation instance queue isolation & concurrency |
+| `core/navigation/NavigationConditionRegistryTest` | Condition registry (built-in not unregisterable, fallback) |
+| `core/navigation/NavigationQueueTest` | Queue pure logic (FIFO / peek / clear) |
+| `core/navigation/NavigationTickDispatcherTest` | Tick management (rejects global instance) |
+| `security/server_optin/ConfigurationLockerTest` | Config lock semantics, lifecycle, authorization, forced value replay |
 
 ---
 

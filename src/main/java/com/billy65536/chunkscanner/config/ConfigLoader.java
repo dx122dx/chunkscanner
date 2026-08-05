@@ -49,6 +49,11 @@ public class ConfigLoader {
         return holder().getConfig();
     }
 
+    /** 配置子系统是否已注册（游戏外 / 早期初始化时可能为 false）。 */
+    public static boolean isRegistered() {
+        return holder != null;
+    }
+
     /** 从磁盘重新加载配置。 */
     public static void load() {
         holder().load();

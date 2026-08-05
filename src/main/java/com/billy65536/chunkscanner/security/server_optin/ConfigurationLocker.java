@@ -10,11 +10,22 @@ import org.slf4j.LoggerFactory;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
+import com.billy65536.chunkscanner.config.ConfigLoader;
 import com.billy65536.chunkscanner.config.ConfigReflectionAccessor;
 import com.billy65536.chunkscanner.config.ConfigReflectionAccessor.ConfigAccessException;
 
 /**
  * 纯客户端「服务端 opt-in」配置锁定状态机。
+ *
+ * <p><b>实验性能力（自 1.1.0 起）</b>：锁定的<em>执行</em>链路已完整可用
+ * —— 锁定登记、强制值重放、以及针对命令 / Cloth Config GUI / 手动编辑磁盘文件
+ * 三条修改通道的防绕过（经 {@code ChunkScannerConfig.validatePostLoad()} → {@link #applyAll}）
+ * 均已闭环。但<b>服务端授权信号的网络接收层尚未实现</b>：本模组目前不监听任何自定义
+ * 网络包，服务器无法主动下发锁定策略。当前 {@link #setAuthorized} / {@link #setLocked}
+ * 只能由外部模组或调试工具（如 chunkscanner-debugger）主动调用。
+ * 网络协议（自定义 payload 格式、版本协商、服务端插件对接规范）将在后续版本设计，
+ * 届时本类的方法签名可能调整 —— 本类位于 {@code security.server_optin} 包，
+ * <b>不属于 {@code com.billy65536.chunkscanner.api} 公共契约</b>，不受向后兼容承诺保护。</p>
  *
  * <p>纯客户端模组本身不定义服务端授权信号：进入多人服务器时默认<em>锁定</em>
  * （即「等待授权」状态），直到收到服务器授权信号后才解锁。授权信号的接收与
@@ -95,7 +106,8 @@ public final class ConfigurationLocker {
      * <p>授权信号的接收与解析不在此类定义。输入即解锁（移除锁定登记），
      * 可以解锁任何路径，包括未预先定义在此类中的配置。
      *
-     * <p>TODO: 网络包处理器尚未接线。
+     * <p><b>限制</b>：网络接收层尚未实现，本方法目前只能由外部模组或调试工具主动调用。
+     * 详见类级文档的实验性说明。
      *
      * @param paths 要解锁的配置路径数组
      */
@@ -121,6 +133,12 @@ public final class ConfigurationLocker {
         // value 为 null 表示「仅锁定无强制值」（空串 "" 是合法强制值，需保留）。
         // 是否锁定以 key 是否存在（isLocked）为准，与 value 是否为 null 无关。
         lockStatus.putAll(locks);
+        if (!ConfigLoader.isRegistered()) {
+            // 配置子系统尚未注册（单元测试 / 外部模组在游戏早期调用）：
+            // 先登记锁定，强制值重放推迟到 ConfigLoader.load() 或下次 applyAll。
+            LOGGER.debug("Config not registered yet; lock recorded without immediate apply.");
+            return;
+        }
         applyAll(ChunkScannerMod.getConfig());
     }
 
