@@ -710,7 +710,7 @@ public class ChunkScannerCommands {
             sendMsg(client, Text.translatable("chunkscanner.msg.nav_no_baritone").formatted(Formatting.YELLOW));
             sendMsg(client, Text.translatable("chunkscanner.msg.nav_fallback_enabled").formatted(Formatting.GREEN));
         }
-        ChunkScannerMod.startNavigation();
+        nav.start();
         sendMsg(client, Text.translatable("chunkscanner.msg.nav_start", nav.size())
                 .formatted(Formatting.GREEN));
     }
@@ -718,7 +718,7 @@ public class ChunkScannerCommands {
     private void navClear(MinecraftClient client) {
         ChunkScannerNavigation nav = ChunkScannerNavigation.get();
         int size = nav.size();
-        ChunkScannerMod.clearNavigation();
+        nav.clear();
         sendMsg(client, Text.translatable("chunkscanner.msg.nav_cleared", size)
                 .formatted(Formatting.GREEN));
     }

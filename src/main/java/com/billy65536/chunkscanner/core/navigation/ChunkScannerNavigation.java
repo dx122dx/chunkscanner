@@ -16,26 +16,46 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * ChunkScanner 导航统一门面（对外 API 入口）。
+ * ChunkScanner 导航门面。
  *
- * <p>其他 mod 通过 {@link #get()} 获取单例，调用 enqueue/start/stop/list/clear
- * 等方法操作导航队列。支持自定义 {@link NavigationCondition} 到达判定与
- * 独立指定导航模式（覆盖全局配置）。</p>
+ * <p>支持两种使用方式：</p>
+ * <ul>
+ *   <li><b>全局共享导航</b> —— {@link #get()} 返回本模组主导航实例，
+ *       由 ChunkScanner 自身的命令与 GUI 驱动，每 tick 自动推进。</li>
+ *   <li><b>独立导航实例</b> —— {@link #create(String)} 创建互不干扰的
+ *       独立导航，各自持有队列、导航模式与回调。独立实例<b>不会</b>被
+ *       ChunkScanner 自动 tick，调用方须自行在客户端 tick 中调用
+ *       {@link #tick(MinecraftClient)}，或通过
+ *       {@link NavigationTickDispatcher#register(ChunkScannerNavigation)} 托管。</li>
+ * </ul>
+ *
+ * <p>注意：Baritone 路径执行是全局唯一资源，多个导航实例同时 {@link #start()}
+ * 会互相抢占目标。调用方应保证同一时刻只有一个实例处于活动状态。</p>
  *
  * <h3>使用示例</h3>
  * <pre>{@code
+ * // 全局导航
  * ChunkScannerNavigation nav = ChunkScannerNavigation.get();
  * nav.enqueue(x, y, z, dimensionId);                     // 默认 PlayerNearCondition
  * nav.enqueue(x, y, z, dimensionId, customCondition);    // 自定义到达条件
  * nav.setAutoEnabled(true);                               // 覆盖全局配置
  * nav.start();
+ *
+ * // 独立导航（外部模组推荐）
+ * ChunkScannerNavigation mine = ChunkScannerNavigation.create("qab");
+ * NavigationTickDispatcher.register(mine);                // 托管自动 tick
+ * mine.enqueue(x, y, z, dimensionId);
+ * mine.start();
  * }</pre>
  */
 public final class ChunkScannerNavigation {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("chunkscanner.nav");
 
-    private static final ChunkScannerNavigation INSTANCE = new ChunkScannerNavigation();
+    private static final ChunkScannerNavigation INSTANCE = new ChunkScannerNavigation("global");
+
+    /** 实例名称，用于日志区分与回退路径点分组。 */
+    private final String name;
 
     private final NavigationQueue queue = new NavigationQueue();
     private final Set<NavigationEntry> fallbackWaypoints = new HashSet<>();
@@ -48,16 +68,51 @@ public final class ChunkScannerNavigation {
     private java.util.function.BiConsumer<String, String> onDimChanged;
     private java.util.function.Consumer<String> onDimResumed;
 
-    /** 回退路径点组名（导航不可用时的路径点分组，避免与用户手动创建的路径点混淆）。 */
-    private static final String FALLBACK_WP_GROUP = "chunkscanner_nav";
+    /** 回退路径点组名前缀（导航不可用时的路径点分组，避免与用户手动创建的路径点混淆）。 */
+    private static final String FALLBACK_WP_GROUP_BASE = "chunkscanner_nav";
 
-    private ChunkScannerNavigation() {
+    /** 本实例专属的回退路径点组名。 */
+    private final String fallbackWpGroup;
+
+    private ChunkScannerNavigation(String name) {
+        this.name = (name == null || name.isBlank()) ? "unnamed" : name;
+        this.fallbackWpGroup = "global".equals(this.name)
+                ? FALLBACK_WP_GROUP_BASE
+                : FALLBACK_WP_GROUP_BASE + "_" + this.name;
         this.autoEnabled = ChunkScannerConfigHolder.navAutoEnabled();
     }
 
-    /** 获取门面单例。 */
+    /**
+     * 获取本模组的全局共享导航实例。
+     *
+     * <p>该实例由 ChunkScanner 自身每 tick 驱动，命令 {@code /cs nav *} 操作的即为此实例。</p>
+     */
     public static ChunkScannerNavigation get() {
         return INSTANCE;
+    }
+
+    /**
+     * 创建一个独立导航实例（外部模组推荐入口）。
+     *
+     * <p>独立实例拥有自己的队列、导航模式、回调与回退路径点分组，与全局实例互不干扰。
+     * 但 <b>不会</b>被自动 tick，需调用方自行调用 {@link #tick(MinecraftClient)}，
+     * 或使用 {@link NavigationTickDispatcher#register(ChunkScannerNavigation)} 托管。</p>
+     *
+     * @param name 实例名称，用于日志与回退路径点分组隔离（建议使用调用方 modid）
+     * @return 新的独立导航实例
+     */
+    public static ChunkScannerNavigation create(String name) {
+        return new ChunkScannerNavigation(name);
+    }
+
+    /** 返回本实例名称。 */
+    public String getName() {
+        return name;
+    }
+
+    /** 本实例是否为全局共享导航。 */
+    public boolean isGlobal() {
+        return this == INSTANCE;
     }
 
     // ==================== 入队 ====================
@@ -91,6 +146,42 @@ public final class ChunkScannerNavigation {
         queue.enqueue(entry, condition);
         LOGGER.debug("Nav enqueue (direct): ({}, {}, {}) dim={} queue size={}",
                 entry.x(), entry.y(), entry.z(), entry.dimensionId(), queue.size());
+    }
+
+    /**
+     * 以 {@link LocatedPosition} 入队（默认 {@link PlayerNearCondition}）。
+     *
+     * @param pos 目标位置，{@code null} 时忽略
+     */
+    public void enqueue(LocatedPosition pos) {
+        if (pos == null) return;
+        enqueue(pos.x(), pos.y(), pos.z(), pos.dimensionId());
+    }
+
+    /**
+     * 以 {@link LocatedPosition} + 自定义条件入队。
+     *
+     * @param pos       目标位置，{@code null} 时忽略
+     * @param condition 到达判定条件
+     */
+    public void enqueue(LocatedPosition pos, NavigationCondition condition) {
+        if (pos == null) return;
+        enqueue(new NavigationEntry(pos.dimensionId(), pos.x(), pos.y(), pos.z()), condition);
+    }
+
+    /**
+     * 使用 {@link NavigationConditionRegistry} 中注册的条件 id 入队。
+     *
+     * <p>id 未注册时回退为内置的
+     * {@link NavigationConditionRegistry#PLAYER_NEAR}。</p>
+     *
+     * @param conditionId 已注册的条件标识符
+     */
+    public void enqueueWithCondition(int x, int y, int z, String dimensionId,
+                                     net.minecraft.util.Identifier conditionId) {
+        NavigationCondition cond =
+                NavigationConditionRegistry.create(conditionId, x, y, z, dimensionId);
+        enqueue(new NavigationEntry(dimensionId, x, y, z), cond);
     }
 
     // ==================== 控制 ====================
@@ -312,7 +403,7 @@ public final class ChunkScannerNavigation {
                 front.dimensionId(), front.x(), front.y(), front.z());
         String wpName = "[N] " + ChunkScannerConfigHolder.waypointName();
         String wpInit = ChunkScannerConfigHolder.waypointInitials();
-        String wpGroup = FALLBACK_WP_GROUP;
+        String wpGroup = fallbackWpGroup;
 
         if (XaeroWaypointHelper.tryCreateWaypoint(pos, wpName, wpInit, wpGroup)) {
             fallbackWaypoints.add(front);
@@ -325,7 +416,7 @@ public final class ChunkScannerNavigation {
         if (!fallbackWaypoints.remove(entry)) return;
         LocatedPosition pos = new LocatedPosition(
                 entry.dimensionId(), entry.x(), entry.y(), entry.z());
-        XaeroWaypointHelper.tryRemoveWaypoint(pos, FALLBACK_WP_GROUP);
+        XaeroWaypointHelper.tryRemoveWaypoint(pos, fallbackWpGroup);
         LOGGER.debug("Fallback waypoint removed for nav entry: {}", pos);
     }
 
@@ -334,7 +425,7 @@ public final class ChunkScannerNavigation {
         for (NavigationEntry entry : fallbackWaypoints) {
             LocatedPosition pos = new LocatedPosition(
                     entry.dimensionId(), entry.x(), entry.y(), entry.z());
-            XaeroWaypointHelper.tryRemoveWaypoint(pos, FALLBACK_WP_GROUP);
+            XaeroWaypointHelper.tryRemoveWaypoint(pos, fallbackWpGroup);
         }
         fallbackWaypoints.clear();
     }
@@ -366,6 +457,15 @@ public final class ChunkScannerNavigation {
         static double navReachDist() {
             ChunkScannerConfig c = cfg();
             return c != null ? c.integration.baritone.reachDist : 3.0;
+        }
+
+        /**
+         * 全局配置的到达判定距离（方块）。
+         *
+         * <p>公开供构建 {@link PlayerNearCondition} 等条件时读取默认距离。</p>
+         */
+        public static double reachDist() {
+            return navReachDist();
         }
 
         static int navCompositeLimit() {

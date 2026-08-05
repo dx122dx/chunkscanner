@@ -16,6 +16,7 @@ import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.core.IChunkDb;
 import com.billy65536.chunkscanner.core.navigation.ChunkScannerNavigation;
+import com.billy65536.chunkscanner.core.navigation.NavigationTickDispatcher;
 import com.billy65536.chunkscanner.core.navigation.NavigationEntry;
 import com.billy65536.chunkscanner.core.navigation.NavigationQueue;
 import com.billy65536.chunkscanner.integration.BaritoneNavigator;
@@ -67,23 +68,45 @@ public class ChunkScannerMod implements ClientModInitializer {
         return instance != null ? instance.commands : null;
     }
 
-    /** @deprecated 使用 {@link ChunkScannerNavigation#get()} 门面替代。 */
+    /**
+     * @deprecated 外部调用请使用
+     *             {@link com.billy65536.chunkscanner.api.NavigationApi}；
+     *             内部请使用 {@link ChunkScannerNavigation#get()} 门面。
+     */
     @Deprecated
     public static NavigationQueue getNavQueue() {
         return instance != null ? instance.nav.getQueue() : null;
     }
 
-    /** 启动导航（由命令层调用）。 */
+    /**
+     * 启动全局导航（由命令层调用）。
+     *
+     * @deprecated 外部调用请使用
+     *             {@link com.billy65536.chunkscanner.api.NavigationApi#start()}。
+     */
+    @Deprecated
     public static void startNavigation() {
         if (instance != null) instance.nav.start();
     }
 
-    /** 清空导航队列并取消导航。 */
+    /**
+     * 清空全局导航队列并取消导航。
+     *
+     * @deprecated 外部调用请使用
+     *             {@link com.billy65536.chunkscanner.api.NavigationApi#stop()}。
+     */
+    @Deprecated
     public static void clearNavigation() {
         if (instance != null) instance.nav.clear();
     }
 
-    /** 将位置加入导航队列。 */
+    /**
+     * 将位置加入全局导航队列。
+     *
+     * @deprecated 外部调用请使用
+     *             {@link com.billy65536.chunkscanner.api.NavigationApi#enqueue(int, int, int, String)}。
+     */
+    @Deprecated
     public static void enqueueNavigation(NavigationEntry entry) {
         if (instance != null) instance.nav.enqueue(entry.x(), entry.y(), entry.z(), entry.dimensionId());
     }
@@ -210,6 +233,8 @@ public class ChunkScannerMod implements ClientModInitializer {
             scanner.onClientTick(client);
             QShopChatListener.tick();
             nav.tick(client);
+            // 推进外部模组注册的独立导航实例
+            NavigationTickDispatcher.tickAll(client);
         });
 
         // 注册连接事件：进入服务器/世界时构建物品译名映射表 + 注册聊天监听 + Baritone 风险警告
