@@ -1,26 +1,27 @@
-name: Publish Mod
+name: Publish
 
+# 推送 git tag（形如 v1.1.0 / v1.1.0-rc.1 / v1.1.0-beta.1）时自动构建并发布到
+# GitHub Release 与 Modrinth。版本号以 tag 为唯一真相源，CI 在发布时自动将 tag
+# （去掉 v 前缀）注入 gradle.properties 的 mod_version 后再构建。
 on:
-  workflow_dispatch:
-    inputs:
-      version-type:
-        description: "发布类型：RC 用 beta，正式发布用 release"
-        required: true
-        default: "beta"
-        type: choice
-        options:
-          - release
-          - beta
-          - alpha
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
 
 jobs:
-  build:
+  publish:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    environment:
+      name: 'Minecraft mod publish'
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -34,38 +35,44 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
+      - name: Derive version & channel from tag
+        id: meta
+        run: |
+          TAG="${GITHUB_REF_NAME}"          # 例如 v1.1.0 / v1.1.0-rc.1
+          VERSION="${TAG#v}"                # 去掉前缀 v -> 1.1.0
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [[ "$TAG" == *alpha* || "$TAG" == *dev* ]]; then VT=alpha
+          elif [[ "$TAG" == *beta* || "$TAG" == *rc* ]]; then VT=beta
+          else VT=release; fi
+          echo "version_type=$VT" >> "$GITHUB_OUTPUT"
+
+      - name: Apply version to gradle.properties
+        run: sed -i "s/^mod_version=.*/mod_version=${{ steps.meta.outputs.version }}/" gradle.properties
+
       - name: Build with Gradle
         run: ./gradlew build --no-daemon
 
-      - name: Upload test reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-reports
-          path: build/reports/tests/
-          retention-days: 14
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: chunkscanner-artifacts
-          path: build/libs/
-          retention-days: 30
-
-      - name: Publish to Platforms
+      - name: Publish to Modrinth & GitHub Release
         uses: Kira-NT/mc-publish@v3.3.0
         with:
-          # Modrinth
+          # Modrinth —— 需在仓库 Settings > Secrets and variables 配置：
+          #   vars.MODRINTH_ID       = Modrinth 项目 slug 或 id
+          #   secrets.MODRINTH_TOKEN = Modrinth API Token
           modrinth-id: ${{ vars.MODRINTH_ID }}
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
 
-          # GitHub Release
+          # GitHub Release（使用下方 version 作为 tag，与推送的 v* tag 对应）
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-          # 元数据
-          version-type: ${{ github.event.inputs.version-type }}
+          # 元数据（version 带 v 前缀，与 git tag 一致；mod 内部版本不含 v）
+          name: Chunk Scanner ${{ steps.meta.outputs.version }}
+          version: ${{ steps.meta.outputs.tag }}
+          version-type: ${{ steps.meta.outputs.version_type }}
+
           game-versions: "1.20.1"
           loaders: fabric
           changelog-file: CHANGELOG.md
 
+          # 仅上传主 jar，排除 -sources
           files: build/libs/!(*-sources).jar
