@@ -287,8 +287,8 @@ class DbExportUtilTest {
                         .readAllBytes(), StandardCharsets.UTF_8);
                 String time = meta.replaceAll("(?s).*\"exportTime\": \"([^\"]+)\".*", "$1");
                 assertTrue(Pattern.matches(
-                        "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?[+-]\\d{2}:\\d{2}", time),
-                        "应带时区偏移（允许纳秒小数位），实际: " + time);
+                        "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})", time),
+                        "应带时区（UTC 时输出 Z 后缀，其他时区为 ±hh:mm，均允许纳秒小数位），实际: " + time);
             }
         }
     }

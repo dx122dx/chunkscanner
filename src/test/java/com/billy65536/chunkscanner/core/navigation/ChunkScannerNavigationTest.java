@@ -25,7 +25,7 @@ class ChunkScannerNavigationTest {
     /** 每个用例结束后清空全局实例队列，避免污染其他测试。 */
     @AfterEach
     void cleanUpGlobal() {
-        ChunkScannerNavigation.get().getQueue().clear();
+        ChunkScannerNavigation.get().clear();
     }
 
     private static NavigationCondition never() {
@@ -129,7 +129,7 @@ class ChunkScannerNavigationTest {
             ChunkScannerNavigation a = ChunkScannerNavigation.create("q-a");
             ChunkScannerNavigation b = ChunkScannerNavigation.create("q-b");
 
-            assertNotSame(a.getQueue(), b.getQueue());
+            assertNotSame(a.list(), b.list());
         }
     }
 
