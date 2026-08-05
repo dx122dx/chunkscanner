@@ -3,6 +3,8 @@ package com.billy65536.chunkscanner.core.db;
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.IChunkDb;
 import com.google.gson.GsonBuilder;
+
+import net.minecraft.util.Identifier;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
@@ -65,7 +67,7 @@ public final class DbExportUtil {
      * @param ext        文件扩展名（不含点号）
      * @return chunkscanner-{analyzerId}-{scanId}-{yyMMddHHmmss}.{ext}
      */
-    public static String buildDefaultFileName(String analyzerId, String scanId, String ext) {
+    public static String buildDefaultFileName(Identifier analyzerId, String scanId, String ext) {
         String time = LocalDateTime.now()
                 .format(DateTimeFormatter.ofPattern("yyMMddHHmmss"));
         return "chunkscanner-" + analyzerId + "-" + scanId + "-" + time + "." + ext;
@@ -83,7 +85,7 @@ public final class DbExportUtil {
      */
     public static Path exportRawZip(IChunkDb db, Path outFile) throws IOException {
         String scanId = db.getScanId();
-        String analyzerId = db.getAnalyzerId();
+        Identifier analyzerId = db.getAnalyzerId();
         Path mainFile = db.getFilePath();
         if (mainFile == null || !Files.exists(mainFile)) {
             throw new IOException("Database file not found for database " + scanId);
@@ -113,7 +115,7 @@ public final class DbExportUtil {
         Path outPath = (outFile != null)
                 ? outFile
                 : ensureExportDir().resolve(buildDefaultFileName(analyzerId, scanId, "zip"));
-        String databaseType = db.getFactoryId();
+        Identifier databaseType = db.getFactoryId();
         String mainFileName = parent.relativize(mainFile).toString();
         zipFiles(relatedFiles, parent, outPath, scanId, analyzerId, databaseType, mainFileName);
         return outPath;
@@ -129,7 +131,7 @@ public final class DbExportUtil {
      */
     public static Path exportTsv(IChunkDb db, Path outFile) throws IOException {
         String scanId = db.getScanId();
-        String analyzerId = db.getAnalyzerId();
+        Identifier analyzerId = db.getAnalyzerId();
         Path outPath = (outFile != null)
                 ? outFile
                 : ensureExportDir().resolve(buildDefaultFileName(analyzerId, scanId, "tsv"));
@@ -150,8 +152,8 @@ public final class DbExportUtil {
 
     /** 将文件列表打包为 ZIP，保留相对路径，并添加 metadata.json。 */
     private static void zipFiles(List<Path> files, Path baseDir, Path zipPath,
-                                  String scanId, String analyzerId,
-                                  String databaseType, String mainFileName) throws IOException {
+                                  String scanId, Identifier analyzerId,
+                                  Identifier databaseType, String mainFileName) throws IOException {
         try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zipPath.toFile()))) {
             byte[] buffer = new byte[8192];
             MessageDigest sha256;
@@ -185,9 +187,9 @@ public final class DbExportUtil {
             meta.addProperty("exportTime", ZonedDateTime.now()
                     .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
             meta.addProperty("databaseName", scanId);
-            meta.addProperty("scannerId", analyzerId);
+            meta.addProperty("scannerId", analyzerId.toString());
             if (databaseType != null) {
-                meta.addProperty("databaseType", databaseType);
+                meta.addProperty("databaseType", databaseType.toString());
             }
             if (mainFileName != null) {
                 meta.addProperty("mainFile", mainFileName);

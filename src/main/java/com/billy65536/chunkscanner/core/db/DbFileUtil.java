@@ -13,6 +13,8 @@ import java.util.stream.Stream;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
 
+import net.minecraft.util.Identifier;
+
 /**
  * DB 文件工具类 —— 统一所有二进制文件元数据读取和文件操作。
  */
@@ -59,15 +61,26 @@ public final class DbFileUtil {
             buf.get(scanIdBytes);
             String scanId = new String(scanIdBytes, StandardCharsets.UTF_8);
 
-            String analyzerId = "";
+            String analyzerRaw = "";
             if (version >= 2) {
-                if (buf.remaining() < 2) return new FileMeta(scanId, "", fileLen, lastModified, file);
+                if (buf.remaining() < 2) return new FileMeta(scanId, ChunkScannerMod.ID_UNKNOWN, fileLen, lastModified, file);
                 int analyzerLen = buf.getShort() & 0xFFFF;
                 if (analyzerLen > 0 && analyzerLen <= 1024 && buf.remaining() >= analyzerLen) {
                     byte[] analyzerBytes = new byte[analyzerLen];
                     buf.get(analyzerBytes);
-                    analyzerId = new String(analyzerBytes, StandardCharsets.UTF_8);
+                    analyzerRaw = new String(analyzerBytes, StandardCharsets.UTF_8);
                 }
+            }
+            // 兼容旧文件：无命名空间时回退为 chunkscanner:<原值>；含冒号则按完整标识符解析
+            // 空字符串（analyzerLen==0 或解析无内容）一律视作未定义哨兵
+            Identifier analyzerId;
+            if (analyzerRaw.isEmpty()) {
+                analyzerId = ChunkScannerMod.ID_UNKNOWN;
+            } else if (analyzerRaw.indexOf(':') >= 0) {
+                analyzerId = Identifier.tryParse(analyzerRaw);
+                if (analyzerId == null) analyzerId = ChunkScannerMod.ID_UNKNOWN;
+            } else {
+                analyzerId = ChunkScannerMod.id(analyzerRaw);
             }
 
             return new FileMeta(scanId, analyzerId, fileLen, lastModified, file);
@@ -207,8 +220,8 @@ public final class DbFileUtil {
      * 数据库文件的轻量元数据（scanId、analyzerId、大小、修改时间、文件路径）。
      * 不加载 KV 数据，仅用于文件列表展示。
      */
-    public record FileMeta(String scanId, String analyzerId, long fileSize, long lastModified, Path filePath) {
-        public static final FileMeta EMPTY = new FileMeta("", "", 0, 0, null);
+    public record FileMeta(String scanId, Identifier analyzerId, long fileSize, long lastModified, Path filePath) {
+        public static final FileMeta EMPTY = new FileMeta("", ChunkScannerMod.ID_UNKNOWN, 0, 0, null);
 
         public boolean isEmpty() {
             return scanId.isEmpty();

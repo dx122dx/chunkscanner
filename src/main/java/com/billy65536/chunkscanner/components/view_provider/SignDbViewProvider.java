@@ -3,6 +3,7 @@ package com.billy65536.chunkscanner.components.view_provider;
 import com.billy65536.chunkscanner.core.CoreUtil;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -165,7 +166,7 @@ public class SignDbViewProvider implements IDbViewProvider {
     /** Sign 视图类型描述符：解析告示牌数据为可读文本。仅适用于 sign 分析器。 */
     public static class Type implements DbViewProviderRegistry.ITypeDescriptor {
         @Override
-        public String getId() { return "sign_view"; }
+        public Identifier getId() { return ChunkScannerMod.id("sign_view"); }
 
         @Override
         public Text getName() {
@@ -178,14 +179,14 @@ public class SignDbViewProvider implements IDbViewProvider {
         }
 
         @Override
-        public Set<String> applicableAnalyzers() {
-            return Set.of("sign");
+        public Set<Identifier> applicableAnalyzers() {
+            return Set.of(ChunkScannerMod.id("sign"));
         }
 
         @Override
         public IDbViewProvider create(IChunkDb db) {
             // 仅适用于 sign 分析器生成的数据库
-            if (!"sign".equals(db.getAnalyzerId())) return null;
+            if (!ChunkScannerMod.id("sign").equals(db.getAnalyzerId())) return null;
             return new SignDbViewProvider(db);
         }
     }

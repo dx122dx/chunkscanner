@@ -5,6 +5,9 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
+
+import com.billy65536.chunkscanner.ChunkScannerMod;
 
 import java.util.Collection;
 import java.util.Set;
@@ -22,10 +25,10 @@ class DbViewProviderRegistryTest {
     /** 创建一个简单 ViewType 实现用于测试。 */
     private static DbViewProviderRegistry.ITypeDescriptor createType(String id, String name) {
         return new DbViewProviderRegistry.ITypeDescriptor() {
-            @Override public String getId() { return id; }
+            @Override public Identifier getId() { return ChunkScannerMod.id(id); }
             @Override public Text getName() { return Text.literal(name); }
             @Override public Text getDescription() { return Text.literal("desc: " + name); }
-            @Override public Set<String> applicableAnalyzers() { return Set.of(); }
+            @Override public Set<Identifier> applicableAnalyzers() { return Set.of(); }
             @Override public IDbViewProvider create(IChunkDb db) { return null; }
         };
     }
@@ -39,19 +42,19 @@ class DbViewProviderRegistryTest {
         @Test
         @DisplayName("注册后可通过 id 获取")
         void registered_shouldBeRetrievableById() {
-            DbViewProviderRegistry.ITypeDescriptor type = createType("test.getId1", "Name 1");
+            DbViewProviderRegistry.ITypeDescriptor type = createType("test.getid1", "Name 1");
             DbViewProviderRegistry.register(type);
 
-            DbViewProviderRegistry.ITypeDescriptor retrieved = DbViewProviderRegistry.get("test.getId1");
+            DbViewProviderRegistry.ITypeDescriptor retrieved = DbViewProviderRegistry.get(ChunkScannerMod.id("test.getid1"));
             assertNotNull(retrieved);
-            assertEquals("test.getId1", retrieved.getId());
+            assertEquals(ChunkScannerMod.id("test.getid1"), retrieved.getId());
             assertEquals("Name 1", retrieved.getName().getString());
         }
 
         @Test
         @DisplayName("未注册的 id 返回 null")
         void unregisteredId_shouldReturnNull() {
-            assertNull(DbViewProviderRegistry.get("nonexistent.id.xyz"));
+            assertNull(DbViewProviderRegistry.get(ChunkScannerMod.id("nonexistent.id.xyz")));
         }
 
         @Test
@@ -63,7 +66,7 @@ class DbViewProviderRegistryTest {
             DbViewProviderRegistry.register(first);
             DbViewProviderRegistry.register(second);
 
-            DbViewProviderRegistry.ITypeDescriptor retrieved = DbViewProviderRegistry.get("test.dup.id");
+            DbViewProviderRegistry.ITypeDescriptor retrieved = DbViewProviderRegistry.get(ChunkScannerMod.id("test.dup.id"));
             assertEquals("Second", retrieved.getName().getString());
         }
     }
@@ -77,8 +80,8 @@ class DbViewProviderRegistryTest {
         @Test
         @DisplayName("getAll 返回注册的所有类型")
         void getAll_shouldReturnAllRegistered() {
-            DbViewProviderRegistry.ITypeDescriptor t1 = createType("test.getAll.1", "A");
-            DbViewProviderRegistry.ITypeDescriptor t2 = createType("test.getAll.2", "B");
+            DbViewProviderRegistry.ITypeDescriptor t1 = createType("test.getall.1", "A");
+            DbViewProviderRegistry.ITypeDescriptor t2 = createType("test.getall.2", "B");
             DbViewProviderRegistry.register(t1);
             DbViewProviderRegistry.register(t2);
 

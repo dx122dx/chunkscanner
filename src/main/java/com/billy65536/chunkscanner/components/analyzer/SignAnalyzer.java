@@ -4,6 +4,7 @@ import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.block.entity.SignBlockEntity;
 import net.minecraft.block.entity.SignText;
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.chunk.WorldChunk;
 
@@ -13,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.AnalyzeResult;
 import com.billy65536.chunkscanner.core.IChunkAnalyzer;
 import com.billy65536.chunkscanner.core.IChunkDb;
@@ -140,8 +142,8 @@ public class SignAnalyzer implements IChunkAnalyzer {
     }
 
     @Override
-    public String getId() {
-        return "sign";
+    public Identifier getId() {
+        return ChunkScannerMod.id("sign");
     }
 
     @Override

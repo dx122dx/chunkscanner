@@ -2,6 +2,8 @@ package com.billy65536.chunkscanner.core;
 
 import com.billy65536.chunkscanner.config.TaskConfig;
 
+import net.minecraft.util.Identifier;
+
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -25,13 +27,13 @@ public interface IChunkDb {
     String getScanId();
     
     /** 创建此数据库的分析器 ID。 */
-    String getAnalyzerId();
+    Identifier getAnalyzerId();
 
     /**
      * 返回创建此数据库的 {@link IFactory#getId() 工厂标识符}。
      * 默认返回 {@code null}，表示未指定/未知类型。
      */
-    default String getFactoryId() { return null; }
+    default Identifier getFactoryId() { return null; }
 
     /** 文件大小（字节）。 */
     long getStorageSize();
@@ -167,7 +169,7 @@ public interface IChunkDb {
      */
     interface IFactory {
         /** 工厂唯一标识符。 */
-        String getId();
+        Identifier getId();
 
         /**
          * 数据库文件扩展标识符，由实现自行指定。
@@ -183,7 +185,7 @@ public interface IChunkDb {
          * @param dbDir         数据库文件存储目录
          * @return 新的 IChunkDb 实例
          */
-        IChunkDb create(String scanId, String analyzerId, Path dbDir);
+        IChunkDb create(String scanId, Identifier analyzerId, Path dbDir);
 
         /**
          * 创建数据库实例（元数据模式，延迟加载）。
@@ -193,12 +195,12 @@ public interface IChunkDb {
          * @param dbDir         数据库文件存储目录
          * @return 新的 IChunkDb 实例（未加载数据，需调用 open()）
          */
-        IChunkDb createMetadataOnly(String scanId, String analyzerId, Path dbDir);
+        IChunkDb createMetadataOnly(String scanId, Identifier analyzerId, Path dbDir);
     }
 
     /** 数据库工厂全局注册表。 */
     final class FactoryRegistry {
-        private static final Map<String, IFactory> factories = new LinkedHashMap<>();
+        private static final Map<Identifier, IFactory> factories = new LinkedHashMap<>();
 
         private FactoryRegistry() {}
 
@@ -208,7 +210,7 @@ public interface IChunkDb {
         }
 
         /** 通过 ID 获取工厂。 */
-        public static IFactory get(String id) {
+        public static IFactory get(Identifier id) {
             return factories.get(id);
         }
 

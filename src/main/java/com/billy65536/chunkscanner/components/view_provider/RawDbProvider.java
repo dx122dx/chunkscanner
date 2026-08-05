@@ -2,11 +2,13 @@ package com.billy65536.chunkscanner.components.view_provider;
 
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
+import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.IChunkDb;
 import com.billy65536.chunkscanner.core.IDbViewProvider;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
@@ -66,7 +68,7 @@ public class RawDbProvider implements IDbViewProvider {
     /** Raw 视图类型描述符：直接显示原始字节。适用于所有分析器。 */
     public static class Type implements DbViewProviderRegistry.ITypeDescriptor {
         @Override
-        public String getId() { return "raw"; }
+        public Identifier getId() { return ChunkScannerMod.id("raw"); }
 
         @Override
         public Text getName() {
@@ -79,7 +81,7 @@ public class RawDbProvider implements IDbViewProvider {
         }
 
         @Override
-        public Set<String> applicableAnalyzers() {
+        public Set<Identifier> applicableAnalyzers() {
             return Collections.emptySet(); // 适用于所有
         }
 

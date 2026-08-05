@@ -27,6 +27,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
+import net.minecraft.util.Identifier;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -54,8 +55,9 @@ public class ChunkScannerCommands {
             (ctx, builder) -> {
                 String remaining = builder.getRemaining().toLowerCase();
                 for (IChunkAnalyzer a : AnalyzerRegistry.getAll()) {
-                    if (a.getId().toLowerCase().startsWith(remaining)) {
-                        builder.suggest(a.getId());
+                    String idStr = a.getId().toString();
+                    if (idStr.toLowerCase().startsWith(remaining)) {
+                        builder.suggest(idStr);
                     }
                 }
                 return builder.buildFuture();
@@ -144,18 +146,18 @@ public class ChunkScannerCommands {
                                             String scanId = StringArgumentType.getString(ctx, "id");
                                             String configStr = StringArgumentType.getString(ctx, "config");
                                             TaskConfig taskConfig = TaskConfig.parse(configStr);
-                                            scanner.start(ctx.getSource().getClient(), analyzerId, scanId, taskConfig);
+                                            scanner.start(ctx.getSource().getClient(), parseIdentifier(analyzerId), scanId, taskConfig);
                                             return 1;
                                         }))
                                 .executes(ctx -> {
                                     scanner.start(ctx.getSource().getClient(),
-                                            StringArgumentType.getString(ctx, "name"),
+                                            parseIdentifier(StringArgumentType.getString(ctx, "name")),
                                             StringArgumentType.getString(ctx, "id"));
                                     return 1;
                                 }))
                         .executes(ctx -> {
                             scanner.start(ctx.getSource().getClient(),
-                                    StringArgumentType.getString(ctx, "name"),
+                                    parseIdentifier(StringArgumentType.getString(ctx, "name")),
                                     String.valueOf(System.currentTimeMillis()));
                             return 1;
                         })));
@@ -643,7 +645,9 @@ public class ChunkScannerCommands {
         }
 
         DbFileUtil.FileMeta meta = DbFileUtil.readFileMeta(file);
-        if (meta.isEmpty() || meta.analyzerId().isEmpty()) {
+        Identifier aid = meta.analyzerId();
+        if (meta.isEmpty() || aid == null || aid.getPath().isEmpty()
+                || ChunkScannerMod.ID_UNKNOWN.equals(aid)) {
             sendMsg(client, Text.translatable("chunkscanner.msg.db_file_corrupt")
                     .formatted(Formatting.RED));
             return;
@@ -672,6 +676,24 @@ public class ChunkScannerCommands {
     private static void sendMsg(MinecraftClient client, Text msg) {
         if (client.player != null) {
             client.player.sendMessage(msg, false);
+        }
+    }
+
+    /**
+     * 将命令参数中的分析器名解析为 {@link Identifier}。
+     * 用户输入通常为裸名（如 {@code qshop}），统一补全 chunkscanner 命名空间；
+     * 若输入已含冒号（如 {@code chunkscanner:qshop}）则按原样解析。
+     */
+    private static Identifier parseIdentifier(String arg) {
+        if (arg == null || arg.isEmpty()) return ChunkScannerMod.ID_UNKNOWN;
+        Identifier parsed = Identifier.tryParse(arg);
+        if (parsed != null) return parsed;
+        // 兜底：裸名补全命名空间，但路径非法（含大写/中文等）时降级为哨兵避免崩溃
+        try {
+            return ChunkScannerMod.id(arg);
+        } catch (RuntimeException e) {
+            ChunkScannerMod.LOGGER.warn("Invalid analyzer id '{}', fell back to unknown", arg);
+            return ChunkScannerMod.ID_UNKNOWN;
         }
     }
 
@@ -751,8 +773,8 @@ public class ChunkScannerCommands {
                 .formatted(Formatting.GOLD, Formatting.BOLD));
         for (DbFileUtil.FileMeta meta : files) {
             String sizeStr = GuiUtil.formatSize(meta.fileSize());
-            String aName = meta.analyzerId() != null && !meta.analyzerId().isEmpty()
-                    ? meta.analyzerId() : "?";
+            String aName = meta.analyzerId() != null && !ChunkScannerMod.ID_UNKNOWN.equals(meta.analyzerId())
+                    ? meta.analyzerId().toString() : "?";
             sendMsg(client, Text.literal("  ")
                     .append(Text.literal(meta.scanId()).formatted(Formatting.YELLOW))
                     .append(Text.literal(" [" + aName + "]").formatted(Formatting.GRAY))

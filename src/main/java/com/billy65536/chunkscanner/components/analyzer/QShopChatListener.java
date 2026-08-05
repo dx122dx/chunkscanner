@@ -548,7 +548,7 @@ public final class QShopChatListener {
     private static boolean enhanceRecordAt(com.billy65536.chunkscanner.core.ChunkScanner scanner,
                                            PendingClick click, ChatItemExtractor.ExtractedItem item) {
         for (var session : scanner.getActiveSessions()) {
-            if (!"qshop".equals(session.analyzer.getId())) continue;
+            if (!ChunkScannerMod.id("qshop").equals(session.analyzer.getId())) continue;
 
             IChunkDb db = session.db;
             if (db == null) continue;
@@ -621,7 +621,7 @@ public final class QShopChatListener {
         }
 
         for (var session : scanner.getActiveSessions()) {
-            if (!"qshop".equals(session.analyzer.getId())) continue;
+            if (!ChunkScannerMod.id("qshop").equals(session.analyzer.getId())) continue;
 
             IChunkDb db = session.db;
             if (db == null) continue;
@@ -689,7 +689,7 @@ public final class QShopChatListener {
 
         boolean removedAny = false;
         for (var session : scanner.getActiveSessions()) {
-            if (!"qshop".equals(session.analyzer.getId())) continue;
+            if (!ChunkScannerMod.id("qshop").equals(session.analyzer.getId())) continue;
 
             IChunkDb db = session.db;
             if (db == null) continue;

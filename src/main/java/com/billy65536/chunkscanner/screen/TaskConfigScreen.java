@@ -15,6 +15,7 @@ import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
+import net.minecraft.util.Identifier;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -111,12 +112,12 @@ public class TaskConfigScreen extends Screen {
 
     // ==================== 构造与初始化 ====================
 
-    public TaskConfigScreen(Screen parent, ChunkScanner scanner, String initialAnalyzerId, String initialScanId) {
+    public TaskConfigScreen(Screen parent, ChunkScanner scanner, Identifier initialAnalyzerId, String initialScanId) {
         this(parent, scanner, initialAnalyzerId, initialScanId, null);
     }
 
     public TaskConfigScreen(Screen parent, ChunkScanner scanner,
-                            String initialAnalyzerId, String initialScanId,
+                            Identifier initialAnalyzerId, String initialScanId,
                             TaskConfig existingConfig) {
         super(Text.translatable("chunkscanner.task_config.title"));
         this.parent = parent;
@@ -398,7 +399,7 @@ public class TaskConfigScreen extends Screen {
         String id = idField.getText().trim();
         if (id.isEmpty()) id = defaultScanId;
         if (analyzerList.isEmpty()) return;
-        String analyzerId = analyzerList.get(selectedAnalyzerIdx).getId();
+        Identifier analyzerId = analyzerList.get(selectedAnalyzerIdx).getId();
         MinecraftClient client = MinecraftClient.getInstance();
         scanner.start(client, analyzerId, id, config);
         client.setScreen(parent);

@@ -5,6 +5,9 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
+
+import com.billy65536.chunkscanner.ChunkScannerMod;
 
 import java.util.Collection;
 
@@ -20,7 +23,7 @@ class AnalyzerRegistryTest {
     /** 创建一个匿名 IChunkAnalyzer 用于测试。 */
     private static IChunkAnalyzer createAnalyzer(String id, String name) {
         return new IChunkAnalyzer() {
-            @Override public String getId() { return id; }
+            @Override public Identifier getId() { return ChunkScannerMod.id(id); }
             @Override public Text getName() { return Text.literal(name); }
             @Override public Text getDescription() { return Text.literal("desc: " + name); }
             @Override
@@ -43,16 +46,16 @@ class AnalyzerRegistryTest {
             IChunkAnalyzer analyzer = createAnalyzer("test.analyzer.get1", "Test Get");
             AnalyzerRegistry.register(analyzer);
 
-            IChunkAnalyzer retrieved = AnalyzerRegistry.get("test.analyzer.get1");
+            IChunkAnalyzer retrieved = AnalyzerRegistry.get(ChunkScannerMod.id("test.analyzer.get1"));
             assertNotNull(retrieved);
-            assertEquals("test.analyzer.get1", retrieved.getId());
+            assertEquals(ChunkScannerMod.id("test.analyzer.get1"), retrieved.getId());
             assertEquals("Test Get", retrieved.getName().getString());
         }
 
         @Test
         @DisplayName("未注册的 id 返回 null")
         void unregisteredId_shouldReturnNull() {
-            assertNull(AnalyzerRegistry.get("nonexistent.analyzer.id.xyz"));
+            assertNull(AnalyzerRegistry.get(ChunkScannerMod.id("nonexistent.analyzer.id.xyz")));
         }
 
         @Test
@@ -64,7 +67,7 @@ class AnalyzerRegistryTest {
             AnalyzerRegistry.register(first);
             AnalyzerRegistry.register(second);
 
-            IChunkAnalyzer retrieved = AnalyzerRegistry.get("test.analyzer.dup");
+            IChunkAnalyzer retrieved = AnalyzerRegistry.get(ChunkScannerMod.id("test.analyzer.dup"));
             assertNotNull(retrieved);
             assertEquals("Second", retrieved.getName().getString());
         }
@@ -72,10 +75,10 @@ class AnalyzerRegistryTest {
         @Test
         @DisplayName("注册 null id 的分析器 → get(null) 返回 null")
         void nullId_shouldReturnNull() {
-            IChunkAnalyzer analyzer = createAnalyzer("test.analyzer.nullGet", "Test");
+            IChunkAnalyzer analyzer = createAnalyzer("test.analyzer.nullget", "Test");
             AnalyzerRegistry.register(analyzer);
 
-            assertNull(AnalyzerRegistry.get(null));
+            assertNull(AnalyzerRegistry.get((Identifier) null));
         }
     }
 

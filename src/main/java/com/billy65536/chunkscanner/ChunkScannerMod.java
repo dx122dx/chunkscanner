@@ -32,6 +32,7 @@ import net.minecraft.text.HoverEvent;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
+import net.minecraft.util.Identifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -186,7 +187,7 @@ public class ChunkScannerMod implements ClientModInitializer {
 
         // 注册分析器
         AnalyzerRegistry.register(new SignAnalyzer());
-        AnalyzerRegistry.register(new QShopAnalyzer(), "qshop_view");
+        AnalyzerRegistry.register(new QShopAnalyzer(), id("qshop_view"));
 
         // 注册 DbViewProvider 类型（提供数据库浏览的不同视图）
         DbViewProviderRegistry.register(new RawDbProvider.Type());
@@ -247,6 +248,13 @@ public class ChunkScannerMod implements ClientModInitializer {
 
         LOGGER.info("ChunkScanner initialized! /cs help");
     }
+
+    public static Identifier id(String path) {
+        return new Identifier(MOD_ID, path);
+    }
+
+    /** 预定义的"未知/未定义"哨兵（用于兼容旧文件或缺失 analyzerId 的场景）。 */
+    public static final Identifier ID_UNKNOWN = Identifier.of("undefined", "undefined");
 
     /**
      * 展示 Baritone 风险警告消息（加入服务器/世界时触发）。

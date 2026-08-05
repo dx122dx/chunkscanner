@@ -5,6 +5,7 @@ import net.minecraft.block.entity.SignBlockEntity;
 import net.minecraft.block.entity.SignText;
 import net.minecraft.inventory.Inventory;
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.world.World;
@@ -352,8 +353,8 @@ public class QShopAnalyzer implements IChunkAnalyzer {
     // ==================== 分析器元数据 ====================
 
     @Override
-    public String getId() {
-        return "qshop";
+    public Identifier getId() {
+        return ChunkScannerMod.id("qshop");
     }
 
     @Override

@@ -6,6 +6,10 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import net.minecraft.util.Identifier;
+
+import com.billy65536.chunkscanner.ChunkScannerMod;
+
 import java.nio.file.Path;
 
 /**
@@ -156,7 +160,7 @@ class ChunkDbTest {
 
         private final IChunkDb stubDb = new IChunkDb() {
             @Override public String getScanId() { return "test"; }
-            @Override public String getAnalyzerId() { return ""; }
+            @Override public Identifier getAnalyzerId() { return ChunkScannerMod.ID_UNKNOWN; }
             @Override public long getStorageSize() { return 0; }
             @Override public long getLastModifiedTime() { return 0; }
             @Override public int intern(String s) { return 0; }

@@ -22,6 +22,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
+import net.minecraft.util.Identifier;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.db.DbExportUtil;
@@ -201,16 +202,16 @@ public class DatabaseScreen extends Screen {
      * 经 DbViewProviderRegistry 获取，不直接依赖任何具体的 view_provider 实现（避免 screen→components 耦合）。
      * 若默认视图不可用，回退到 "raw" 视图。
      */
-    private static IDbViewProvider createDefaultViewProvider(IChunkDb db, String analyzerId) {
-        String viewId = AnalyzerRegistry.getDefaultViewProvider(analyzerId);
+    private static IDbViewProvider createDefaultViewProvider(IChunkDb db, Identifier analyzerId) {
+        Identifier viewId = AnalyzerRegistry.getDefaultViewProvider(analyzerId);
         IDbViewProvider provider = createView(viewId, db);
         if (provider == null) {
-            provider = createView("raw", db);
+            provider = createView(ChunkScannerMod.id("raw"), db);
         }
         return provider;
     }
 
-    private static IDbViewProvider createView(String viewId, IChunkDb db) {
+    private static IDbViewProvider createView(Identifier viewId, IChunkDb db) {
         DbViewProviderRegistry.ITypeDescriptor desc = DbViewProviderRegistry.get(viewId);
         if (desc == null) return null;
         return desc.create(db);
@@ -278,7 +279,7 @@ public class DatabaseScreen extends Screen {
     private boolean isCurrentTypeApplicable() {
         if (rawChunkDb == null || viewTypes.isEmpty()) return true;
         DbViewProviderRegistry.ITypeDescriptor selectedType = viewTypes.get(selectedViewTypeIdx);
-        Set<String> applicable = selectedType.applicableAnalyzers();
+        Set<Identifier> applicable = selectedType.applicableAnalyzers();
         if (applicable.isEmpty()) return true;
         return applicable.contains(rawChunkDb.getAnalyzerId());
     }
@@ -639,8 +640,8 @@ public class DatabaseScreen extends Screen {
             int color = hovered ? 0xFFFF55 : 0xFFFFFF;
 
             MutableText label = Text.literal(meta.scanId());
-            String analyzerId = meta.analyzerId();
-            if (analyzerId != null && !analyzerId.isEmpty()) {
+            Identifier analyzerId = meta.analyzerId();
+            if (analyzerId != null && !ChunkScannerMod.ID_UNKNOWN.equals(analyzerId)) {
                 label = label.append(" [").append(GuiUtil.getAnalyzerDisplayName(analyzerId)).append("]").formatted(Formatting.YELLOW);
             }
             context.drawTextWithShadow(textRenderer, label, x, rowY, color);

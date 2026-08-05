@@ -1,8 +1,11 @@
 package com.billy65536.chunkscanner.core.db;
 
+import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.AnalyzerRegistry;
 import com.billy65536.chunkscanner.core.IChunkDb;
 import com.google.gson.Gson;
+
+import net.minecraft.util.Identifier;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
@@ -86,13 +89,13 @@ public final class DbPackage {
         List<String> warnings = new ArrayList<>();
 
         // ---- 字段合法性 ----
-        if (meta.analyzerId() == null || meta.analyzerId().isEmpty()) {
+        if (meta.analyzerId() == null) {
             errors.add("Field 'scannerId' (analyzerId) is missing or empty");
         } else if (AnalyzerRegistry.get(meta.analyzerId()) == null) {
             errors.add("Field 'scannerId' (analyzerId) is not a registered analyzer: " + meta.analyzerId());
         }
 
-        if (meta.databaseType() == null || meta.databaseType().isEmpty()) {
+        if (meta.databaseType() == null) {
             warnings.add("Field 'databaseType' is missing; will fall back to default factory");
         } else if (IChunkDb.FactoryRegistry.get(meta.databaseType()) == null) {
             errors.add("Field 'databaseType' refers to unknown factory: " + meta.databaseType());
@@ -233,8 +236,8 @@ public final class DbPackage {
      * @param mainFile     主数据文件相对名（可为 null）
      * @param files        各文件声明（name + sha256）
      */
-    public record Meta(String exportTime, String databaseName, String analyzerId,
-                       String databaseType, String mainFile, List<FileEntry> files) {
+    public record Meta(String exportTime, String databaseName, Identifier analyzerId,
+                       Identifier databaseType, String mainFile, List<FileEntry> files) {
 
         /** 从输入流解析 metadata.json。 */
         public static Meta parse(InputStream in) throws IOException {
@@ -246,9 +249,13 @@ public final class DbPackage {
             }
             String exportTime = optString(obj, "exportTime");
             String databaseName = optString(obj, "databaseName");
-            String analyzerId = optString(obj, "scannerId");
-            String databaseType = optString(obj, "databaseType");
+            String analyzerRaw = optString(obj, "scannerId");
+            String databaseRaw = optString(obj, "databaseType");
             String mainFile = optString(obj, "mainFile");
+
+            // 兼容旧包：无命名空间时回退为 chunkscanner:<原值>
+            Identifier analyzerId = (analyzerRaw != null) ? parseIdentifier(analyzerRaw) : null;
+            Identifier databaseType = (databaseRaw != null) ? parseIdentifier(databaseRaw) : null;
 
             List<FileEntry> files = new ArrayList<>();
             if (obj.has("files") && obj.get("files").isJsonArray()) {
@@ -259,6 +266,13 @@ public final class DbPackage {
                 }
             }
             return new Meta(exportTime, databaseName, analyzerId, databaseType, mainFile, files);
+        }
+
+        /** 解析标识符，兼容旧格式（无命名空间）。空字符串视作未定义哨兵。 */
+        private static Identifier parseIdentifier(String raw) {
+            if (raw == null || raw.isEmpty()) return ChunkScannerMod.ID_UNKNOWN;
+            Identifier parsed = (raw.indexOf(':') >= 0) ? Identifier.tryParse(raw) : ChunkScannerMod.id(raw);
+            return (parsed != null) ? parsed : ChunkScannerMod.ID_UNKNOWN;
         }
 
         private static String optString(JsonObject obj, String key) {

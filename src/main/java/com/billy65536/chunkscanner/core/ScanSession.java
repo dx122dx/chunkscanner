@@ -16,6 +16,7 @@ import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.TaskConfig;
 
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkSectionPos;
 import net.minecraft.world.World;
@@ -104,7 +105,7 @@ public class ScanSession {
     /**
      * 通过 FactoryRegistry 创建数据库实例。
      */
-    private static IChunkDb createDb(String scanId, String analyzerId) {
+    private static IChunkDb createDb(String scanId, Identifier analyzerId) {
         IChunkDb.IFactory factory = IChunkDb.FactoryRegistry.getDefault();
         if (factory == null) {
             throw new IllegalStateException("No ChunkDb factory registered");

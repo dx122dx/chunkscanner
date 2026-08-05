@@ -2,6 +2,8 @@ package com.billy65536.chunkscanner.components.db;
 
 import com.billy65536.chunkscanner.core.db.DbFileUtil;
 
+import com.billy65536.chunkscanner.ChunkScannerMod;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -41,7 +43,7 @@ class DbFileUtilTest {
         @Test
         @DisplayName("isEmpty()：scanId 非空 → false")
         void nonEmptyScanId_shouldNotBeEmpty() {
-            DbFileUtil.FileMeta meta = new DbFileUtil.FileMeta("test-scan", "analyzer", 100, 200, null);
+            DbFileUtil.FileMeta meta = new DbFileUtil.FileMeta("test-scan", ChunkScannerMod.id("analyzer"), 100, 200, null);
             assertFalse(meta.isEmpty());
         }
 
@@ -49,10 +51,10 @@ class DbFileUtilTest {
         @DisplayName("构造后各字段可正确访问")
         void constructor_shouldSetAllFields() {
             Path fakePath = Path.of("/tmp/test.db");
-            DbFileUtil.FileMeta meta = new DbFileUtil.FileMeta("scan-1", "qshop", 4096, 1234567890000L, fakePath);
+            DbFileUtil.FileMeta meta = new DbFileUtil.FileMeta("scan-1", ChunkScannerMod.id("qshop"), 4096, 1234567890000L, fakePath);
 
             assertEquals("scan-1", meta.scanId());
-            assertEquals("qshop", meta.analyzerId());
+            assertEquals(ChunkScannerMod.id("qshop"), meta.analyzerId());
             assertEquals(4096, meta.fileSize());
             assertEquals(1234567890000L, meta.lastModified());
             assertEquals(fakePath, meta.filePath());
@@ -61,8 +63,8 @@ class DbFileUtilTest {
         @Test
         @DisplayName("相同值的 FileMeta 应相等")
         void equals_sameValues_shouldBeEqual() {
-            DbFileUtil.FileMeta a = new DbFileUtil.FileMeta("s", "a", 100, 200, null);
-            DbFileUtil.FileMeta b = new DbFileUtil.FileMeta("s", "a", 100, 200, null);
+            DbFileUtil.FileMeta a = new DbFileUtil.FileMeta("s", ChunkScannerMod.id("a"), 100, 200, null);
+            DbFileUtil.FileMeta b = new DbFileUtil.FileMeta("s", ChunkScannerMod.id("a"), 100, 200, null);
             assertEquals(a, b);
             assertEquals(a.hashCode(), b.hashCode());
         }
@@ -70,15 +72,15 @@ class DbFileUtilTest {
         @Test
         @DisplayName("不同 scanId 应不相等")
         void equals_differentScanId_shouldNotBeEqual() {
-            DbFileUtil.FileMeta a = new DbFileUtil.FileMeta("s1", "", 0, 0, null);
-            DbFileUtil.FileMeta b = new DbFileUtil.FileMeta("s2", "", 0, 0, null);
+            DbFileUtil.FileMeta a = new DbFileUtil.FileMeta("s1", ChunkScannerMod.ID_UNKNOWN, 0, 0, null);
+            DbFileUtil.FileMeta b = new DbFileUtil.FileMeta("s2", ChunkScannerMod.ID_UNKNOWN, 0, 0, null);
             assertNotEquals(a, b);
         }
 
         @Test
         @DisplayName("null filePath 可正常处理")
         void nullFilePath_shouldWork() {
-            DbFileUtil.FileMeta meta = new DbFileUtil.FileMeta("scan", "a", 0, 0, null);
+            DbFileUtil.FileMeta meta = new DbFileUtil.FileMeta("scan", ChunkScannerMod.id("a"), 0, 0, null);
             assertNull(meta.filePath());
             assertFalse(meta.isEmpty());
         }
@@ -86,10 +88,10 @@ class DbFileUtilTest {
         @Test
         @DisplayName("toString 包含 scanId 和 analyzerId")
         void toString_containsKeyInfo() {
-            DbFileUtil.FileMeta meta = new DbFileUtil.FileMeta("scanX", "analyzerY", 1024, 500, null);
+            DbFileUtil.FileMeta meta = new DbFileUtil.FileMeta("scanX", ChunkScannerMod.id("analyzer_y"), 1024, 500, null);
             String s = meta.toString();
             assertTrue(s.contains("scanX"));
-            assertTrue(s.contains("analyzerY"));
+            assertTrue(s.contains("analyzer_y"));
         }
     }
 
@@ -140,42 +142,53 @@ class DbFileUtilTest {
 
             assertFalse(meta.isEmpty());
             assertEquals("my-scan-v1", meta.scanId());
-            assertEquals("", meta.analyzerId());
+            assertEquals(ChunkScannerMod.ID_UNKNOWN, meta.analyzerId());
             assertTrue(meta.fileSize() > 0);
             assertEquals(file, meta.filePath());
         }
 
         @Test
-        @DisplayName("version=2 文件 → 正确解析 scanId 和 analyzerId")
+        @DisplayName("version=2 文件（旧格式纯名）→ 兼容解析为 chunkscanner:<原值>")
         void readFileMeta_v2_shouldParseBoth() throws Exception {
             Path file = writeFile("scan-v2", 2, "qshop");
             DbFileUtil.FileMeta meta = DbFileUtil.readFileMeta(file);
 
             assertFalse(meta.isEmpty());
             assertEquals("scan-v2", meta.scanId());
-            assertEquals("qshop", meta.analyzerId());
+            assertEquals(ChunkScannerMod.id("qshop"), meta.analyzerId());
         }
 
         @Test
-        @DisplayName("version=3 文件 → 正常解析")
+        @DisplayName("version=3 文件（旧格式纯名）→ 兼容解析为 chunkscanner:<原值>")
         void readFileMeta_v3_shouldWork() throws Exception {
             Path file = writeFile("scan-v3", 3, "sign");
             DbFileUtil.FileMeta meta = DbFileUtil.readFileMeta(file);
 
             assertFalse(meta.isEmpty());
             assertEquals("scan-v3", meta.scanId());
-            assertEquals("sign", meta.analyzerId());
+            assertEquals(ChunkScannerMod.id("sign"), meta.analyzerId());
+        }
+
+        @Test
+        @DisplayName("version=2 文件且 analyzerId 含命名空间 → 直接解析")
+        void readFileMeta_v2_namespaced_shouldParse() throws Exception {
+            Path file = writeFile("scan-ns", 2, "chunkscanner:qshop");
+            DbFileUtil.FileMeta meta = DbFileUtil.readFileMeta(file);
+
+            assertFalse(meta.isEmpty());
+            assertEquals("scan-ns", meta.scanId());
+            assertEquals(ChunkScannerMod.id("qshop"), meta.analyzerId());
         }
 
         @Test
         @DisplayName("scanId 含中文字符 → 正确解析 UTF-8")
         void readFileMeta_chineseScanId_shouldParseUtf8() throws Exception {
-            Path file = writeFile("扫描任务-测试", 2, "分析器");
+            Path file = writeFile("扫描任务-测试", 2, "analyzer_cn");
             DbFileUtil.FileMeta meta = DbFileUtil.readFileMeta(file);
 
             assertFalse(meta.isEmpty());
             assertEquals("扫描任务-测试", meta.scanId());
-            assertEquals("分析器", meta.analyzerId());
+            assertEquals(ChunkScannerMod.id("analyzer_cn"), meta.analyzerId());
         }
 
         @Test
@@ -307,7 +320,7 @@ class DbFileUtilTest {
             assertNotNull(meta);
             assertFalse(meta.isEmpty());
             assertEquals("test", meta.scanId());
-            assertEquals("", meta.analyzerId()); // analyzer 解析失败，回退为空
+            assertEquals(ChunkScannerMod.ID_UNKNOWN, meta.analyzerId()); // analyzer 解析失败，回退为哨兵
         }
 
         @Test

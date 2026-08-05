@@ -18,6 +18,7 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
+import net.minecraft.util.Identifier;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -146,7 +147,7 @@ public class ChunkScannerScreen extends Screen {
             id = defaultScanId;
         }
         if (analyzerList.isEmpty()) return;
-        String analyzerId = analyzerList.get(selectedAnalyzerIdx).getId();
+        Identifier analyzerId = analyzerList.get(selectedAnalyzerIdx).getId();
         ChunkScannerMod.LOGGER.debug("GUI create scan: analyzer={} id={}", analyzerId, id);
         MinecraftClient client = MinecraftClient.getInstance();
         scanner.start(client, analyzerId, id, null);
@@ -161,7 +162,7 @@ public class ChunkScannerScreen extends Screen {
             id = defaultScanId;
         }
         if (analyzerList.isEmpty()) return;
-        String analyzerId = analyzerList.get(selectedAnalyzerIdx).getId();
+        Identifier analyzerId = analyzerList.get(selectedAnalyzerIdx).getId();
         MinecraftClient client = MinecraftClient.getInstance();
         client.setScreen(new TaskConfigScreen(this, scanner, analyzerId, id));
     }

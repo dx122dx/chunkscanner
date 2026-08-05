@@ -4,11 +4,13 @@ import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.components.analyzer.QShopContract;
 import com.billy65536.chunkscanner.components.analyzer.QShopDbAdapter;
 import com.billy65536.chunkscanner.core.IChunkDb;
@@ -197,7 +199,7 @@ public class QShopDbViewProvider implements IDbViewProvider {
     /** QShop 视图类型描述符：解析 QShop 数据为结构化展示。仅适用于 qshop 分析器。 */
     public static class Type implements DbViewProviderRegistry.ITypeDescriptor {
         @Override
-        public String getId() { return "qshop_view"; }
+        public Identifier getId() { return ChunkScannerMod.id("qshop_view"); }
 
         @Override
         public Text getName() {
@@ -210,13 +212,13 @@ public class QShopDbViewProvider implements IDbViewProvider {
         }
 
         @Override
-        public Set<String> applicableAnalyzers() {
-            return Set.of("qshop");
+        public Set<Identifier> applicableAnalyzers() {
+            return Set.of(ChunkScannerMod.id("qshop"));
         }
 
         @Override
         public IDbViewProvider create(IChunkDb db) {
-            if (!"qshop".equals(db.getAnalyzerId())) return null;
+            if (!ChunkScannerMod.id("qshop").equals(db.getAnalyzerId())) return null;
             return new QShopDbViewProvider(db);
         }
     }

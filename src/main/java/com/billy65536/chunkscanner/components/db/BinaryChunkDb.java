@@ -19,6 +19,8 @@ import com.billy65536.chunkscanner.core.db.DbFileUtil;
 import com.billy65536.chunkscanner.core.CoreUtil;
 import com.billy65536.chunkscanner.config.TaskConfig;
 
+import net.minecraft.util.Identifier;
+
 /**
  * 紧凑二进制 ChunkDb 实现。
  *
@@ -75,7 +77,7 @@ public class BinaryChunkDb implements IChunkDb {
     /** 数据库扩展标识（由 Factory 指定）。 */
     private final String dbExt;
     /** 创建该数据库的分析器 ID。 */
-    private String analyzerId;
+    private Identifier analyzerId;
     /** 用于文件名的分析器 ID（sanitized）。 */
     private final String safeAnalyzerId;
     /** 子数据库 ID，0 表示主数据库。 */
@@ -110,10 +112,10 @@ public class BinaryChunkDb implements IChunkDb {
     private final boolean metadataOnly;
 
     public BinaryChunkDb(String scanId) {
-        this(scanId, "");
+        this(scanId, ChunkScannerMod.ID_UNKNOWN);
     }
 
-    public BinaryChunkDb(String scanId, String analyzerId) {
+    public BinaryChunkDb(String scanId, Identifier analyzerId) {
         this(scanId, analyzerId, false);
     }
 
@@ -122,7 +124,7 @@ public class BinaryChunkDb implements IChunkDb {
      *
      * @param metadataOnly 若为 true，只存储元数据不加载文件内容，用于文件列表浏览。
      */
-    public BinaryChunkDb(String scanId, String analyzerId, boolean metadataOnly) {
+    public BinaryChunkDb(String scanId, Identifier analyzerId, boolean metadataOnly) {
         this(scanId, analyzerId, metadataOnly, ChunkScannerMod.getDbDir(), "bin", 0);
     }
 
@@ -135,7 +137,7 @@ public class BinaryChunkDb implements IChunkDb {
      * @param dbExt  数据库扩展标识（如 "bin"），决定文件扩展名。
      * @param subId 子数据库 ID，0 表示主数据库。子数据库使用 .sub_{subId}. 文件名段。
      */
-    public BinaryChunkDb(String scanId, String analyzerId, boolean metadataOnly, Path dbDir, String dbExt, int subId) {
+    public BinaryChunkDb(String scanId, Identifier analyzerId, boolean metadataOnly, Path dbDir, String dbExt, int subId) {
         this.scanId = scanId;
         this.analyzerId = analyzerId;
         this.dbDir = dbDir != null ? dbDir : ChunkScannerMod.getDbDir();
@@ -162,7 +164,7 @@ public class BinaryChunkDb implements IChunkDb {
     public String getScanId() { return scanId; }
 
     @Override
-    public String getFactoryId() { return "binary"; }
+    public Identifier getFactoryId() { return ChunkScannerMod.id("binary"); }
 
     // ==================== 字符串池 ====================
 
@@ -360,7 +362,10 @@ public class BinaryChunkDb implements IChunkDb {
                 if (analyzerLen > 0) {
                     byte[] analyzerBytes = new byte[analyzerLen];
                     readFully(ch, ByteBuffer.wrap(analyzerBytes), analyzerLen);
-                    this.analyzerId = new String(analyzerBytes, StandardCharsets.UTF_8);
+                    String raw = new String(analyzerBytes, StandardCharsets.UTF_8);
+                    // 兼容旧文件：无命名空间时回退为 chunkscanner:<原值>；含冒号则按完整标识符解析
+                    Identifier parsed = (raw.indexOf(':') >= 0) ? Identifier.tryParse(raw) : ChunkScannerMod.id(raw);
+                    this.analyzerId = (parsed != null) ? parsed : ChunkScannerMod.id(raw);
                 }
             }
 
@@ -520,7 +525,8 @@ public class BinaryChunkDb implements IChunkDb {
             Files.createDirectories(dbDir);
             Path tmpPath = dataPath().resolveSibling(fileName() + ".tmp");
             byte[] scanIdBytes = scanId.getBytes(StandardCharsets.UTF_8);
-            byte[] analyzerBytes = (analyzerId != null ? analyzerId : "").getBytes(StandardCharsets.UTF_8);
+            byte[] analyzerBytes = (analyzerId != null ? analyzerId : ChunkScannerMod.ID_UNKNOWN)
+                    .toString().getBytes(StandardCharsets.UTF_8);
 
             try (FileChannel ch = FileChannel.open(tmpPath,
                     StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
@@ -640,8 +646,8 @@ public class BinaryChunkDb implements IChunkDb {
     }
 
     /** 创建此数据库的分析器名称。 */
-    public String getAnalyzerId() {
-        return analyzerId != null ? analyzerId : "";
+    public Identifier getAnalyzerId() {
+        return analyzerId != null ? analyzerId : ChunkScannerMod.ID_UNKNOWN;
     }
 
     /** 文件大小（字节）。 */
@@ -685,18 +691,18 @@ public class BinaryChunkDb implements IChunkDb {
     /** BinaryChunkDb 的工厂实现，注册为默认数据库引擎。 */
     public static class Factory implements IChunkDb.IFactory {
         @Override
-        public String getId() { return "binary"; }
+        public Identifier getId() { return ChunkScannerMod.id("binary"); }
 
         @Override
         public String getExt() { return "bin"; }
 
         @Override
-        public IChunkDb create(String scanId, String analyzerId, Path dbDir) {
+        public IChunkDb create(String scanId, Identifier analyzerId, Path dbDir) {
             return new BinaryChunkDb(scanId, analyzerId, false, dbDir, getExt(), 0);
         }
 
         @Override
-        public IChunkDb createMetadataOnly(String scanId, String analyzerId, Path dbDir) {
+        public IChunkDb createMetadataOnly(String scanId, Identifier analyzerId, Path dbDir) {
             return new BinaryChunkDb(scanId, analyzerId, true, dbDir, getExt(), 0);
         }
     }
@@ -722,8 +728,10 @@ public class BinaryChunkDb implements IChunkDb {
 
     // ==================== 文件名工具 ====================
 
-    /** 将分析器名称转换为符合文件名规范的标识符。 */
-    private static String sanitizeAnalyzerId(String name) {
+    /** 将分析器标识符转换为符合文件名规范的片段（取 name 部分，命名空间不参与文件名）。 */
+    private static String sanitizeAnalyzerId(Identifier id) {
+        if (id == null) return "unknown";
+        String name = id.getPath();
         if (name == null || name.isEmpty()) return "unknown";
         return name.toLowerCase().replaceAll("[^a-z0-9_-]", "_");
     }

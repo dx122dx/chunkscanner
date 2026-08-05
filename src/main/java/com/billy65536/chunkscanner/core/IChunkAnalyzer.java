@@ -1,6 +1,7 @@
 package com.billy65536.chunkscanner.core;
 
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 import net.minecraft.world.World;
 import net.minecraft.world.chunk.WorldChunk;
 
@@ -39,7 +40,7 @@ public interface IChunkAnalyzer {
     }
 
     /** 唯一标识符，不可变，用于注册和命令选择。 */
-    String getId();
+    Identifier getId();
 
     /** 显示名称，用于 GUI 展示。 */
     Text getName();

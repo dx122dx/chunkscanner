@@ -163,7 +163,7 @@ public final class QShopHighlightRenderer {
         List<ScanSession> sessions = new ArrayList<>(scanner.getActiveSessions());
 
         for (ScanSession session : sessions) {
-            if (!"qshop".equals(session.analyzer.getId())) continue;
+            if (!ChunkScannerMod.id("qshop").equals(session.analyzer.getId())) continue;
 
             QShopDbAdapter adapter = new QShopDbAdapter(session.db);
             List<QShopDbAdapter.Record> records;

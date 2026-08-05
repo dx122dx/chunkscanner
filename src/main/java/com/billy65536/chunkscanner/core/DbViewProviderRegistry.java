@@ -6,13 +6,14 @@ import java.util.Set;
 import com.billy65536.chunkscanner.ChunkScannerMod;
 
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 
 import java.util.LinkedHashMap;
 import java.util.Collections;
 
 /** 全局视图类型注册表。 */
 public final class DbViewProviderRegistry {
-    private static final Map<String, ITypeDescriptor> types = new LinkedHashMap<>();
+    private static final Map<Identifier, ITypeDescriptor> types = new LinkedHashMap<>();
 
     /** 注册一个视图类型。 */
     public static void register(ITypeDescriptor type) {
@@ -26,7 +27,7 @@ public final class DbViewProviderRegistry {
     }
 
     /** 通过 id 获取类型。 */
-    public static ITypeDescriptor get(String id) {
+    public static ITypeDescriptor get(Identifier id) {
         return types.get(id);
     }
 
@@ -41,7 +42,7 @@ public final class DbViewProviderRegistry {
      */
     public interface ITypeDescriptor {
         /** 唯一标识符，不可变。 */
-        String getId();
+        Identifier getId();
 
         /** 显示名称（本地化）。 */
         Text getName();
@@ -50,7 +51,7 @@ public final class DbViewProviderRegistry {
         Text getDescription();
 
         /** 适用的分析器 id 集合。空集表示适用于所有。 */
-        Set<String> applicableAnalyzers();
+        Set<Identifier> applicableAnalyzers();
 
         /**
          * 根据底层 ChunkDb 创建此类型的 DbViewProvider 实例。

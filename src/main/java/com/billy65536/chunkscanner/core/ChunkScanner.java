@@ -5,6 +5,7 @@ import net.minecraft.text.ClickEvent;
 import net.minecraft.text.HoverEvent;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkSectionPos;
 import net.minecraft.world.chunk.WorldChunk;
@@ -64,10 +65,11 @@ public class ChunkScanner {
         return AnalyzerRegistry.getAll();
     }
 
-    /** @deprecated 使用 {@link AnalyzerRegistry#get(String)} */
+    /** @deprecated 使用 {@link AnalyzerRegistry#get(Identifier)} */
     @Deprecated
     public IChunkAnalyzer getAnalyzer(String id) {
-        return AnalyzerRegistry.get(id);
+        Identifier parsed = Identifier.tryParse(id);
+        return AnalyzerRegistry.get((parsed != null) ? parsed : ChunkScannerMod.id(id));
     }
 
     /** 获取全局配置引用（只读）。 */
@@ -110,7 +112,7 @@ public class ChunkScanner {
     // ==================== 命令接口 ====================
 
     /** 使用默认配置启动扫描任务。scanId 为可选参数，不传则自动生成时间戳 id。 */
-    public void start(MinecraftClient client, String analyzerId, String scanId) {
+    public void start(MinecraftClient client, Identifier analyzerId, String scanId) {
         start(client, analyzerId, scanId, null);
     }
 
@@ -122,7 +124,7 @@ public class ChunkScanner {
      * @param scanId    扫描任务唯一标识符
      * @param taskConfig 任务级配置（可为 null，使用全局默认）
      */
-    public void start(MinecraftClient client, String analyzerId, String scanId, TaskConfig taskConfig) {
+    public void start(MinecraftClient client, Identifier analyzerId, String scanId, TaskConfig taskConfig) {
         if (client.player == null || client.world == null) {
             CoreUtil.sendMsg(client, Text.translatable(KEY_NOT_IN_WORLD).formatted(Formatting.RED));
             return;
@@ -152,7 +154,7 @@ public class ChunkScanner {
                 .append(Text.literal(" ").formatted(Formatting.WHITE))
                 .append(Text.translatable("chunkscanner.label.analyzer").formatted(Formatting.WHITE)
                         .append(Text.literal(": ")))
-                .append(Text.literal(analyzer.getId()).formatted(Formatting.YELLOW))
+                .append(Text.literal(analyzer.getId().toString()).formatted(Formatting.YELLOW))
                 .append(Text.literal(" ").formatted(Formatting.WHITE))
                 .append(Text.translatable(KEY_STATUS_PENDING).formatted(Formatting.WHITE))
                 .append(Text.literal(": ").formatted(Formatting.WHITE))
@@ -241,7 +243,7 @@ public class ChunkScanner {
      * 从已有数据库文件恢复扫描任务（使用全局默认配置）。
      * 适用于 /cs db reboot 命令。
      */
-    public void startWithDb(MinecraftClient client, String scanId, String analyzerId, IChunkDb existingDb) {
+    public void startWithDb(MinecraftClient client, String scanId, Identifier analyzerId, IChunkDb existingDb) {
         startWithDb(client, scanId, analyzerId, null, existingDb);
     }
 
@@ -250,7 +252,7 @@ public class ChunkScanner {
      * 与 start() 的区别：不创建新的数据库实例，而是复用已有的数据库实例。
      * 这会保留之前扫描的所有数据，继续在已有基础上扫描。
      */
-    public void startWithDb(MinecraftClient client, String scanId, String analyzerId, TaskConfig taskConfig, IChunkDb existingDb) {
+    public void startWithDb(MinecraftClient client, String scanId, Identifier analyzerId, TaskConfig taskConfig, IChunkDb existingDb) {
         if (client.player == null || client.world == null) {
             CoreUtil.sendMsg(client, Text.translatable(KEY_NOT_IN_WORLD).formatted(Formatting.RED));
             return;
@@ -338,7 +340,7 @@ public class ChunkScanner {
                     .append(Text.literal("\"" + s.scanId + "\"").formatted(Formatting.GOLD))
                     .append(s.paused ? Text.literal(" ").append(Text.translatable("chunkscanner.label.paused").formatted(Formatting.YELLOW)) : Text.literal(""))
                     .append(Text.literal(" [").formatted(Formatting.GRAY))
-                    .append(Text.literal(s.analyzer.getId()).formatted(Formatting.YELLOW))
+                    .append(Text.literal(s.analyzer.getId().toString()).formatted(Formatting.YELLOW))
                     .append(Text.literal("]").formatted(Formatting.GRAY)));
 
             CoreUtil.sendMsg(client, Text.literal("  ")
@@ -375,7 +377,7 @@ public class ChunkScanner {
 
         for (IChunkAnalyzer a : AnalyzerRegistry.getAll()) {
             CoreUtil.sendMsg(client, Text.literal("  ")
-                    .append(Text.literal(a.getId()).formatted(Formatting.YELLOW, Formatting.BOLD))
+                    .append(Text.literal(a.getId().toString()).formatted(Formatting.YELLOW, Formatting.BOLD))
                     .append(Text.literal(" — ").formatted(Formatting.GRAY))
                     .append(a.getDescription()));
         }
@@ -425,7 +427,7 @@ public class ChunkScanner {
      */
     public int restartAllSessions(MinecraftClient client) {
         // 收集当前会话信息（保存 TaskConfig 以便恢复）
-        record SessionInfo(String scanId, String analyzerId, TaskConfig taskConfig) {}
+        record SessionInfo(String scanId, Identifier analyzerId, TaskConfig taskConfig) {}
         List<SessionInfo> toRestart = new ArrayList<>();
         for (ScanSession s : sessions.values()) {
             toRestart.add(new SessionInfo(s.scanId, s.analyzer.getId(), s.getTaskConfig()));
