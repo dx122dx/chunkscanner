@@ -4,9 +4,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 import net.minecraft.client.MinecraftClient;
 
@@ -17,34 +15,41 @@ import net.minecraft.client.MinecraftClient;
  * 调用者通过 {@link #tick(MinecraftClient)} 推进队列，当当前目标的
  * 条件满足时自动弹出并返回 {@code true}（表示需要更新导航目标）。</p>
  *
+ * <p>条目与条件成对存放在同一个节点中，因此<b>允许重复坐标入队</b>：
+ * 相同坐标的多个目标各自持有独立条件，互不覆盖。</p>
+ *
  * <p>此包不引用任何 Baritone 类型，职责边界清晰。</p>
  */
 public final class NavigationQueue {
 
-    private final Deque<NavigationEntry> entries = new ArrayDeque<>();
-    private final Map<NavigationEntry, NavigationCondition> conditionalEntries = new LinkedHashMap<>();
+    /** 队列节点：目标 + 其到达条件。条件允许为 {@code null}（表示永不自动弹出）。 */
+    private record Node(NavigationEntry entry, NavigationCondition condition) {}
+
+    private final Deque<Node> nodes = new ArrayDeque<>();
 
     /**
      * 将目标及其到达条件入队。
+     *
+     * <p>重复坐标可安全入队，不会覆盖先前条目的条件。</p>
      */
     public void enqueue(NavigationEntry entry, NavigationCondition condition) {
-        entries.addLast(entry);
-        conditionalEntries.put(entry, condition);
+        nodes.addLast(new Node(entry, condition));
     }
 
     /**
      * 查看队首目标（不移除）。
      */
     public NavigationEntry peek() {
-        return entries.peekFirst();
+        Node head = nodes.peekFirst();
+        return head != null ? head.entry() : null;
     }
 
     /**
      * 获取队首目标对应的到达条件。
      */
     public NavigationCondition peekCondition() {
-        NavigationEntry e = peek();
-        return e != null ? conditionalEntries.get(e) : null;
+        Node head = nodes.peekFirst();
+        return head != null ? head.condition() : null;
     }
 
     /**
@@ -54,12 +59,11 @@ public final class NavigationQueue {
      * @return {@code true} 如果当前目标被弹出
      */
     public boolean tick(MinecraftClient client) {
-        NavigationEntry current = entries.peekFirst();
-        if (current == null) return false;
-        NavigationCondition cond = conditionalEntries.get(current);
+        Node head = nodes.peekFirst();
+        if (head == null) return false;
+        NavigationCondition cond = head.condition();
         if (cond != null && cond.isSatisfied(client)) {
-            entries.pollFirst();
-            conditionalEntries.remove(current);
+            nodes.pollFirst();
             return true;
         }
         return false;
@@ -69,22 +73,25 @@ public final class NavigationQueue {
      * 获取所有队列条目的不可变快照（用于 GoalComposite 构建或 UI 渲染）。
      */
     public List<NavigationEntry> getEntries() {
-        return Collections.unmodifiableList(new ArrayList<>(entries));
+        List<NavigationEntry> snapshot = new ArrayList<>(nodes.size());
+        for (Node n : nodes) {
+            snapshot.add(n.entry());
+        }
+        return Collections.unmodifiableList(snapshot);
     }
 
     /**
      * 清空队列。
      */
     public void clear() {
-        entries.clear();
-        conditionalEntries.clear();
+        nodes.clear();
     }
 
     public boolean isEmpty() {
-        return entries.isEmpty();
+        return nodes.isEmpty();
     }
 
     public int size() {
-        return entries.size();
+        return nodes.size();
     }
 }

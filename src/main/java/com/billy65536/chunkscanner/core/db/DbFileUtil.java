@@ -151,8 +151,12 @@ public final class DbFileUtil {
                     return p;
                 }
             }
-        } catch (IOException ignored) {
-            return dir.resolve("[ERROR - Failed to resolve file path]");
+        } catch (IOException e) {
+            // 不能返回伪造路径（旧实现返回 "[ERROR - ...]"）：调用方会把它当成真实路径
+            // 去 Files.exists / 显示给玩家，且该名字在 Windows 上非法。
+            // 统一退回命名约定路径，由调用方的 exists() 检查处理不存在的情况。
+            ChunkScannerMod.LOGGER.warn("Failed to scan db dir {} for scanId {}: {}",
+                    dir, scanId, e.toString());
         }
         return dir.resolve(stem + ".bin");
     }

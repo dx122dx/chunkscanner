@@ -180,9 +180,13 @@ public final class QShopFilter {
     private boolean matchesPattern(String field, String filter, int mode, Pattern compiledPattern) {
         if (filter == null || filter.isEmpty()) return true;
         if (field == null) return false;
+        // Locale.ROOT：土耳其语等 locale 下 'I'.toLowerCase() 会变成无点 'ı'，
+        // 导致玩家用 "Iron" 搜不到 "iron"。
         return switch (mode) {
-            case PATTERN_CONTAINS -> field.toLowerCase().contains(filter.toLowerCase());
-            case PATTERN_EXCLUDE -> !field.toLowerCase().contains(filter.toLowerCase());
+            case PATTERN_CONTAINS ->
+                    field.toLowerCase(java.util.Locale.ROOT).contains(filter.toLowerCase(java.util.Locale.ROOT));
+            case PATTERN_EXCLUDE ->
+                    !field.toLowerCase(java.util.Locale.ROOT).contains(filter.toLowerCase(java.util.Locale.ROOT));
             case PATTERN_EXACT -> field.equalsIgnoreCase(filter);
             case PATTERN_REGEX -> compiledPattern != null && compiledPattern.matcher(field).find();
             default -> true;

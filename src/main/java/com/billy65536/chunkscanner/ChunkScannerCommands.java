@@ -751,8 +751,7 @@ public class ChunkScannerCommands {
                 ChunkScannerMod.getConfig().integration.baritone;
         baritone.autoEnabled = !baritone.autoEnabled;
         ConfigLoader.save();
-        ChunkScannerNavigation nav = ChunkScannerNavigation.get();
-        nav.setAutoEnabled(baritone.autoEnabled);
+        // 全局导航实例实时读取配置，无需再显式同步（显式 set 反而会固化覆盖值）
         sendMsg(client, Text.translatable("chunkscanner.msg.nav_toggle",
                 baritone.autoEnabled
                         ? Text.translatable("chunkscanner.gui.nav.mode.composite").formatted(Formatting.AQUA)

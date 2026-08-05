@@ -136,9 +136,18 @@ public class ChunkScanner {
             return;
         }
 
+        // 必须先查重再构造：ScanSession 构造函数会打开并加载整个数据库文件，
+        // 对已存在的 scanId 构造一次相当于白读一遍磁盘，且产生一个未被引用的 DB 句柄。
+        if (sessions.containsKey(scanId)) {
+            CoreUtil.sendMsg(client, Text.translatable(KEY_SCAN_EXISTS, scanId, scanId).formatted(Formatting.YELLOW));
+            return;
+        }
+
         ScanSession session = new ScanSession(this, scanId, analyzer, taskConfig);
         ScanSession existing = sessions.putIfAbsent(scanId, session);
         if (existing != null) {
+            // 并发窗口内被抢先注册：释放刚构造出来的会话，避免泄漏文件句柄
+            session.doStop();
             CoreUtil.sendMsg(client, Text.translatable(KEY_SCAN_EXISTS, scanId, scanId).formatted(Formatting.YELLOW));
             return;
         }

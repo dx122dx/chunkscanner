@@ -101,6 +101,13 @@ public class BinaryChunkDb implements IChunkDb {
 
     /** 脏标记：存在未刷写到磁盘的修改时为 true。 */
     private volatile boolean dirty = false;
+    /**
+     * 加载失败标记：load() 因文件损坏或 IO 错误中断时为 true。
+     * 此时内存数据不完整，flush() 必须拒绝写回，否则会用残缺数据覆盖原文件。
+     */
+    private volatile boolean loadFailed = false;
+    /** loadFailed 拒绝写回的告警只打印一次，避免每 tick 刷屏。 */
+    private volatile boolean loadFailWarned = false;
     /** 关闭标记：已调用 close() 时为 true，后续 flush() 将忽略。 */
     private volatile boolean closed = false;
     /** 打开标记：open() 被调用后为 true。 */
@@ -348,7 +355,7 @@ public class BinaryChunkDb implements IChunkDb {
 
             readFully(ch, buf, 6); buf.flip();
             int version = buf.getInt();
-            int scanIdLen = buf.getShort() & 0xFFFF;
+            int scanIdLen = checkLen(buf.getShort() & 0xFFFF, ch, "scanId");
             buf.clear();
 
             byte[] scanIdBytes = new byte[scanIdLen];
@@ -357,7 +364,7 @@ public class BinaryChunkDb implements IChunkDb {
             // analyzerId (version >= 2)
             if (version >= 2) {
                 buf.clear(); readFully(ch, buf, 2); buf.flip();
-                int analyzerLen = buf.getShort() & 0xFFFF;
+                int analyzerLen = checkLen(buf.getShort() & 0xFFFF, ch, "analyzerId");
                 buf.clear();
                 if (analyzerLen > 0) {
                     byte[] analyzerBytes = new byte[analyzerLen];
@@ -372,7 +379,7 @@ public class BinaryChunkDb implements IChunkDb {
             // taskConfig (version >= 4)
             if (version >= 4) {
                 buf.clear(); readFully(ch, buf, 2); buf.flip();
-                int configLen = buf.getShort() & 0xFFFF;
+                int configLen = checkLen(buf.getShort() & 0xFFFF, ch, "taskConfig");
                 buf.clear();
                 if (configLen > 0) {
                     byte[] configBytes = new byte[configLen];
@@ -385,12 +392,13 @@ public class BinaryChunkDb implements IChunkDb {
             buf.clear(); readFully(ch, buf, 4); buf.flip();
             long poolCount = buf.getInt() & 0xFFFFFFFFL;
             buf.clear();
+            poolCount = checkCount(poolCount, version >= 3 ? 8 : 4, ch, "stringPool");
             if (version >= 3) {
                 // v3+: 每条记录带有显式 ID
                 for (long i = 0; i < poolCount; i++) {
                     readFully(ch, buf, 8); buf.flip();
                     int id = buf.getInt();
-                    int len = buf.getInt();
+                    int len = checkLen(buf.getInt(), ch, "stringPool entry");
                     buf.clear();
                     byte[] b = new byte[len];
                     readFully(ch, ByteBuffer.wrap(b), len);
@@ -404,7 +412,7 @@ public class BinaryChunkDb implements IChunkDb {
                 boolean first = true;
                 for (long i = 0; i < poolCount; i++) {
                     readFully(ch, buf, 4); buf.flip();
-                    int len = buf.getInt();
+                    int len = checkLen(buf.getInt(), ch, "stringPool entry");
                     buf.clear();
                     byte[] b = new byte[len];
                     readFully(ch, ByteBuffer.wrap(b), len);
@@ -424,6 +432,7 @@ public class BinaryChunkDb implements IChunkDb {
             buf.clear(); readFully(ch, buf, 4); buf.flip();
             long metaCount = buf.getInt() & 0xFFFFFFFFL;
             buf.clear();
+            metaCount = checkCount(metaCount, 20, ch, "chunkMeta");
             for (long i = 0; i < metaCount; i++) {
                 readFully(ch, buf, 20); buf.flip();
                 int dimPoolId = buf.getInt(), cx = buf.getInt(), cz = buf.getInt();
@@ -435,14 +444,15 @@ public class BinaryChunkDb implements IChunkDb {
             // KV records
             buf.clear(); readFully(ch, buf, 4); buf.flip();
             long kvCount = buf.getInt() & 0xFFFFFFFFL;
+            kvCount = checkCount(kvCount, 8, ch, "kvRecord");
             for (long i = 0; i < kvCount; i++) {
                 buf.clear(); readFully(ch, buf, 4); buf.flip();
-                int keyLen = buf.getInt();
+                int keyLen = checkLen(buf.getInt(), ch, "kv key");
                 byte[] key = new byte[keyLen];
                 readFully(ch, ByteBuffer.wrap(key), keyLen);
 
                 buf.clear(); readFully(ch, buf, 4); buf.flip();
-                int valLen = buf.getInt();
+                int valLen = checkLen(buf.getInt(), ch, "kv value");
                 byte[] val = new byte[valLen];
                 readFully(ch, ByteBuffer.wrap(val), valLen);
 
@@ -487,8 +497,11 @@ public class BinaryChunkDb implements IChunkDb {
             ChunkScannerMod.LOGGER.info("[scan:{}] Loaded {} kv, {} strings, {} metas.",
                     scanId, kvStore.size(), stringPool.size() - 1, chunkScanTime.size());
 
-        } catch (IOException e) {
-            ChunkScannerMod.LOGGER.error("[scan:{}] Load failed: {}", scanId, e.getMessage());
+        } catch (IOException | RuntimeException e) {
+            // 标记加载失败：内存中只有半截数据，禁止后续 flush 覆盖磁盘原文件。
+            loadFailed = true;
+            ChunkScannerMod.LOGGER.error("[scan:{}] Load failed ({}): {} — database is now read-only "
+                    + "to protect the existing file.", scanId, fileName(), e.toString());
         }
     }
 
@@ -497,6 +510,33 @@ public class BinaryChunkDb implements IChunkDb {
         while (buf.hasRemaining()) {
             if (ch.read(buf) < 0) throw new EOFException();
         }
+    }
+
+    /**
+     * 校验从文件读出的长度字段。
+     * 损坏文件可能给出负数或超大长度，直接 {@code new byte[len]} 会抛
+     * NegativeArraySizeException 或 OutOfMemoryError。
+     */
+    private static int checkLen(int len, FileChannel ch, String field) throws IOException {
+        long remaining = ch.size() - ch.position();
+        if (len < 0 || len > remaining) {
+            throw new IOException("Corrupted " + field + " length: " + len
+                    + " (remaining bytes=" + remaining + ")");
+        }
+        return len;
+    }
+
+    /**
+     * 校验记录条数：每条记录至少占 {@code minBytes} 字节，
+     * 条数超过「剩余字节 / minBytes」即可判定文件损坏，避免超长空转循环。
+     */
+    private static long checkCount(long count, int minBytes, FileChannel ch, String field) throws IOException {
+        long remaining = ch.size() - ch.position();
+        if (count < 0 || count > remaining / minBytes) {
+            throw new IOException("Corrupted " + field + " count: " + count
+                    + " (remaining bytes=" + remaining + ")");
+        }
+        return count;
     }
 
     // ==================== 二进制保存 ====================
@@ -518,15 +558,33 @@ public class BinaryChunkDb implements IChunkDb {
             }
         }
         if (!dirty || closed) return;
+        if (loadFailed) {
+            // 加载阶段就失败了：内存里只有半截数据，写回等于用残缺内容覆盖原文件（不可逆）。
+            if (!loadFailWarned) {
+                loadFailWarned = true;
+                ChunkScannerMod.LOGGER.error("[scan:{}] Refusing to flush {}: previous load failed, "
+                        + "writing would destroy the existing file.", scanId, fileName());
+            }
+            return;
+        }
         // 在迭代 collection 之前重置脏标记：并发写入在迭代期间设置 dirty=true
         // 会被下一次 flush 捕获，避免数据遗漏。
         dirty = false;
+        Path tmpPath = dataPath().resolveSibling(fileName() + ".tmp");
         try {
             Files.createDirectories(dbDir);
-            Path tmpPath = dataPath().resolveSibling(fileName() + ".tmp");
             byte[] scanIdBytes = scanId.getBytes(StandardCharsets.UTF_8);
             byte[] analyzerBytes = (analyzerId != null ? analyzerId : ChunkScannerMod.ID_UNKNOWN)
                     .toString().getBytes(StandardCharsets.UTF_8);
+            checkU16(scanIdBytes.length, "scanId");
+            checkU16(analyzerBytes.length, "analyzerId");
+
+            // 先对并发容器取快照，再写入「条数 + 条目」。
+            // ConcurrentHashMap 的 size() 与后续迭代是弱一致的：worker 线程在两者之间
+            // put 一条记录，就会导致文件头声明的条数与实际写出的记录数不符，读回时错位解析。
+            Map<Integer, String> poolSnapshot = new HashMap<>(stringPool);
+            List<Map.Entry<Long, Long>> metaSnapshot = new ArrayList<>(chunkScanTime.entrySet());
+            List<Map.Entry<ByteArrayKey, byte[]>> kvSnapshot = new ArrayList<>(kvStore.entrySet());
 
             try (FileChannel ch = FileChannel.open(tmpPath,
                     StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
@@ -535,48 +593,56 @@ public class BinaryChunkDb implements IChunkDb {
                 buf.order(ByteOrder.LITTLE_ENDIAN);
 
                 // Header (version 4: pool entries with explicit IDs, CRC32 appended)
+                buf = ensureCapacity(buf, 16 + scanIdBytes.length + analyzerBytes.length);
                 buf.putLong(MAGIC);
                 buf.putInt(CURRENT_VERSION);
                 buf.putShort((short) scanIdBytes.length);
                 buf.put(scanIdBytes);
                 buf.putShort((short) analyzerBytes.length);
                 buf.put(analyzerBytes);
-                buf.flip(); ch.write(buf);
+                writeFully(ch, buf);
 
                 // Task config (v4+)
                 byte[] tcBytes = taskConfig != null ? taskConfig.toJson().getBytes(StandardCharsets.UTF_8) : new byte[0];
-                buf.clear(); buf.putShort((short) tcBytes.length); buf.put(tcBytes); buf.flip(); ch.write(buf);
+                checkU16(tcBytes.length, "taskConfig");
+                buf = ensureCapacity(buf, 2 + tcBytes.length);
+                buf.putShort((short) tcBytes.length); buf.put(tcBytes); writeFully(ch, buf);
 
                 // String pool — 保存全部（池很小，避免 scanIntsIn 误判）
-                // 使用快照避免并发 intern() 导致迭代期间遗漏新条目
-                List<Integer> sorted = new ArrayList<>(new HashMap<>(stringPool).keySet());
+                List<Integer> sorted = new ArrayList<>(poolSnapshot.keySet());
                 Collections.sort(sorted);
-                buf.clear(); buf.putInt(sorted.size()); buf.flip(); ch.write(buf);
+                buf = ensureCapacity(buf, 4);
+                buf.putInt(sorted.size()); writeFully(ch, buf);
                 for (int id : sorted) {
-                    byte[] b = stringPool.getOrDefault(id, "").getBytes(StandardCharsets.UTF_8);
-                    buf.clear(); buf.putInt(id); buf.putInt(b.length); buf.put(b); buf.flip(); ch.write(buf);
+                    byte[] b = poolSnapshot.getOrDefault(id, "").getBytes(StandardCharsets.UTF_8);
+                    buf = ensureCapacity(buf, 8 + b.length);
+                    buf.putInt(id); buf.putInt(b.length); buf.put(b); writeFully(ch, buf);
                 }
 
                 // Chunk meta
-                buf.clear(); buf.putInt(chunkScanTime.size()); buf.flip(); ch.write(buf);
-                for (Map.Entry<Long, Long> e : chunkScanTime.entrySet()) {
+                buf = ensureCapacity(buf, 4);
+                buf.putInt(metaSnapshot.size()); writeFully(ch, buf);
+                for (Map.Entry<Long, Long> e : metaSnapshot) {
                     long key = e.getKey();
-                    buf.clear();
+                    buf = ensureCapacity(buf, 20);
                     buf.putInt((int) (key >> 48) & 0xFFFF);
                     buf.putInt(signExtend24Bit((int) (key >> 24)));
                     buf.putInt(signExtend24Bit((int) key));
                     buf.putLong(e.getValue());
-                    buf.flip(); ch.write(buf);
+                    writeFully(ch, buf);
                 }
 
                 // KV records
-                buf.clear(); buf.putInt(kvStore.size()); buf.flip(); ch.write(buf);
-                for (Map.Entry<ByteArrayKey, byte[]> e : kvStore.entrySet()) {
+                buf = ensureCapacity(buf, 4);
+                buf.putInt(kvSnapshot.size()); writeFully(ch, buf);
+                for (Map.Entry<ByteArrayKey, byte[]> e : kvSnapshot) {
                     byte[] k = e.getKey().data;
                     byte[] v = e.getValue();
-                    buf.clear(); buf.putInt(k.length); buf.put(k);
+                    // 单条记录可能超过默认缓冲容量，必须按需扩容，否则 BufferOverflowException
+                    buf = ensureCapacity(buf, 8 + k.length + v.length);
+                    buf.putInt(k.length); buf.put(k);
                     buf.putInt(v.length); buf.put(v);
-                    buf.flip(); ch.write(buf);
+                    writeFully(ch, buf);
                 }
             }
 
@@ -594,17 +660,52 @@ public class BinaryChunkDb implements IChunkDb {
                 crcByteBuf.order(ByteOrder.LITTLE_ENDIAN);
                 crcByteBuf.putInt((int) crc.getValue());
                 crcByteBuf.flip();
-                ch.write(crcByteBuf);
+                while (crcByteBuf.hasRemaining()) ch.write(crcByteBuf);
             }
 
             Files.move(tmpPath, dataPath(),
                     java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                     java.nio.file.StandardCopyOption.ATOMIC_MOVE);
 
-        } catch (IOException e) {
-            // 刷写失败时恢复脏标记，确保数据不会丢失
+        } catch (IOException | RuntimeException e) {
+            // RuntimeException（如 BufferOverflowException）同样必须拦截：
+            // dirty 已被置为 false，若异常逃逸则这批数据再也不会被写盘。
             dirty = true;
-            ChunkScannerMod.LOGGER.error("[scan:{}] Flush failed: {}", scanId, e.getMessage());
+            ChunkScannerMod.LOGGER.error("[scan:{}] Flush failed: {}", scanId, e.toString());
+            try {
+                Files.deleteIfExists(tmpPath);
+            } catch (IOException ignored) {
+                // 残留 .tmp 不影响正确性，下次 flush 会 TRUNCATE_EXISTING 覆盖
+            }
+        }
+    }
+
+    /** 将缓冲区内容完整写入通道（FileChannel.write 不保证一次写完）。 */
+    private static void writeFully(FileChannel ch, ByteBuffer buf) throws IOException {
+        buf.flip();
+        while (buf.hasRemaining()) {
+            ch.write(buf);
+        }
+    }
+
+    /**
+     * 确保缓冲区至少能容纳 {@code need} 字节并复位；容量不足时返回一个更大的新缓冲。
+     * 调用方必须用返回值覆盖原引用。
+     */
+    private static ByteBuffer ensureCapacity(ByteBuffer buf, int need) {
+        if (need <= buf.capacity()) {
+            buf.clear();
+            return buf;
+        }
+        ByteBuffer bigger = ByteBuffer.allocateDirect(need);
+        bigger.order(ByteOrder.LITTLE_ENDIAN);
+        return bigger;
+    }
+
+    /** 校验将以 u16 长度前缀写出的字段，超长时快速失败而非静默截断。 */
+    private static void checkU16(int len, String field) throws IOException {
+        if (len > 0xFFFF) {
+            throw new IOException(field + " too long for u16 length field: " + len + " bytes (max 65535)");
         }
     }
 
@@ -733,7 +834,9 @@ public class BinaryChunkDb implements IChunkDb {
         if (id == null) return "unknown";
         String name = id.getPath();
         if (name == null || name.isEmpty()) return "unknown";
-        return name.toLowerCase().replaceAll("[^a-z0-9_-]", "_");
+        // 必须用 Locale.ROOT：土耳其语 locale 下 'I'.toLowerCase() 会变成 'ı'（无点 i），
+        // 导致同一个 analyzerId 在不同系统语言下生成不同文件名。
+        return name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_-]", "_");
     }
 
     /** byte[] 包装器，提供正确的 hashCode/equals 用于 HashMap。 */

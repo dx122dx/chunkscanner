@@ -153,8 +153,21 @@ public class ChunkScannerMod implements ClientModInitializer {
         return getDbRoot().resolve(type).resolve(sanitizePath(context));
     }
 
+    /**
+     * 将上下文名（世界名 / 服务器地址）转换为安全的单层目录名。
+     *
+     * <p>除过滤文件系统非法字符外，还必须排除 {@code "."} / {@code ".."} 与空串：
+     * 这三者会让 {@code resolve()} 指向父目录或根目录本身，造成数据库写到
+     * {@code chunkscanner/} 之外的位置。</p>
+     */
     private static String sanitizePath(String name) {
-        return name.replaceAll("[<>:\"/\\\\|?*]", "_");
+        if (name == null || name.isBlank()) return "unnamed";
+        // 非法字符 + 控制字符
+        String s = name.replaceAll("[<>:\"/\\\\|?*\\x00-\\x1F]", "_");
+        // Windows 不允许目录名以点或空格结尾
+        s = s.replaceAll("[. ]+$", "");
+        if (s.isEmpty() || ".".equals(s) || "..".equals(s)) return "unnamed";
+        return s;
     }
 
     @Override
@@ -174,8 +187,9 @@ public class ChunkScannerMod implements ClientModInitializer {
         }
 
         // 注入配置供给器到导航门面并注册回调（供给器而非实例，避免 reload 后引用失效）
+        // 导航模式不再快照到 nav 字段：isAutoEnabled() 会实时读取配置，
+        // 这样 GUI / 命令改动配置后无需再手动同步。
         ChunkScannerNavigation.ChunkScannerConfigHolder.set(ChunkScannerMod::getConfig);
-        nav.setAutoEnabled(config.integration.baritone.autoEnabled);
         nav.setOnNavFailed(() -> {
             MinecraftClient mc = MinecraftClient.getInstance();
             if (mc.player != null) {

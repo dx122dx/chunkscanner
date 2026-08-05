@@ -59,11 +59,19 @@ public final class ChunkScannerNavigation {
 
     private final NavigationQueue queue = new NavigationQueue();
     private final Set<NavigationEntry> fallbackWaypoints = new HashSet<>();
-    private boolean active;
+    /** volatile：外部模组可能从非渲染线程查询 isActive()（如 qab 的完成判定）。 */
+    private volatile boolean active;
     private boolean pausedByDim;
     private String startDimension;
     private int tickCounter;
-    private boolean autoEnabled;
+    /**
+     * 导航模式覆盖值；{@code null} 表示跟随全局配置。
+     *
+     * <p>不能在构造时把配置值快照到字段里：全局 {@code INSTANCE} 在类初始化阶段创建，
+     * 早于 {@link ChunkScannerConfigHolder#set} 注入配置供给器，快照到的永远是默认值；
+     * 且快照后配置改动无法生效。改为按需读取。</p>
+     */
+    private volatile Boolean autoEnabledOverride;
     private Runnable onNavFailed;
     private java.util.function.BiConsumer<String, String> onDimChanged;
     private java.util.function.Consumer<String> onDimResumed;
@@ -79,7 +87,6 @@ public final class ChunkScannerNavigation {
         this.fallbackWpGroup = "global".equals(this.name)
                 ? FALLBACK_WP_GROUP_BASE
                 : FALLBACK_WP_GROUP_BASE + "_" + this.name;
-        this.autoEnabled = ChunkScannerConfigHolder.navAutoEnabled();
     }
 
     /**
@@ -241,14 +248,22 @@ public final class ChunkScannerNavigation {
 
     /**
      * 覆盖导航模式（仅影响本门面驱动的导航，不影响全局 CONFIG）。
+     *
+     * <p>一旦调用，本实例即脱离全局配置；调用 {@link #clearAutoEnabledOverride()} 可恢复跟随。</p>
      */
     public void setAutoEnabled(boolean auto) {
-        this.autoEnabled = auto;
+        this.autoEnabledOverride = auto;
     }
 
-    /** 获取当前导航模式。 */
+    /** 清除本实例的导航模式覆盖，恢复为跟随全局配置。 */
+    public void clearAutoEnabledOverride() {
+        this.autoEnabledOverride = null;
+    }
+
+    /** 获取当前导航模式：有覆盖值取覆盖值，否则实时读取全局配置。 */
     public boolean isAutoEnabled() {
-        return autoEnabled;
+        Boolean override = autoEnabledOverride;
+        return override != null ? override : ChunkScannerConfigHolder.navAutoEnabled();
     }
 
     // ==================== 回调 ====================
@@ -359,7 +374,7 @@ public final class ChunkScannerNavigation {
         }
 
         boolean ok;
-        if (autoEnabled) {
+        if (isAutoEnabled()) {
             List<NavigationEntry> entries = queue.getEntries();
             int limit = Math.min(entries.size(),
                     Math.max(1, ChunkScannerConfigHolder.navCompositeLimit()));

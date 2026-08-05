@@ -63,6 +63,37 @@ class NavigationQueueTest {
 
             assertSame(cond, q.peekCondition());
         }
+
+        @Test
+        @DisplayName("重复坐标入队各自保留独立条件，不互相覆盖")
+        void duplicateEntry_shouldKeepIndependentConditions() {
+            NavigationQueue q = new NavigationQueue();
+            NavigationEntry same = entry(7, 64, 7);
+            NavigationCondition first = always(true);
+            NavigationCondition second = always(true);
+
+            q.enqueue(same, first);
+            q.enqueue(same, second);
+
+            assertEquals(2, q.size());
+            assertSame(first, q.peekCondition(), "队首应绑定第一次入队的条件");
+
+            assertTrue(q.tick(null));
+            assertSame(second, q.peekCondition(), "弹出后队首应绑定第二次入队的条件，而非 null");
+        }
+
+        @Test
+        @DisplayName("重复坐标入队后队列可被完整排空（防止永久卡死）")
+        void duplicateEntry_shouldDrainCompletely() {
+            NavigationQueue q = new NavigationQueue();
+            NavigationEntry same = entry(7, 64, 7);
+            q.enqueue(same, always(true));
+            q.enqueue(same, always(true));
+
+            assertTrue(q.tick(null));
+            assertTrue(q.tick(null), "第二个同坐标条目的条件不应丢失导致队列卡死");
+            assertTrue(q.isEmpty());
+        }
     }
 
     // ==================== tick 推进 ====================

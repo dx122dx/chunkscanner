@@ -55,8 +55,13 @@ public final class ConfigurationLocker {
     /**
      * 配置锁定状态表：path → 强制值。
      * key 不存在=未锁定；key 存在=锁定且强制为该值，特别的，如果值为 null，则仅禁止玩家修改。
+     *
+     * <p>本表由网络/连接事件线程（{@link #enterServerLock} / {@link #leaveServerLock}）与
+     * 配置线程（{@link #applyAll}）并发访问，必须同步。不能用 {@code ConcurrentHashMap}
+     * —— value 允许为 {@code null}（「仅锁定无强制值」语义），CHM 禁止 null value。</p>
      */
-    private static final Map<String, String> lockStatus = new HashMap<>();
+    private static final Map<String, String> lockStatus =
+            java.util.Collections.synchronizedMap(new HashMap<>());
 
     private ConfigurationLocker() {}
 
@@ -144,7 +149,13 @@ public final class ConfigurationLocker {
 
     /** 立即强制重置该配置中所有锁定值。 */
     public static void applyAll(ChunkScannerConfig config) {
-        for (Entry<String, String> entry : lockStatus.entrySet()) {
+        // synchronizedMap 的迭代需调用方自行加锁；先取快照再遍历，
+        // 避免在反射写配置的耗时操作期间长期持锁。
+        Map<String, String> snapshot;
+        synchronized (lockStatus) {
+            snapshot = new HashMap<>(lockStatus);
+        }
+        for (Entry<String, String> entry : snapshot.entrySet()) {
             try {
                 ConfigReflectionAccessor.applyLockedValue(config, entry.getKey());
             } catch (ConfigAccessException e) {
