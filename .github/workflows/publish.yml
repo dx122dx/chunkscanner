@@ -51,10 +51,10 @@ jobs:
         run: sed -i "s/^mod_version=.*/mod_version=${{ steps.meta.outputs.version }}/" gradle.properties
 
       # billy-inf 为本地强依赖（未发布到 Maven）。先 checkout 并构建，供 chunkscanner 解析。
-      - name: Checkout billy-inf
+      - name: Checkout mod-infrastructure
         uses: actions/checkout@v4
         with:
-          repository: dx122dx/billy-inf
+          repository: dx122dx/mod-infrastructure
           path: mod-infrastructure
           token: ${{ secrets.GITHUB_TOKEN }}
 

@@ -32,10 +32,10 @@ jobs:
 
       # billy-inf 为本地强依赖（未发布到 Maven）。CI 需先 checkout 并构建它，
       # 产物 jar 落在 mod-infrastructure/build/libs，由 chunkscanner 的 flatDir 解析。
-      - name: Checkout billy-inf
+      - name: Checkout mod-infrastructure
         uses: actions/checkout@v4
         with:
-          repository: dx122dx/billy-inf
+          repository: dx122dx/mod-infrastructure
           path: mod-infrastructure
           token: ${{ secrets.GITHUB_TOKEN }}
 
