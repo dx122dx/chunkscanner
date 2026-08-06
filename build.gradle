@@ -71,7 +71,9 @@ dependencies {
 
     // infrastructure：强依赖（单向），提供模块框架、ConfigLocker 配置锁定与 core.config 统一管理。
     // 依赖从 Maven Central SNAPSHOT 拉取（io.github.dx122dx.mc:infrastructure），不再经 flatDir。
-    modImplementation "io.github.dx122dx.mc:infrastructure:${project.infrastructure_version}"
+    modImplementation("io.github.dx122dx.mc:infrastructure:${project.infrastructure_version}") {
+        changing = true
+    }
 
     // Test dependencies — fabric-loader-junit 提供 Minecraft 环境引导，支持在单元测试中使用 Minecraft 类
     testImplementation "net.fabricmc:fabric-loader-junit:${project.loader_version}"

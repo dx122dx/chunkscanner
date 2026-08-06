@@ -137,6 +137,7 @@ class ChunkScannerNavigationTest {
 
     @Nested
     @DisplayName("enqueue 重载")
+    @SuppressWarnings("deprecation")
     class EnqueueOverloads {
 
         @Test
