@@ -37,7 +37,7 @@
         "java": ">=17",
         "fabric-api": "*",
         "cloth-config": "*",
-        "infrastructure": ">=${billyinf_version}"
+        "infrastructure": ">=${infrastructure_version}"
     },
     "suggests": {
         "modmenu": "*",

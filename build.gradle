@@ -102,7 +102,7 @@ processResources {
         expand "version": project.version,
                 "minecraft_version": project.minecraft_version,
                 "loader_version": project.loader_version,
-                "billyinf_version": billyinf_version
+                "infrastructure_version": infrastructure_version
     }
 }
 
