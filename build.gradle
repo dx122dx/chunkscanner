@@ -18,7 +18,7 @@ def billyInfPropsFile = file("${billyInfDir}/gradle.properties")
 if (billyInfPropsFile.exists()) {
     billyInfProps.load(billyInfPropsFile.newInputStream())
 }
-ext.billyinf_version = billyInfProps.getProperty("mod_version", "0.1.0-alpha.19")
+ext.billyinf_version = billyInfProps.getProperty("mod_version", "0.1.0-alpha.20")
 
 // CI（GitHub Actions）环境可直连 Mojang，自动跳过 BMCLAPI 镜像，
 // 避免镜像 SHA1 漂移导致 CI 构建失败；仅本地无法直连时使用镜像。

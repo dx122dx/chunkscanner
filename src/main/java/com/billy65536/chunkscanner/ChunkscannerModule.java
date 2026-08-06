@@ -112,6 +112,6 @@ public final class ChunkscannerModule implements IModule {
 
     @Override
     public Collection<String> getCommandLiterals() {
-        return List.of("chunkscanner", "cs", "csc");
+        return List.of();
     }
 }
