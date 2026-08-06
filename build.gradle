@@ -1,5 +1,6 @@
 plugins {
     id 'fabric-loom' version '1.5.8'
+    id 'maven-publish'
 }
 
 version = project.mod_version
@@ -122,8 +123,84 @@ tasks.withType(JavaCompile).configureEach {
 
 java {
     withSourcesJar()
+    withJavadocJar()
     sourceCompatibility = JavaVersion.VERSION_17
     targetCompatibility = JavaVersion.VERSION_17
+}
+
+// Maven Central 快照发布要求禁用 Gradle Module Metadata，
+// 避免 .module 文件泄露 flatDir 解析出的本地依赖坐标。
+tasks.withType(GenerateModuleMetadata).configureEach {
+    enabled = false
+}
+
+// javadoc 在 Loom 1.5.x + JDK21 下对源码注释较严格（已有注释存在格式/链接问题），
+// 关闭 doclint 仅生成告警，避免阻塞 build / 发布（源码注释质量另列计划清理）。
+tasks.withType(Javadoc).configureEach {
+    options.encoding = 'UTF-8'
+    (options as StandardJavadocDocletOptions).addBooleanOption('Xdoclint:none', true)
+}
+
+// maven-publish 配置：坐标与快照仓库全部由外部属性/环境变量驱动，
+// 属性缺省时回落到现有 group/version，本地 ./gradlew build 行为完全不变。
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            // 发布坐标覆盖契约：CI 传 -PpublishGroup / -PpublishVersion，缺省回落到现有值
+            groupId    = findProperty('publishGroup')   ?: project.group
+            artifactId = project.archives_base_name
+            version    = findProperty('publishVersion') ?: project.version
+
+            pom {
+                name        = 'Chunk Scanner'
+                description = 'Client-side progressive chunk scanner for Fabric. Asynchronously scans loaded chunks with extensible analyzers (Sign, QShop). NOTE: this mod requires the "infrastructure" mod (com.billy65536.infrastructure) at runtime, which is not published to Maven Central.'
+                url         = 'https://github.com/dx122dx/chunkscanner'
+                licenses {
+                    license {
+                        name = 'GNU Affero General Public License v3.0 only'
+                        url  = 'https://www.gnu.org/licenses/agpl-3.0.txt'
+                    }
+                }
+                developers {
+                    developer {
+                        id   = 'billy65536'
+                        name = 'billy65536'
+                    }
+                }
+                scm {
+                    connection          = 'scm:git:git://github.com/dx122dx/chunkscanner.git'
+                    developerConnection = 'scm:git:ssh://github.com/dx122dx/chunkscanner.git'
+                    url                 = 'https://github.com/dx122dx/chunkscanner'
+                }
+
+                // 剔除无法从公共 Maven 解析的本地依赖坐标，避免下游解析失败。
+                // 当前唯一明确不可解析的本地依赖是 infrastructure（经 flatDir 解析）。
+                // minecraft / yarn 等映射坐标由 Loom 处理，通常不进入 POM，暂不处理；
+                // 若后续发现其他不可解析坐标，在此补充清理逻辑。
+                withXml {
+                    def deps = asNode().dependencies?.get(0)
+                    if (deps != null) {
+                        deps.children().findAll { dep ->
+                            def g = dep.groupId?.text()
+                            g == 'com.billy65536.infrastructure'
+                        }.each { it.replaceNode {} }
+                    }
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            name = 'centralSnapshots'
+            url  = 'https://central.sonatype.com/repository/maven-snapshots/'
+            credentials {
+                username = System.getenv('CENTRAL_TOKEN_USERNAME')
+                password = System.getenv('CENTRAL_TOKEN_PASSWORD')
+            }
+        }
+    }
 }
 
 jar {
