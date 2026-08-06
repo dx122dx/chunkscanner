@@ -4,7 +4,9 @@ import me.shedaniel.autoconfig.ConfigData;
 import me.shedaniel.autoconfig.annotation.Config;
 import me.shedaniel.autoconfig.annotation.ConfigEntry;
 
-import com.billy65536.chunkscanner.security.server_optin.ConfigurationLocker;
+import com.billy65536.chunkscanner.ChunkScannerMod;
+import com.billy65536.infrastructure.core.module.ModuleRegistry;
+import com.billy65536.infrastructure.core.security.server.ConfigLocker;
 
 /**
  * 配置文件数据模型（AutoConfig 驱动）。
@@ -294,7 +296,7 @@ public class ChunkScannerConfig implements ConfigData {
      * <p>这是阻止玩家通过 Cloth Config 界面绕过「服务端 opt-in」配置锁定的关键防线。
      * GUI 编辑直接改写内存中的活动配置实例，并在玩家点击完成时由 AutoConfig 内部
      * 调用 {@code holder.save()} 写回磁盘——该路径不经过 {@link ConfigLoader#load()}
-     * 内的 {@code ConfigurationLocker.applyAll()}，因此玩家原本可借此修改被锁项。
+     * 内的 {@code ConfigLocker.applyAll()}，因此玩家原本可借此修改被锁项。
      * 本方法在每次反序列化后统一重放锁定值，无论来源（GUI 保存 / 磁盘加载 / 重载），
      * 被锁定的配置项都会被强制重置回服务器策略值（或仅锁定项保持锁定），
      * 使锁定状态在任何修改途径下都不可被绕过。
@@ -304,7 +306,14 @@ public class ChunkScannerConfig implements ConfigData {
      */
     @Override
     public void validatePostLoad() {
-        ConfigurationLocker.applyAll(this);
+        // 重放服务器锁定强制值（防 Cloth Config GUI 保存绕过）
+        var module = ModuleRegistry.get(ChunkScannerMod.MOD_ID);
+        if (module != null) {
+            ConfigLocker.applyAll(module.getConfigDescriptors());
+        } else {
+            ChunkScannerMod.LOGGER.warn(
+                    "Module not registered yet, server config locks were NOT applied during validatePostLoad.");
+        }
     }
 
     /**

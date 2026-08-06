@@ -9,6 +9,17 @@ base {
     archivesName = project.archives_base_name
 }
 
+// billy-inf：本地强依赖（兄弟项目，默认 ../mod-infrastructure）。
+// 版本自动从 billy-inf 的 gradle.properties 读取，避免两处版本号失同步。
+// CI 中通过环境变量 BILLY_INF_DIR 指向已 checkout 的 billy-inf 目录（默认 ../mod-infrastructure）。
+def billyInfDir = System.getenv("BILLY_INF_DIR") ?: "${projectDir}/../mod-infrastructure"
+def billyInfProps = new Properties()
+def billyInfPropsFile = file("${billyInfDir}/gradle.properties")
+if (billyInfPropsFile.exists()) {
+    billyInfProps.load(billyInfPropsFile.newInputStream())
+}
+ext.billyinf_version = billyInfProps.getProperty("mod_version", "0.1.0-alpha.18")
+
 // CI（GitHub Actions）环境可直连 Mojang，自动跳过 BMCLAPI 镜像，
 // 避免镜像 SHA1 漂移导致 CI 构建失败；仅本地无法直连时使用镜像。
 def useBmclapi = System.getenv("CI") == null
@@ -48,6 +59,11 @@ repositories {
         url = 'https://maven.shedaniel.me/'
     }
     mavenCentral()
+
+    // 本地 flatDir：读取已构建的 billy-inf jar（BILLY_INF_DIR/build/libs）
+    flatDir {
+        dirs "${billyInfDir}/build/libs"
+    }
 }
 
 dependencies {
@@ -62,6 +78,10 @@ dependencies {
         exclude(group: "net.fabricmc.fabric-api")
     }
     modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
+
+    // billy-inf：强依赖（单向），提供模块框架、ConfigLocker 配置锁定与 core.config 统一管理。
+    // 版本自动从兄弟项目读取（见上文 billyinf_version），jar 经 flatDir 解析。
+    modImplementation "com.billy65536.infrastructure:billy-inf:${project.billyinf_version}"
 
     // Test dependencies — fabric-loader-junit 提供 Minecraft 环境引导，支持在单元测试中使用 Minecraft 类
     testImplementation "net.fabricmc:fabric-loader-junit:${project.loader_version}"
@@ -91,7 +111,8 @@ processResources {
     filesMatching("fabric.mod.json") {
         expand "version": project.version,
                 "minecraft_version": project.minecraft_version,
-                "loader_version": project.loader_version
+                "loader_version": project.loader_version,
+                "billyinf_version": billyinf_version
     }
 }
 

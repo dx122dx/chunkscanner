@@ -50,7 +50,23 @@ jobs:
       - name: Apply version to gradle.properties
         run: sed -i "s/^mod_version=.*/mod_version=${{ steps.meta.outputs.version }}/" gradle.properties
 
+      # billy-inf 为本地强依赖（未发布到 Maven）。先 checkout 并构建，供 chunkscanner 解析。
+      - name: Checkout billy-inf
+        uses: actions/checkout@v4
+        with:
+          repository: dx122dx/billy-inf
+          path: mod-infrastructure
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build billy-inf
+        working-directory: mod-infrastructure
+        run: |
+          chmod +x ./gradlew
+          ./gradlew build --no-daemon
+
       - name: Build with Gradle
+        env:
+          BILLY_INF_DIR: mod-infrastructure
         run: ./gradlew build --no-daemon
 
       - name: Publish to Modrinth & GitHub Release

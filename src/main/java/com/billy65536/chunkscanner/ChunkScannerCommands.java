@@ -1,8 +1,8 @@
 package com.billy65536.chunkscanner;
 
 import com.billy65536.chunkscanner.components.analyzer.QShopChatListener;
+import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.ConfigLoader;
-import com.billy65536.chunkscanner.config.ConfigReflectionAccessor;
 import com.billy65536.chunkscanner.config.TaskConfig;
 import com.billy65536.chunkscanner.core.AnalyzerRegistry;
 import com.billy65536.chunkscanner.core.IChunkAnalyzer;
@@ -11,20 +11,17 @@ import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.ScanSession;
 import com.billy65536.chunkscanner.core.db.DbExportUtil;
 import com.billy65536.chunkscanner.core.db.DbFileUtil;
-import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.core.navigation.ChunkScannerNavigation;
 import com.billy65536.chunkscanner.core.navigation.NavigationEntry;
 import com.billy65536.chunkscanner.gui.GuiUtil;
-import com.billy65536.chunkscanner.integration.ClothConfigIntegration;
 import com.billy65536.chunkscanner.screen.ChunkScannerScreen;
 import com.billy65536.chunkscanner.screen.DatabaseScreen;
-import com.billy65536.chunkscanner.security.server_optin.ServerAuthorizationRequiredException;
+
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
@@ -40,6 +37,9 @@ import java.util.List;
  * 从 {@link ChunkScannerMod} 中抽出，使模组入口类只负责装配（注册分析器、数据库工厂、
  * 事件回调等），命令相关代码集中在此。运行时通过持有的 {@link ChunkScannerMod} 实例
  * 访问扫描引擎、全局配置与数据库目录。
+ *
+ * <p>配置访问（get/set/reset/gui/reload）已全部迁移至 billy-inf 的 {@code /inf config}，
+ * 本类不再包含 {@code /cs config} 节点。</p>
  */
 public class ChunkScannerCommands {
 
@@ -88,43 +88,18 @@ public class ChunkScannerCommands {
                 return builder.buildFuture();
             };
 
-    /** 配置项点分路径补全（用于 /cs get|set|reset 的 [name] 参数）。 */
-    private static final SuggestionProvider<FabricClientCommandSource> CONFIG_PATH_SUGGESTIONS =
-            (ctx, builder) -> {
-                String remaining = builder.getRemaining().toLowerCase();
-                for (String path : ConfigReflectionAccessor.listPaths()) {
-                    if (path.toLowerCase().startsWith(remaining)) {
-                        builder.suggest(path);
-                    }
-                }
-                return builder.buildFuture();
-            };
-
-    /**
-     * 配置值补全（用于 /cs set 的 [value] 参数）。
-     * boolean 提供 true/false，enum 提供全部常量名，其余类型提供当前值作为可编辑起点。
-     * name 尚未输入完整时安全降级为空建议。
-     */
-    private static final SuggestionProvider<FabricClientCommandSource> CONFIG_VALUE_SUGGESTIONS =
-            (ctx, builder) -> {
-                String remaining = builder.getRemaining().toLowerCase();
-                String path;
-                try {
-                    path = StringArgumentType.getString(ctx, "name");
-                } catch (IllegalArgumentException e) {
-                    return builder.buildFuture();
-                }
-                for (String v : ConfigReflectionAccessor.suggestValues(ChunkScannerMod.getConfig(), path)) {
-                    if (v.toLowerCase().startsWith(remaining)) {
-                        builder.suggest(v);
-                    }
-                }
-                return builder.buildFuture();
-            };
-
     // ==================== 命令构建 ====================
 
     public com.mojang.brigadier.builder.LiteralArgumentBuilder<FabricClientCommandSource> buildCommands(String name) {
+        return buildChunkscannerCommands(name);
+    }
+
+    /**
+     * 构建 chunkscanner 命令树（实例方法，依赖 {@code scanner} 等实例成员）。
+     * 不含已移除的 /cs config 节点（配置访问已移至 {@code /inf config}）。
+     */
+    public com.mojang.brigadier.builder.LiteralArgumentBuilder<FabricClientCommandSource>
+            buildChunkscannerCommands(String name) {
         var root = ClientCommandManager.literal(name);
 
         // ===== /cs task =====
@@ -240,48 +215,6 @@ public class ChunkScannerCommands {
         dbNode.then(exportNode);
 
         root.then(dbNode);
-
-        // ===== /cs config =====
-        var configNode = ClientCommandManager.literal("config");
-
-        // /cs config gui → 打开 Cloth Config 界面或提示未安装
-        configNode.then(ClientCommandManager.literal("gui")
-                .executes(ctx -> openConfigGui(ctx.getSource().getClient())));
-
-        // /cs config reload → 完全重启（重载配置 + 重建所有会话）
-        var configReloadNode = ClientCommandManager.literal("reload")
-                .executes(ctx -> reloadConfig(ctx.getSource().getClient(), true));
-        // /cs config reload quick → 轻量热重载
-        configReloadNode.then(ClientCommandManager.literal("quick")
-                .executes(ctx -> reloadConfig(ctx.getSource().getClient(), false)));
-        configNode.then(configReloadNode);
-
-        // /cs config get <name> → 展示当前值、默认值与类型
-        configNode.then(ClientCommandManager.literal("get")
-                    .then(ClientCommandManager.argument("name", StringArgumentType.string())
-                        .suggests(CONFIG_PATH_SUGGESTIONS)
-                        .executes(ctx -> configGet(ctx.getSource().getClient(),
-                                StringArgumentType.getString(ctx, "name")))));
-
-        // /cs config set <name> <value> → 修改并立即持久化
-        // value 用 greedyString：正则与含空格的中文名可直接输入，无需引号转义
-        configNode.then(ClientCommandManager.literal("set")
-                    .then(ClientCommandManager.argument("name", StringArgumentType.string())
-                        .suggests(CONFIG_PATH_SUGGESTIONS)
-                        .then(ClientCommandManager.argument("value", StringArgumentType.greedyString())
-                                .suggests(CONFIG_VALUE_SUGGESTIONS)
-                                .executes(ctx -> configSet(ctx.getSource().getClient(),
-                                        StringArgumentType.getString(ctx, "name"),
-                                        StringArgumentType.getString(ctx, "value"))))));
-
-        // /cs config reset <name> → 恢复默认值
-        configNode.then(ClientCommandManager.literal("reset")
-                    .then(ClientCommandManager.argument("name", StringArgumentType.string())
-                        .suggests(CONFIG_PATH_SUGGESTIONS)
-                        .executes(ctx -> configReset(ctx.getSource().getClient(),
-                                StringArgumentType.getString(ctx, "name")))));
-        
-        root.then(configNode);
 
         // ===== /cs nav =====
         var navNode = ClientCommandManager.literal("nav");
@@ -413,111 +346,6 @@ public class ChunkScannerCommands {
     private static int openDbGui(MinecraftClient client, String scanId) {
         client.send(() -> client.setScreen(new DatabaseScreen(scanId)));
         return 1;
-    }
-
-    private static int openConfigGui(MinecraftClient client) {
-        Screen configScreen = ClothConfigIntegration.createConfigScreen(client.currentScreen);
-        client.send(() -> client.setScreen(configScreen));
-        return 1;
-    }
-
-    private int reloadConfig(MinecraftClient client, boolean restart) {
-        ConfigLoader.load();
-        if (restart) {
-            int restarted = scanner.restartAllSessions(client);
-            sendMsg(client, Text.translatable("chunkscanner.msg.config_restarted", restarted)
-                    .formatted(Formatting.GREEN));
-        } else {
-            int affected = scanner.reloadConfig();
-            sendMsg(client, Text.translatable("chunkscanner.msg.config_reloaded", affected)
-                    .formatted(Formatting.GREEN));
-        }
-        return 1;
-    }
-
-    // ==================== 配置项反射读写 ====================
-
-    /** /cs get &lt;name&gt; — 展示配置项的当前值、默认值与类型。 */
-    private int configGet(MinecraftClient client, String path) {
-        if (!ConfigReflectionAccessor.hasPath(path)) {
-            sendUnknownPath(client, path);
-            return 0;
-        }
-        Object cur = ConfigReflectionAccessor.getValue(ChunkScannerMod.getConfig(), path);
-        Object def = ConfigReflectionAccessor.getDefaultValue(path);
-        sendMsg(client, Text.translatable("chunkscanner.msg.config_get",
-                        Text.literal(path).formatted(Formatting.AQUA),
-                        Text.literal(String.valueOf(cur)).formatted(Formatting.WHITE),
-                        Text.literal(String.valueOf(def)).formatted(Formatting.GRAY),
-                        Text.literal(ConfigReflectionAccessor.getTypeName(path)).formatted(Formatting.DARK_GRAY))
-                .formatted(Formatting.GREEN));
-        return 1;
-    }
-
-    /** /cs set &lt;name&gt; &lt;value&gt; — 修改配置项并立即持久化。 */
-    private int configSet(MinecraftClient client, String path, String value) {
-        if (!ConfigReflectionAccessor.hasPath(path)) {
-            sendUnknownPath(client, path);
-            return 0;
-        }
-        ChunkScannerConfig config = ChunkScannerMod.getConfig();
-        Object old = ConfigReflectionAccessor.getValue(config, path);
-        try {
-            ConfigReflectionAccessor.setValue(config, path, value);
-        } catch (ConfigReflectionAccessor.ConfigAccessException e) {
-            sendMsg(client, Text.translatable("chunkscanner.msg.config_invalid_value", e.getMessage())
-                    .formatted(Formatting.RED));
-            return 0;
-        } catch (ServerAuthorizationRequiredException e) {
-            sendMsg(client, Text.translatable("chunkscanner.msg.config_locked_server",
-                            Text.literal(path).formatted(Formatting.AQUA))
-                    .formatted(Formatting.RED));
-            return 0;
-        }
-        ConfigLoader.save();
-        sendMsg(client, Text.translatable("chunkscanner.msg.config_set",
-                        Text.literal(path).formatted(Formatting.AQUA),
-                        Text.literal(String.valueOf(old)).formatted(Formatting.GRAY),
-                        Text.literal(String.valueOf(
-                                ConfigReflectionAccessor.getValue(config, path))).formatted(Formatting.WHITE))
-                .formatted(Formatting.GREEN));
-        sendMsg(client, Text.translatable("chunkscanner.msg.config_apply_hint").formatted(Formatting.GRAY));
-        return 1;
-    }
-
-    /** /cs reset &lt;name&gt; — 恢复配置项的默认值。 */
-    private int configReset(MinecraftClient client, String path) {
-        if (!ConfigReflectionAccessor.hasPath(path)) {
-            sendUnknownPath(client, path);
-            return 0;
-        }
-        ChunkScannerConfig config = ChunkScannerMod.getConfig();
-        try {
-            ConfigReflectionAccessor.resetValue(config, path);
-        } catch (ConfigReflectionAccessor.ConfigAccessException e) {
-            sendMsg(client, Text.translatable("chunkscanner.msg.config_invalid_value", e.getMessage())
-                    .formatted(Formatting.RED));
-            return 0;
-        } catch (ServerAuthorizationRequiredException e) {
-            sendMsg(client, Text.translatable("chunkscanner.msg.config_locked_server",
-                            Text.literal(path).formatted(Formatting.AQUA))
-                    .formatted(Formatting.RED));
-            return 0;
-        }
-        ConfigLoader.save();
-        sendMsg(client, Text.translatable("chunkscanner.msg.config_reset",
-                        Text.literal(path).formatted(Formatting.AQUA),
-                        Text.literal(String.valueOf(
-                                ConfigReflectionAccessor.getValue(config, path))).formatted(Formatting.WHITE))
-                .formatted(Formatting.GREEN));
-        sendMsg(client, Text.translatable("chunkscanner.msg.config_apply_hint").formatted(Formatting.GRAY));
-        return 1;
-    }
-
-    private void sendUnknownPath(MinecraftClient client, String path) {
-        sendMsg(client, Text.translatable("chunkscanner.msg.config_unknown_path",
-                        Text.literal(path).formatted(Formatting.YELLOW))
-                .formatted(Formatting.RED));
     }
 
     // ==================== 导出辅助接口 ====================

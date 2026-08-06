@@ -30,7 +30,24 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
+      # billy-inf 为本地强依赖（未发布到 Maven）。CI 需先 checkout 并构建它，
+      # 产物 jar 落在 mod-infrastructure/build/libs，由 chunkscanner 的 flatDir 解析。
+      - name: Checkout billy-inf
+        uses: actions/checkout@v4
+        with:
+          repository: dx122dx/billy-inf
+          path: mod-infrastructure
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build billy-inf
+        working-directory: mod-infrastructure
+        run: |
+          chmod +x ./gradlew
+          ./gradlew build --no-daemon
+
       - name: Build with Gradle
+        env:
+          BILLY_INF_DIR: mod-infrastructure
         run: ./gradlew build --no-daemon
 
       - name: Upload test reports

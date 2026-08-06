@@ -20,7 +20,7 @@ import com.billy65536.chunkscanner.core.navigation.NavigationTickDispatcher;
 import com.billy65536.chunkscanner.core.navigation.NavigationEntry;
 import com.billy65536.chunkscanner.core.navigation.NavigationQueue;
 import com.billy65536.chunkscanner.integration.BaritoneNavigator;
-import com.billy65536.chunkscanner.security.server_optin.ConfigurationLocker;
+import com.billy65536.infrastructure.core.security.server.ConfigLocker;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
@@ -54,6 +54,14 @@ public class ChunkScannerMod implements ClientModInitializer {
      */
     public static ChunkScannerConfig getConfig() {
         return ConfigLoader.get();
+    }
+
+    /** 返回本模组版本（来自 fabric.mod.json 元数据），供模块登记时上报。 */
+    public static String getVersion() {
+        return FabricLoader.getInstance()
+                .getModContainer(MOD_ID)
+                .map(c -> c.getMetadata().getVersion().getFriendlyString())
+                .orElse("?");
     }
 
     private final ChunkScannerNavigation nav = ChunkScannerNavigation.get();
@@ -260,7 +268,7 @@ public class ChunkScannerMod implements ClientModInitializer {
 
             // 进入多人服务器时默认锁定配置（等待服务器授权信号）。
             if (client.getCurrentServerEntry() != null && !client.isIntegratedServerRunning()) {
-                ConfigurationLocker.enterServerLock();
+                ConfigLocker.enterServerLock();
             }
 
             // 若 Baritone 可用且风险警告为 SHOWN，展示警告消息
@@ -274,7 +282,7 @@ public class ChunkScannerMod implements ClientModInitializer {
         // 注册断连事件：退出服务器/世界时清理所有扫描会话和映射表，并释放配置锁定
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             LOGGER.info("Disconnected from server, shutting down all scan sessions...");
-            ConfigurationLocker.leaveServerLock();
+            ConfigLocker.leaveServerLock();
             scanner.shutdown();
             ItemTranslator.clear();
         });

@@ -1,7 +1,8 @@
 package com.billy65536.chunkscanner.config;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
-import com.billy65536.chunkscanner.security.server_optin.ConfigurationLocker;
+import com.billy65536.infrastructure.core.module.ModuleRegistry;
+import com.billy65536.infrastructure.core.security.server.ConfigLocker;
 
 import me.shedaniel.autoconfig.AutoConfig;
 import me.shedaniel.autoconfig.ConfigHolder;
@@ -57,7 +58,14 @@ public class ConfigLoader {
     /** 从磁盘重新加载配置。 */
     public static void load() {
         holder().load();
-        ConfigurationLocker.applyAll(get());
+        // 重放服务器锁定强制值（防手动编辑磁盘文件绕过）
+        var module = ModuleRegistry.get(ChunkScannerMod.MOD_ID);
+        if (module != null) {
+            ConfigLocker.applyAll(module.getConfigDescriptors());
+        } else {
+            ChunkScannerMod.LOGGER.warn(
+                    "Module not registered yet, server config locks were NOT applied during config load.");
+        }
         ChunkScannerMod.LOGGER.info("Config reloaded from disk.");
     }
 

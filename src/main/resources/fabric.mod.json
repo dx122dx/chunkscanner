@@ -36,7 +36,8 @@
         "minecraft": "~${minecraft_version}",
         "java": ">=17",
         "fabric-api": "*",
-        "cloth-config": "*"
+        "cloth-config": "*",
+        "billy-inf": ">=${billyinf_version}"
     },
     "suggests": {
         "modmenu": "*",
