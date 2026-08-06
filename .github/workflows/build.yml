@@ -30,24 +30,7 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      # billy-inf 为本地强依赖（未发布到 Maven）。CI 需先 checkout 并构建它，
-      # 产物 jar 落在 mod-infrastructure/build/libs，由 chunkscanner 的 flatDir 解析。
-      - name: Checkout mod-infrastructure
-        uses: actions/checkout@v4
-        with:
-          repository: dx122dx/mod-infrastructure
-          path: mod-infrastructure
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build billy-inf
-        working-directory: mod-infrastructure
-        run: |
-          chmod +x ./gradlew
-          ./gradlew build --no-daemon
-
       - name: Build with Gradle
-        env:
-          BILLY_INF_DIR: mod-infrastructure
         run: ./gradlew build --no-daemon
 
       - name: Upload test reports
@@ -93,20 +76,6 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      # 与 build job 保持完全一致的目录结构，确保 flatDir 能找到 infrastructure 的 jar
-      - name: Checkout mod-infrastructure
-        uses: actions/checkout@v4
-        with:
-          repository: dx122dx/mod-infrastructure
-          path: mod-infrastructure
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build billy-inf
-        working-directory: mod-infrastructure
-        run: |
-          chmod +x ./gradlew
-          ./gradlew build --no-daemon
-
       # 凭证守卫：缺失则跳过后续发布步骤，不报错
       - name: Check credentials
         id: creds
@@ -135,8 +104,6 @@ jobs:
 
       - name: Publish to Maven Central snapshots
         if: steps.creds.outputs.skip != 'true'
-        env:
-          BILLY_INF_DIR: mod-infrastructure
         run: |
           echo "发布坐标: io.github.dx122dx.mc:chunkscanner:${{ steps.ver.outputs.snapshot }}"
           ./gradlew publishMavenJavaPublicationToCentralSnapshotsRepository \

@@ -10,17 +10,6 @@ base {
     archivesName = project.archives_base_name
 }
 
-// infrastructure：本地强依赖（兄弟项目，默认 ../mod-infrastructure）。
-// 版本自动从 infrastructure 的 gradle.properties 读取，避免两处版本号失同步。
-// CI 中通过环境变量 BILLY_INF_DIR 指向已 checkout 的 infrastructure 目录（默认 ../mod-infrastructure）。
-def billyInfDir = System.getenv("BILLY_INF_DIR") ?: "${projectDir}/../mod-infrastructure"
-def billyInfProps = new Properties()
-def billyInfPropsFile = file("${billyInfDir}/gradle.properties")
-if (billyInfPropsFile.exists()) {
-    billyInfProps.load(billyInfPropsFile.newInputStream())
-}
-ext.billyinf_version = billyInfProps.getProperty("mod_version", "0.1.0-alpha.21")
-
 // CI（GitHub Actions）环境可直连 Mojang，自动跳过 BMCLAPI 镜像，
 // 避免镜像 SHA1 漂移导致 CI 构建失败；仅本地无法直连时使用镜像。
 def useBmclapi = System.getenv("CI") == null
@@ -60,11 +49,11 @@ repositories {
         url = 'https://maven.shedaniel.me/'
     }
     mavenCentral()
-
-    // 本地 flatDir：读取已构建的 infrastructure jar（BILLY_INF_DIR/build/libs）
-    flatDir {
-        dirs "${billyInfDir}/build/libs"
-    }
+	// infrastructure SNAPSHOT 制品发布到中央快照仓库（需此仓库才能解析 -SNAPSHOT 版本）
+	maven {
+		name = 'Maven Central Snapshots'
+		url = 'https://central.sonatype.com/repository/maven-snapshots/'
+	}
 }
 
 dependencies {
@@ -81,8 +70,8 @@ dependencies {
     modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
 
     // infrastructure：强依赖（单向），提供模块框架、ConfigLocker 配置锁定与 core.config 统一管理。
-    // 版本自动从兄弟项目读取（见上文 billyinf_version），jar 经 flatDir 解析。
-    modImplementation "com.billy65536.infrastructure:infrastructure:${project.billyinf_version}"
+    // 依赖从 Maven Central SNAPSHOT 拉取（io.github.dx122dx.mc:infrastructure），不再经 flatDir。
+    modImplementation "io.github.dx122dx.mc:infrastructure:${project.infrastructure_version}"
 
     // Test dependencies — fabric-loader-junit 提供 Minecraft 环境引导，支持在单元测试中使用 Minecraft 类
     testImplementation "net.fabricmc:fabric-loader-junit:${project.loader_version}"
@@ -129,7 +118,7 @@ java {
 }
 
 // Maven Central 快照发布要求禁用 Gradle Module Metadata，
-// 避免 .module 文件泄露 flatDir 解析出的本地依赖坐标。
+// 避免 .module 文件泄漏对 SNAPSHOT 依赖（infrastructure）的坐标。
 tasks.withType(GenerateModuleMetadata).configureEach {
     enabled = false
 }
@@ -154,7 +143,7 @@ publishing {
 
             pom {
                 name        = 'Chunk Scanner'
-                description = 'Client-side progressive chunk scanner for Fabric. Asynchronously scans loaded chunks with extensible analyzers (Sign, QShop). NOTE: this mod requires the "infrastructure" mod (com.billy65536.infrastructure) at runtime, which is not published to Maven Central.'
+                description = 'Client-side progressive chunk scanner for Fabric. Asynchronously scans loaded chunks with extensible analyzers (Sign, QShop). NOTE: this mod requires the "infrastructure" mod (io.github.dx122dx.mc:infrastructure) at runtime, published to Maven Central.'
                 url         = 'https://github.com/dx122dx/chunkscanner'
                 licenses {
                     license {
@@ -174,19 +163,7 @@ publishing {
                     url                 = 'https://github.com/dx122dx/chunkscanner'
                 }
 
-                // 剔除无法从公共 Maven 解析的本地依赖坐标，避免下游解析失败。
-                // 当前唯一明确不可解析的本地依赖是 infrastructure（经 flatDir 解析）。
-                // minecraft / yarn 等映射坐标由 Loom 处理，通常不进入 POM，暂不处理；
-                // 若后续发现其他不可解析坐标，在此补充清理逻辑。
-                withXml {
-                    def deps = asNode().dependencies?.get(0)
-                    if (deps != null) {
-                        deps.children().findAll { dep ->
-                            def g = dep.groupId?.text()
-                            g == 'com.billy65536.infrastructure'
-                        }.each { it.replaceNode {} }
-                    }
-                }
+                // 依赖均可从公共 Maven 解析（infrastructure 已发布到中央 SNAPSHOT），无需剔除本地坐标。
             }
         }
     }
