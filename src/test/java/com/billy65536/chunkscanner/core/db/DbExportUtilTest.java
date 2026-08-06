@@ -97,12 +97,13 @@ class DbExportUtilTest {
     class FileName {
 
         @Test
-        @DisplayName("格式为 chunkscanner-{analyzerId}-{scanId}-{yyMMddHHmmss}.{ext}")
+        @DisplayName("格式为 chunkscanner-{analyzerPath}-{scanId}-{yyMMddHHmmss}.{ext}")
         void format_shouldMatchContract() {
             String name = DbExportUtil.buildDefaultFileName(
                     new Identifier("chunkscanner", "qshop"), "scan-42", "zip");
 
-            String expectedPrefix = "chunkscanner-chunkscanner:qshop-scan-42-";
+            // 命名空间不参与文件名：冒号在 Windows 上非法，会导致落盘抛 Illegal char <:>
+            String expectedPrefix = "chunkscanner-qshop-scan-42-";
             assertTrue(name.startsWith(expectedPrefix),
                     "实际: " + name);
             assertTrue(name.endsWith(".zip"));
@@ -127,6 +128,116 @@ class DbExportUtilTest {
             assertNotEquals(zip, tsv);
             assertTrue(zip.endsWith(".zip"));
             assertTrue(tsv.endsWith(".tsv"));
+        }
+
+        @Test
+        @DisplayName("默认名不含冒号等文件系统非法字符（回归：Illegal char <:>）")
+        void defaultName_shouldNotContainIllegalChars() {
+            String name = DbExportUtil.buildDefaultFileName(
+                    new Identifier("chunkscanner", "qshop"), "scan-42", "zip");
+
+            assertFalse(name.contains(":"), "文件名不应含冒号，实际: " + name);
+            assertFalse(name.contains("/"), "文件名不应含路径分隔符，实际: " + name);
+            assertFalse(name.contains("\\"), "文件名不应含路径分隔符，实际: " + name);
+            // 完整白名单校验：仅允许 [a-z0-9_.-]
+            assertTrue(Pattern.matches("[a-z0-9_.-]+", name), "实际: " + name);
+        }
+
+        @Test
+        @DisplayName("analyzerId 为 null 或 path 为空时回退 unknown")
+        void nullAnalyzerId_shouldFallbackToUnknown() {
+            String nullId = DbExportUtil.buildDefaultFileName(null, "s", "zip");
+            assertTrue(nullId.startsWith("chunkscanner-unknown-s-"), "实际: " + nullId);
+
+            String emptyPath = DbExportUtil.buildDefaultFileName(
+                    new Identifier("chunkscanner", "a"), null, "zip");
+            assertTrue(emptyPath.startsWith("chunkscanner-a-unknown-"), "实际: " + emptyPath);
+        }
+
+        @Test
+        @DisplayName("scanId 含空格或非法字符时被清洗")
+        void scanId_shouldBeSanitized() {
+            String name = DbExportUtil.buildDefaultFileName(
+                    new Identifier("chunkscanner", "qshop"), "my scan:1", "zip");
+
+            assertFalse(name.contains(" "), "实际: " + name);
+            assertFalse(name.contains(":"), "实际: " + name);
+            assertTrue(name.startsWith("chunkscanner-qshop-my_scan_1-"), "实际: " + name);
+        }
+    }
+
+    // ==================== 自定义文件名清洗 ====================
+
+    @Nested
+    @DisplayName("sanitizeExportFileName")
+    class SanitizeExportFileName {
+
+        @Test
+        @DisplayName("缺少扩展名时按导出格式补全")
+        void missingExt_shouldBeAppended() {
+            assertEquals("test.zip", DbExportUtil.sanitizeExportFileName("test", "zip"));
+            assertEquals("test.tsv", DbExportUtil.sanitizeExportFileName("test", "tsv"));
+        }
+
+        @Test
+        @DisplayName("已带正确扩展名不重复追加（大小写不敏感）")
+        void correctExt_shouldNotBeDuplicated() {
+            assertEquals("test.zip", DbExportUtil.sanitizeExportFileName("test.zip", "zip"));
+            assertEquals("TEST.ZIP", DbExportUtil.sanitizeExportFileName("TEST.ZIP", "zip"));
+        }
+
+        @Test
+        @DisplayName("扩展名不符时补全期望扩展名")
+        void wrongExt_shouldGetRequiredExt() {
+            assertEquals("test.txt.zip", DbExportUtil.sanitizeExportFileName("test.txt", "zip"));
+        }
+
+        @Test
+        @DisplayName("路径穿越被剥离为纯文件名")
+        void pathTraversal_shouldBeStripped() {
+            assertEquals("evil.zip", DbExportUtil.sanitizeExportFileName("../evil", "zip"));
+            assertEquals("evil.zip", DbExportUtil.sanitizeExportFileName("../../../evil", "zip"));
+            assertEquals("evil.zip", DbExportUtil.sanitizeExportFileName("/etc/evil", "zip"));
+            assertEquals("evil.zip", DbExportUtil.sanitizeExportFileName("a\\b\\evil", "zip"));
+        }
+
+        @Test
+        @DisplayName("非法字符被替换为下划线")
+        void illegalChars_shouldBeReplaced() {
+            String out = DbExportUtil.sanitizeExportFileName("a:b?c*d|e", "zip");
+
+            assertNotNull(out);
+            assertFalse(out.contains(":"), "实际: " + out);
+            assertFalse(out.contains("?"), "实际: " + out);
+            assertFalse(out.contains("*"), "实际: " + out);
+            assertFalse(out.contains("|"), "实际: " + out);
+            assertTrue(out.endsWith(".zip"), "实际: " + out);
+        }
+
+        @Test
+        @DisplayName("null / 空白 / . / .. 返回 null 供调用方回退默认名")
+        void unusableInput_shouldReturnNull() {
+            assertNull(DbExportUtil.sanitizeExportFileName(null, "zip"));
+            assertNull(DbExportUtil.sanitizeExportFileName("", "zip"));
+            assertNull(DbExportUtil.sanitizeExportFileName("   ", "zip"));
+            assertNull(DbExportUtil.sanitizeExportFileName(".", "zip"));
+            assertNull(DbExportUtil.sanitizeExportFileName("..", "zip"));
+        }
+
+        @Test
+        @DisplayName("Windows 不允许的结尾点与空格被去除")
+        void trailingDotsAndSpaces_shouldBeTrimmed() {
+            assertEquals("test.zip", DbExportUtil.sanitizeExportFileName("test. ", "zip"));
+            assertEquals("test.zip", DbExportUtil.sanitizeExportFileName("test...", "zip"));
+        }
+
+        @Test
+        @DisplayName("清洗结果始终为不含目录成分的纯文件名")
+        void result_shouldAlwaysBeBareFileName() {
+            String out = DbExportUtil.sanitizeExportFileName("../../a/b/c", "tsv");
+
+            assertNotNull(out);
+            assertEquals(out, Path.of(out).getFileName().toString());
         }
     }
 

@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
@@ -62,15 +63,83 @@ public final class DbExportUtil {
     /**
      * 生成默认导出文件名。
      *
-     * @param analyzerId 分析器 ID
-     * @param scanId     扫描 ID
+     * <p>{@code analyzerId} 只取 path 部分参与文件名：命名空间分隔符 {@code ':'} 在
+     * Windows 等文件系统上非法，直接拼接会导致落盘时抛
+     * {@code Illegal char <:>}。{@code scanId} 同为用户输入，一并清洗。</p>
+     *
+     * @param analyzerId 分析器 ID，可为 {@code null}
+     * @param scanId     扫描 ID，可为 {@code null}
      * @param ext        文件扩展名（不含点号）
-     * @return chunkscanner-{analyzerId}-{scanId}-{yyMMddHHmmss}.{ext}
+     * @return chunkscanner-{analyzerPath}-{scanId}-{yyMMddHHmmss}.{ext}
      */
     public static String buildDefaultFileName(Identifier analyzerId, String scanId, String ext) {
         String time = LocalDateTime.now()
                 .format(DateTimeFormatter.ofPattern("yyMMddHHmmss"));
-        return "chunkscanner-" + analyzerId + "-" + scanId + "-" + time + "." + ext;
+        String safeAnalyzer = sanitizeSegment(analyzerId == null ? null : analyzerId.getPath());
+        String safeScanId = sanitizeSegment(scanId);
+        return "chunkscanner-" + safeAnalyzer + "-" + safeScanId + "-" + time + "." + ext;
+    }
+
+    /**
+     * 将文件名片段规范化为安全字符集。
+     *
+     * <p>白名单为 {@code [a-z0-9_-]}，其余字符（含冒号、空格、路径分隔符与中文）
+     * 一律替换为下划线。小写化必须指定 {@link Locale#ROOT}：土耳其语 locale 下
+     * {@code 'I'.toLowerCase()} 会变成无点 {@code 'ı'}，导致同一输入在不同系统
+     * 语言下生成不同文件名。</p>
+     *
+     * @param raw 原始片段，可为 {@code null}
+     * @return 清洗后的片段；输入为空或清洗后为空时返回 {@code "unknown"}
+     */
+    private static String sanitizeSegment(String raw) {
+        if (raw == null || raw.isBlank()) return "unknown";
+        String s = raw.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_-]", "_");
+        return s.isEmpty() ? "unknown" : s;
+    }
+
+    /**
+     * 规范化用户自定义导出文件名。
+     *
+     * <p>处理步骤：① 用 {@link Path#getFileName()} 剥离任何目录成分，彻底阻断
+     * {@code ../} 与绝对路径穿越；② 过滤文件系统非法字符与控制字符；
+     * ③ 去除 Windows 不允许的结尾点与空格；④ 拒绝 {@code "."} / {@code ".."} 与空串；
+     * ⑤ 扩展名缺失或不符时补 {@code requiredExt}（大小写不敏感比较，不重复追加）。</p>
+     *
+     * @param raw         用户输入，可为 {@code null}/空白
+     * @param requiredExt 期望扩展名，不含点号（{@code "zip"} / {@code "tsv"}）
+     * @return 规范化后的纯文件名；不可用时返回 {@code null}，由调用方回退默认名
+     */
+    public static String sanitizeExportFileName(String raw, String requiredExt) {
+        if (raw == null || raw.isBlank()) return null;
+
+        // 剥离目录成分：无论 ../x、/abs/x 还是 a\b\x，只保留最后一段
+        String candidate = raw.trim().replace('\\', '/');
+        try {
+            Path fileName = Path.of(candidate).getFileName();
+            if (fileName != null) candidate = fileName.toString();
+        } catch (InvalidPathException e) {
+            // 平台无法解析的路径：退化为按分隔符手工截取最后一段
+            int slash = candidate.lastIndexOf('/');
+            if (slash >= 0) candidate = candidate.substring(slash + 1);
+        }
+
+        // 过滤文件系统非法字符与控制字符，语义与 ChunkScannerMod.sanitizePath 一致
+        candidate = candidate.replaceAll("[<>:\"/\\\\|?*\\x00-\\x1F]", "_");
+        // Windows 不允许文件名以点或空格结尾
+        candidate = candidate.replaceAll("[. ]+$", "");
+
+        if (candidate.isEmpty() || ".".equals(candidate) || "..".equals(candidate)) {
+            return null;
+        }
+
+        if (requiredExt == null || requiredExt.isBlank()) {
+            return candidate;
+        }
+        String suffix = "." + requiredExt.toLowerCase(Locale.ROOT);
+        if (!candidate.toLowerCase(Locale.ROOT).endsWith(suffix)) {
+            candidate = candidate + suffix;
+        }
+        return candidate;
     }
 
     // ==================== 导出入口 ====================

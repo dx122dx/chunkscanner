@@ -151,13 +151,13 @@ public class ChunkScannerCommands {
                                         }))
                                 .executes(ctx -> {
                                     scanner.start(ctx.getSource().getClient(),
-                                            parseIdentifier(StringArgumentType.getString(ctx, "name")),
+                                            parseIdentifier(StringArgumentType.getString(ctx, "analyzer")),
                                             StringArgumentType.getString(ctx, "id"));
                                     return 1;
                                 }))
                         .executes(ctx -> {
                             scanner.start(ctx.getSource().getClient(),
-                                    parseIdentifier(StringArgumentType.getString(ctx, "name")),
+                                    parseIdentifier(StringArgumentType.getString(ctx, "analyzer")),
                                     String.valueOf(System.currentTimeMillis()));
                             return 1;
                         })));
@@ -566,11 +566,13 @@ public class ChunkScannerCommands {
 
     /**
      * 通用数据库导出流程：验证 → 刷写 → 打开 DB → 执行导出 → 反馈。
+     *
+     * @param ext 期望的导出扩展名（不含点号），用于规范化用户自定义文件名
      */
     private void exportDb(String scanId, String customFileName,
                           MinecraftClient client,
                           ExportAction action,
-                          String successKey, String logLabel) {
+                          String successKey, String logLabel, String ext) {
         if (scanner == null) {
             sendMsg(client, Text.literal("ChunkScanner not initialized.").formatted(Formatting.RED));
             return;
@@ -600,9 +602,20 @@ public class ChunkScannerCommands {
             IChunkDb.IFactory dbFactory = IChunkDb.FactoryRegistry.getDefault();
             IChunkDb db = dbFactory.create(scanId, meta.analyzerId(), ChunkScannerMod.getDbDir());
 
+            // 自定义文件名须先规范化：剥离目录成分阻断路径穿越、过滤非法字符、
+            // 缺扩展名时按导出格式补全。清洗后不可用则置 null 回退默认名。
             Path outFile = null;
             if (customFileName != null && !customFileName.isBlank()) {
-                outFile = DbExportUtil.getExportDir().resolve(customFileName);
+                String safeName = DbExportUtil.sanitizeExportFileName(customFileName, ext);
+                if (safeName != null) {
+                    Path exportDir = DbExportUtil.getExportDir();
+                    // 自定义名不经 DbExportUtil 内部的 ensureExportDir，须在此保证目录存在
+                    Files.createDirectories(exportDir);
+                    outFile = exportDir.resolve(safeName);
+                } else {
+                    ChunkScannerMod.LOGGER.warn(
+                            "Unusable export file name '{}', falling back to default name", customFileName);
+                }
             }
             Path exported = action.export(db, outFile);
             sendMsg(client, Text.translatable(successKey,
@@ -619,7 +632,7 @@ public class ChunkScannerCommands {
                              MinecraftClient client) {
         exportDb(scanId, customFileName, client,
                 DbExportUtil::exportRawZip,
-                "chunkscanner.msg.db_export_raw_success", "raw");
+                "chunkscanner.msg.db_export_raw_success", "raw", "zip");
     }
 
     /** 导出数据库为 TSV 格式（hex key + tab + hex value）。 */
@@ -627,7 +640,7 @@ public class ChunkScannerCommands {
                              MinecraftClient client) {
         exportDb(scanId, customFileName, client,
                 DbExportUtil::exportTsv,
-                "chunkscanner.msg.db_export_tsv_success", "tsv");
+                "chunkscanner.msg.db_export_tsv_success", "tsv", "tsv");
     }
 
     /**
@@ -686,9 +699,15 @@ public class ChunkScannerCommands {
      */
     private static Identifier parseIdentifier(String arg) {
         if (arg == null || arg.isEmpty()) return ChunkScannerMod.ID_UNKNOWN;
-        Identifier parsed = Identifier.tryParse(arg);
-        if (parsed != null) return parsed;
-        // 兜底：裸名补全命名空间，但路径非法（含大写/中文等）时降级为哨兵避免崩溃
+        // 必须先判冒号：MC 1.20.1 下 Identifier.tryParse("qshop") 会返回 minecraft:qshop，
+        // 直接 tryParse 会让裸名落到错误的命名空间而找不到分析器。
+        if (arg.indexOf(':') >= 0) {
+            Identifier parsed = Identifier.tryParse(arg);
+            if (parsed != null) return parsed;
+            ChunkScannerMod.LOGGER.warn("Invalid analyzer id '{}', fell back to unknown", arg);
+            return ChunkScannerMod.ID_UNKNOWN;
+        }
+        // 裸名补全 chunkscanner 命名空间，但路径非法（含大写/中文等）时降级为哨兵避免崩溃
         try {
             return ChunkScannerMod.id(arg);
         } catch (RuntimeException e) {
