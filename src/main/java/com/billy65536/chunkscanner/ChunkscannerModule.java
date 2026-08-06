@@ -18,15 +18,15 @@ import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.text.Text;
 
 /**
- * chunkscanner 作为 billy-inf 模块的接入点（{@link IModule} 实现）。
+ * chunkscanner 作为 infrastructure 模块的接入点（{@link IModule} 实现）。
  *
- * <p>经由 Java SPI（{@code META-INF/services/...IModule}）由 billy-inf 的
+ * <p>经由 Java SPI（{@code META-INF/services/...IModule}）由 infrastructure 的
  * {@code ModuleRegistry#discover()} 自动发现并登记，无需在启动代码中显式注册。
  * 登记后：</p>
  * <ul>
  *   <li>{@code /inf config get|set|reset|gui|reload chunkscanner:config/...} 可统一读写其配置；</li>
  *   <li>{@code /inf info chunkscanner} 列出其贡献的命令与配置路径；</li>
- *   <li>{@link ConfigLocker} 的配置锁定逻辑由 billy-inf 核心提供，本模块仅注册默认锁。</li>
+ *   <li>{@link ConfigLocker} 的配置锁定逻辑由 infrastructure 核心提供，本模块仅注册默认锁。</li>
  * </ul>
  *
  * <p>原 chunkscanner 自有的 {@code /cs config get|set|reset|gui|reload} 已全部移除，
@@ -36,7 +36,7 @@ public final class ChunkscannerModule implements IModule {
 
     private static final String ID = "chunkscanner";
 
-    /** 供 Java SPI 实例化；登记由 billy-inf ModuleRegistry.discover() 统一触发。 */
+    /** 供 Java SPI 实例化；登记由 infrastructure ModuleRegistry.discover() 统一触发。 */
     public ChunkscannerModule() {}
 
     @Override

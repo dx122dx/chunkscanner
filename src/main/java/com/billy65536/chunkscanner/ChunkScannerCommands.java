@@ -38,7 +38,7 @@ import java.util.List;
  * 事件回调等），命令相关代码集中在此。运行时通过持有的 {@link ChunkScannerMod} 实例
  * 访问扫描引擎、全局配置与数据库目录。
  *
- * <p>配置访问（get/set/reset/gui/reload）已全部迁移至 billy-inf 的 {@code /inf config}，
+ * <p>配置访问（get/set/reset/gui/reload）已全部迁移至 infrastructure 的 {@code /inf config}，
  * 本类不再包含 {@code /cs config} 节点。</p>
  */
 public class ChunkScannerCommands {
