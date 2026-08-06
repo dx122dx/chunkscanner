@@ -14,7 +14,7 @@ import com.billy65536.chunkscanner.ChunkScannerMod;
  *   <li>{@link RegistryApi} —— 分析器、数据库视图、存储引擎的注册</li>
  * </ul>
  *
- * <h3>稳定性约定</h3>
+ * <h2>稳定性约定</h2>
  * <p>{@code com.billy65536.chunkscanner.api} 包内的所有公开签名视为稳定契约，
  * 在同一主版本内保持向后兼容：不删除方法、不改变已有参数语义，
  * 废弃的方法会先标注 {@link Deprecated} 并保留至少一个次版本。</p>
@@ -23,13 +23,13 @@ import com.billy65536.chunkscanner.ChunkScannerMod;
  * 公共契约，可能随时调整。外部模组应尽量只依赖本包，
  * 仅在 API 返回类型不可避免时（如 {@code IChunkDb}、{@code FileMeta}）才引用 core 类型。</p>
  *
- * <h3>调用时机</h3>
+ * <h2>调用时机</h2>
  * <ul>
  *   <li><b>注册类</b>（{@link RegistryApi}）必须在客户端初始化阶段完成。</li>
  *   <li><b>数据库与导航</b>可在运行期调用，但需注意各自的线程约束。</li>
  * </ul>
  *
- * <h3>接入示例</h3>
+ * <h2>接入示例</h2>
  * <pre>{@code
  * public class MyMod implements ClientModInitializer {
  *     @Override

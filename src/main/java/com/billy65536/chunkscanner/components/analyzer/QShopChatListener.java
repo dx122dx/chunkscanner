@@ -23,7 +23,7 @@ import com.billy65536.chunkscanner.core.IChunkDb;
 /**
  * 监听客户端聊天消息和按键事件，捕获 QuickShop 商店 Item 行中的增强物品数据。
  *
- * <h3>工作原理</h3>
+ * <h2>工作原理</h2>
  * <ol>
  *   <li>在 {@link ClientTickEvents#START_CLIENT_TICK} 中手动追踪攻击键状态变化，
  *       检测玩家是否左键点击了 QShop 告示牌或其附着的容器</li>
@@ -31,7 +31,7 @@ import com.billy65536.chunkscanner.core.IChunkDb;
  *   <li>处理时用告示牌位置构造精确数据库键，直接查找并增强对应记录</li>
  * </ol>
  *
- * <h3>即时密封 + 排水窗口 + 商品名校验</h3>
+ * <h2>即时密封 + 排水窗口 + 商品名校验</h2>
  * <p>QShop 对点击的聊天响应通常即时发送，但复杂物品（带 NBT、潜影盒）可能分多条
  * Item 行到达。采用即时密封 + 排水窗口 + 商品名校验三重保障：</p>
  * <ol>
@@ -43,12 +43,12 @@ import com.billy65536.chunkscanner.core.IChunkDb;
  * <p>QShop 每次点击发送的消息中，有且仅有一条包含告示牌显示的商品名及其物品栈。
  * 利用此特性可精确过滤无关消息，杜绝快速连续点击时的消息错配。</p>
  *
- * <h3>附着容器检测</h3>
+ * <h2>附着容器检测</h2>
  * <p>QShop 告示牌贴附在箱子等容器上。点击容器也会触发商店交互和 Item 行消息，
  * 本监听器会检查点击位置 6 个相邻方块，若存在 QShop 告示牌则使用告示牌坐标。
  * 确保无论点击告示牌还是容器，都能正确定位到数据库中的告示牌记录。</p>
  *
- * <h3>匹配策略</h3>
+ * <h2>匹配策略</h2>
  * <p>通过追踪攻击键按下事件捕获点击位置。消息通过排水窗口 + 活跃组归属机制
  * 与对应点击关联，延迟消息不会错误归属到后续点击。
  * {@link com.billy65536.chunkscanner.config.ChunkScannerConfig.EnhanceMatchMode#StrictAutomatic StrictAutomatic}
@@ -57,12 +57,12 @@ import com.billy65536.chunkscanner.core.IChunkDb;
  * <p>Non-Automatic 和 Semi-Automatic 模式下不自动检测点击，而是从聊天捕获物品后
  * 手动或自动提交增强。</p>
  *
- * <h3>线程安全</h3>
+ * <h2>线程安全</h2>
  * <p>聊天消息回调（GAME 通道）和按键检测在渲染线程执行，
  * 但系统消息通过 Mixin 在网络线程注入。activeGroup、drainingGroups
  * 通过 {@code pipelineLock} 同步块保护。</p>
  *
- * <h3>防发包频率</h3>
+ * <h2>防发包频率</h2>
  * <p>本监听器<b>不发送任何数据包</b>，仅被动监听，不会触发服务器反作弊检测。</p>
  */
 public final class QShopChatListener {

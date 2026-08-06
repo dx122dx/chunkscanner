@@ -28,7 +28,7 @@ import java.util.zip.ZipFile;
  *   <li>{@link #open(Path)} 解析包内 metadata，获取扫描信息（无需解压）；</li>
  *   <li>{@link #validate()} 验证包合法性（字段合法性 + 数据完整性 SHA256）；</li>
  *   <li>{@link #load(Path)} / {@link #load(Path, boolean)} 将包还原为 {@link IChunkDb}；</li>
- *   <li>{@link #openUnchecked(Path, Path)} 跳过校验直接加载（效率优先）。</li>
+ *   <li>{@link #load(Path, boolean)} 传入 false 可跳过校验直接加载（效率优先）。</li>
  * </ul>
  */
 public final class DbPackage {

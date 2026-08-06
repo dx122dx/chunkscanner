@@ -14,7 +14,7 @@ import com.billy65536.chunkscanner.core.LocatedPosition;
 /**
  * {@link TableLayout} 的流式构建器。
  *
- * <h3>使用示例</h3>
+ * <h2>使用示例</h2>
  * <pre>{@code
  * TableLayoutBuilder b = new TableLayoutBuilder(textRenderer, metaCount,
  *     new String[]{"Pos", "Side", "Line 1"});

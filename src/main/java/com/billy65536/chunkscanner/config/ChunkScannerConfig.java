@@ -301,7 +301,7 @@ public class ChunkScannerConfig implements ConfigData {
      * 被锁定的配置项都会被强制重置回服务器策略值（或仅锁定项保持锁定），
      * 使锁定状态在任何修改途径下都不可被绕过。
      *
-     * <p>返回空 {@link Optional} 表示校验通过（无向用户展示的错误），锁定重放在此处
+     * <p>返回空 {@code Optional} 表示校验通过（无向用户展示的错误），锁定重放在此处
      * 静默完成，不阻断保存流程。
      */
     @Override

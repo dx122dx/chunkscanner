@@ -16,7 +16,7 @@ import com.billy65536.chunkscanner.ChunkScannerMod;
  *
  * <p>全局实例由模组内部直接驱动，无需也不应注册到此处。</p>
  *
- * <h3>使用示例</h3>
+ * <h2>使用示例</h2>
  * <pre>{@code
  * ChunkScannerNavigation nav = ChunkScannerNavigation.create("qab");
  * NavigationTickDispatcher.register(nav);

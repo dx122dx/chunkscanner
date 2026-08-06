@@ -15,11 +15,11 @@ import com.billy65536.chunkscanner.core.IChunkDb;
 /**
  * QShop 数据库适配器 —— 所有 QShop 二进制格式定义和数据库读写的唯一权威。
  *
- * <h3>数据模型</h3>
+ * <h2>数据模型</h2>
  * 两层存储：主数据库（id=0）存基础记录，子数据库（id=1）存聊天增强数据。
  * 两者共用同一套 Key 格式，通过值长度区分记录类型。
  *
- * <h3>二进制布局</h3>
+ * <h2>二进制布局</h2>
  * <pre>
  *   Key (34 bytes):  "qshop:" (6) + dimPoolId (4) + cx (4) + cz (4)
  *                  + keyHi (8, dimPoolId:32|x:32) + keyLo (8, z:32|y:32)
@@ -32,7 +32,7 @@ import com.billy65536.chunkscanner.core.IChunkDb;
  *                             + flags (4) + updateTime (8)
  * </pre>
  *
- * <h3>公开方法统一的 3 步模式</h3>
+ * <h2>公开方法统一的 3 步模式</h2>
  * <ol>
  *   <li>转换 key — {@link #makeKey(String, int, int, int, int, int)}</li>
  *   <li>转换 value — {@link #makeRecordValue} / {@link #parseRecordValue} /

@@ -20,7 +20,7 @@ import com.billy65536.chunkscanner.ChunkScannerMod;
  * <p>内置条件：{@code chunkscanner:player_near}（玩家靠近目标点即判定到达，
  * 距离取自全局配置）。</p>
  *
- * <h3>使用示例</h3>
+ * <h2>使用示例</h2>
  * <pre>{@code
  * // 注册自定义条件
  * NavigationConditionRegistry.register(

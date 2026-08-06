@@ -32,7 +32,7 @@ import org.slf4j.LoggerFactory;
  * <p>注意：Baritone 路径执行是全局唯一资源，多个导航实例同时 {@link #start()}
  * 会互相抢占目标。调用方应保证同一时刻只有一个实例处于活动状态。</p>
  *
- * <h3>使用示例</h3>
+ * <h2>使用示例</h2>
  * <pre>{@code
  * // 全局导航
  * ChunkScannerNavigation nav = ChunkScannerNavigation.get();

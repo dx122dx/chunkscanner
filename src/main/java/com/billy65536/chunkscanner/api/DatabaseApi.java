@@ -36,7 +36,7 @@ import com.billy65536.chunkscanner.screen.DatabaseScreen;
  * <p><b>线程约束</b>：{@link #openGui} 系列方法会自动切换到客户端主线程，
  * 可在任意线程调用。其余方法为纯文件/IO 操作，建议避开主线程以免卡顿。</p>
  *
- * <h3>使用示例</h3>
+ * <h2>使用示例</h2>
  * <pre>{@code
  * // 列出所有数据库
  * for (DbFileUtil.FileMeta meta : DatabaseApi.listDatabases()) {

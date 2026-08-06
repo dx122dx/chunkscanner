@@ -32,7 +32,7 @@ import com.billy65536.chunkscanner.core.IChunkDb;
  * 例如 {@code new Identifier("qab", "shop_view")}。避免使用 {@code chunkscanner}
  * 命名空间，以免与本模组内置条目冲突。</p>
  *
- * <h3>使用示例</h3>
+ * <h2>使用示例</h2>
  * <pre>{@code
  * // 注册分析器，并指定其数据库默认使用的视图
  * RegistryApi.registerAnalyzer(new MyAnalyzer(), new Identifier("qab", "shop_view"));

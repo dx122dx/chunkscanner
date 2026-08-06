@@ -26,7 +26,7 @@ import java.util.zip.CRC32;
  * <p>本提取器遍历 Text 组件树，识别同时包含 SHOW_ITEM hover 和
  * /qs silentpreview click 的组件，提取其中的物品数据。
  *
- * <h3>特殊物品处理</h3>
+ * <h2>特殊物品处理</h2>
  * <ul>
  *   <li><b>潜影盒（Shulker Box）</b>：若已满（27 格）且内容物全部相同，
  *       自动"展开"——将内容物作为实际商品，设置 S 标志。</li>

@@ -34,7 +34,7 @@ import com.billy65536.chunkscanner.core.navigation.NavigationTickDispatcher;
  * 通过 {@link #isBaritoneAvailable()} 判断 Baritone 是否可用；不可用时 ChunkScanner
  * 会自动降级为创建 Xaero 路径点。</p>
  *
- * <h3>使用示例</h3>
+ * <h2>使用示例</h2>
  * <pre>{@code
  * // 全局导航
  * NavigationApi.enqueue(100, 64, -200, "minecraft:overworld");
