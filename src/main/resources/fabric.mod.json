@@ -26,6 +26,9 @@
         ],
         "modmenu": [
             "com.billy65536.chunkscanner.integration.ModMenuIntegration"
+        ],
+        "infrastructure:security": [
+            "com.billy65536.chunkscanner.security.ChunkscannerSecurityProvider"
         ]
     },
     "mixins": [

@@ -2,14 +2,12 @@ package com.billy65536.chunkscanner;
 
 import java.util.Collection;
 import java.util.List;
-import java.util.Map;
 
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.ConfigLoader;
 import com.billy65536.infrastructure.core.config.ConfigDescriptor;
 import com.billy65536.infrastructure.core.config.ConfigPath;
 import com.billy65536.infrastructure.core.module.IModule;
-import com.billy65536.infrastructure.security.ConfigLocker;
 
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
@@ -26,7 +24,9 @@ import net.minecraft.text.Text;
  * <ul>
  *   <li>{@code /inf config get|set|reset|gui|reload chunkscanner:config/...} 可统一读写其配置；</li>
  *   <li>{@code /inf info chunkscanner} 列出其贡献的命令与配置路径；</li>
- *   <li>{@link ConfigLocker} 的配置锁定逻辑由 infrastructure 核心提供，本模块仅注册默认锁。</li>
+ *   <li>配置锁定由 infrastructure 的安全策略框架提供，本模块的默认锁经
+ *       {@link com.billy65536.chunkscanner.security.ChunkscannerSecurityProvider}
+ *       扩展点贡献。</li>
  * </ul>
  *
  * <p>原 chunkscanner 自有的 {@code /cs config get|set|reset|gui|reload} 已全部移除，
@@ -57,18 +57,6 @@ public final class ChunkscannerModule implements IModule {
     @Override
     public Text getDescription() {
         return Text.translatable("chunkscanner.msg.module_desc");
-    }
-
-    // =================== 初始化 ===================
-
-    @Override
-    public void onInitializeModule() {
-        // 注册默认受保护配置项（进入多人服务器时默认锁定的强制值）。
-        // key 为纯字段点分路径，段名 "config" 与本模块描述符的段名一致。
-        Map<String, String> defaults = Map.of(
-                "components.qshop.highlightEnabled", "false"
-        );
-        ConfigLocker.registerDefaultLocks(ID, "config", defaults);
     }
 
     // ==================== 配置 ====================
