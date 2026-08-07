@@ -43,6 +43,16 @@ public class TaskConfig {
     /** 路径点所属组（WaypointSet 名称）。null = 使用默认值。 */
     public String waypointGroup;
 
+    /**
+     * 命令层补全用的「已识别键名」集合（小写，{@link #parse} 实际接受的写法）。
+     * 与 {@link #toDisplayString()} 的输出别名（如 {@code initTasks=} / {@code wpName=}）不同，
+     * 此处为解析期键名，确保补全结果一定能被 {@link #parse} 识别。
+     */
+    public static final java.util.List<String> KNOWN_KEYS = java.util.List.of(
+            "revisit", "tasks", "inittasks", "targetns",
+            "flush", "threads", "radius",
+            "wpname", "wpinit", "wpgroup");
+
     /** 创建一个空配置（所有值使用默认值）。 */
     public TaskConfig() {}
 

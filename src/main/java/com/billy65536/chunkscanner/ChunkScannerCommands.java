@@ -17,6 +17,7 @@ import com.billy65536.chunkscanner.gui.GuiUtil;
 import com.billy65536.chunkscanner.screen.ChunkScannerScreen;
 import com.billy65536.chunkscanner.screen.DatabaseScreen;
 
+import com.billy65536.infrastructure.core.cli.CliCompletion;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
@@ -89,6 +90,26 @@ public class ChunkScannerCommands {
                 return builder.buildFuture();
             };
 
+    /**
+     * /cs task begin 的 config 参数补全：基于 infrastructure 的 {@link CliCompletion}。
+     *
+     * <p>采用「assignment + multiple」层级模式：
+     * <ul>
+     *   <li>{@code assignment=true}：键名形如 {@code key=}，选中后自动补 {@code =} 并按需提示取值；</li>
+     *   <li>{@code multiple=true}：多个 {@code key=value} 以空格分隔，尾随空格表示要追加新条目；
+     *       仅对「当前正在输入的那个片段」做补全，不影响已写好的前序片段。</li>
+     * </ul>
+     * 配合 {@link TaskConfig#KNOWN_KEYS} 提供键名候选，从源头杜绝 {@code rivist} 之类的拼写错误。
+     */
+    private static final SuggestionProvider<FabricClientCommandSource> TASK_CONFIG_SUGGESTIONS =
+            CliCompletion.builder()
+                    .separators("")            // 配置键为扁平键（无 . : / 层级）
+                    .assignment(true)          // key=value 形式，选中键后补 '=' 并提示取值
+                    .multiple(true)            // 多个 key=value 以空格分隔
+                    .keySource(ctx -> TaskConfig.KNOWN_KEYS)
+                    .valueProvider((ctx, key) -> taskConfigDefaultValues(key))
+                    .build();
+
     // ==================== 命令构建 ====================
 
     public com.mojang.brigadier.builder.LiteralArgumentBuilder<FabricClientCommandSource> buildCommands(String name) {
@@ -117,8 +138,9 @@ public class ChunkScannerCommands {
                 .then(ClientCommandManager.argument("analyzer", IdentifierArgumentType.identifier())
                         .suggests(ANALYZER_SUGGESTIONS)
                         .then(ClientCommandManager.argument("id", StringArgumentType.string())
-                                .then(ClientCommandManager.argument("config", StringArgumentType.greedyString())
-                                        .executes(ctx -> {
+                        .then(ClientCommandManager.argument("config", StringArgumentType.greedyString())
+                                .suggests(TASK_CONFIG_SUGGESTIONS)
+                                .executes(ctx -> {
                                             Identifier analyzerId = normalizeAnalyzerId(
                                                     ctx.getArgument("analyzer", Identifier.class));
                                             String scanId = StringArgumentType.getString(ctx, "id");
@@ -534,6 +556,25 @@ public class ChunkScannerCommands {
             }
         }
         return (matched != null) ? matched : ChunkScannerMod.id(id.getPath());
+    }
+
+    /**
+     * 为 config 的某键提供取值候选（{@link CliCompletion} assignment 模式）。
+     * 数值型键返回当前全局默认值作为提示；自由文本键（路径点名/缩写/组）无候选。
+     */
+    private static List<String> taskConfigDefaultValues(String key) {
+        ChunkScannerConfig c = ChunkScannerMod.getConfig();
+        if (c == null) return List.of();
+        return switch (key) {
+            case "revisit"  -> List.of(String.valueOf(c.scanner.minRevisitIntervalSec));
+            case "tasks"    -> List.of(String.valueOf(c.scanner.maxTasksPerTick));
+            case "inittasks"-> List.of(String.valueOf(c.scanner.initialTasksPerTick));
+            case "targetns" -> List.of(String.valueOf(c.scanner.targetTickNs));
+            case "flush"    -> List.of(String.valueOf(c.scanner.flushIntervalTicks));
+            case "threads"  -> List.of(String.valueOf(c.scanner.workerThreads));
+            case "radius"   -> List.of(String.valueOf(c.scanner.scanRadiusMultiplier));
+            default         -> List.of(); // wpname / wpinit / wpgroup 为自由文本
+        };
     }
 
     // ==================== 导航命令 ====================
