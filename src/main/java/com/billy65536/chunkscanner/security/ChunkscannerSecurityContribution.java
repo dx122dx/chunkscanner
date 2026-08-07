@@ -27,9 +27,9 @@ public final class ChunkscannerSecurityContribution {
      * <p>由 {@link ChunkscannerSecurityProvider} 以方法引用的形式登记。</p>
      */
     public static void register() {
-        ConfigLockerPolicyConfig cfg = SecurityPortal.newConfigBuilder(ConfigLocker.EXECUTOR_ID)
-                .lock(MODULE_ID, "config", "components.qshop.highlightEnabled", "false")
-                .build();
-        SecurityPortal.injectConfig(ServerOptinPolicy.ID, cfg);
+        SecurityPortal.injectConfig(inj -> inj.inject(ServerOptinPolicy.ID,
+                ConfigLockerPolicyConfig.builder(ConfigLocker.EXECUTOR_ID)
+                        .lock(MODULE_ID, "config", "components.qshop.highlightEnabled", "false")
+                        .build()));
     }
 }
