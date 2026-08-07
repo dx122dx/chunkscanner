@@ -22,6 +22,7 @@ import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.command.argument.IdentifierArgumentType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
@@ -109,30 +110,32 @@ public class ChunkScannerCommands {
                 .executes(ctx -> openTaskGui(ctx.getSource().getClient())));
 
         // /cs task begin <analyzer> [id] [config...]
-        // config 格式: key=value [key=value ...]
+        // analyzer 使用 IdentifierArgumentType，可直接输入含冒号的 id（如 chunkscanner:qshop），无需引号
+        // config 使用 greedyString，可输入多个 key=value（如 revisit=60 tasks=16 radius=1.0）
         // 支持的键: revisit, tasks, initTasks, targetNs, flush, threads, radius
         taskNode.then(ClientCommandManager.literal("begin")
-                .then(ClientCommandManager.argument("analyzer", StringArgumentType.string())
+                .then(ClientCommandManager.argument("analyzer", IdentifierArgumentType.identifier())
                         .suggests(ANALYZER_SUGGESTIONS)
                         .then(ClientCommandManager.argument("id", StringArgumentType.string())
-                                .then(ClientCommandManager.argument("config", StringArgumentType.string())
+                                .then(ClientCommandManager.argument("config", StringArgumentType.greedyString())
                                         .executes(ctx -> {
-                                            String analyzerId = StringArgumentType.getString(ctx, "analyzer");
+                                            Identifier analyzerId = normalizeAnalyzerId(
+                                                    ctx.getArgument("analyzer", Identifier.class));
                                             String scanId = StringArgumentType.getString(ctx, "id");
                                             String configStr = StringArgumentType.getString(ctx, "config");
                                             TaskConfig taskConfig = TaskConfig.parse(configStr);
-                                            scanner.start(ctx.getSource().getClient(), parseIdentifier(analyzerId), scanId, taskConfig);
+                                            scanner.start(ctx.getSource().getClient(), analyzerId, scanId, taskConfig);
                                             return 1;
                                         }))
                                 .executes(ctx -> {
                                     scanner.start(ctx.getSource().getClient(),
-                                            parseIdentifier(StringArgumentType.getString(ctx, "name")),
+                                            normalizeAnalyzerId(ctx.getArgument("analyzer", Identifier.class)),
                                             StringArgumentType.getString(ctx, "id"));
                                     return 1;
                                 }))
                         .executes(ctx -> {
                             scanner.start(ctx.getSource().getClient(),
-                                    parseIdentifier(StringArgumentType.getString(ctx, "name")),
+                                    normalizeAnalyzerId(ctx.getArgument("analyzer", Identifier.class)),
                                     String.valueOf(System.currentTimeMillis()));
                             return 1;
                         })));
@@ -508,21 +511,29 @@ public class ChunkScannerCommands {
     }
 
     /**
-     * 将命令参数中的分析器名解析为 {@link Identifier}。
-     * 用户输入通常为裸名（如 {@code qshop}），统一补全 chunkscanner 命名空间；
-     * 若输入已含冒号（如 {@code chunkscanner:qshop}）则按原样解析。
+     * 归一化 {@link IdentifierArgumentType#identifier()} 解析出的分析器 id。
+     *
+     * <p>{@link IdentifierArgumentType#identifier()} 会把裸名（如 {@code qshop}）补成
+     * {@code minecraft} 命名空间。分析器均以自身命名空间注册（如 {@code chunkscanner:qshop}），
+     * 因此<b>显式带命名空间的输入必须原样保留</b>；只有裸名才需要在注册表中按 path 回查真实命名空间。</p>
+     *
+     * @param id 命令解析出的分析器标识符
+     * @return 归一化后的分析器标识符
      */
-    private static Identifier parseIdentifier(String arg) {
-        if (arg == null || arg.isEmpty()) return ChunkScannerMod.ID_UNKNOWN;
-        Identifier parsed = Identifier.tryParse(arg);
-        if (parsed != null) return parsed;
-        // 兜底：裸名补全命名空间，但路径非法（含大写/中文等）时降级为哨兵避免崩溃
-        try {
-            return ChunkScannerMod.id(arg);
-        } catch (RuntimeException e) {
-            ChunkScannerMod.LOGGER.warn("Invalid analyzer id '{}', fell back to unknown", arg);
-            return ChunkScannerMod.ID_UNKNOWN;
+    private static Identifier normalizeAnalyzerId(Identifier id) {
+        if (id == null) return ChunkScannerMod.ID_UNKNOWN;
+        // 非 minecraft 命名空间 = 用户显式书写，原样尊重
+        if (!"minecraft".equals(id.getNamespace())) return id;
+        // 裸名：在注册表中按 path 回查真实命名空间
+        Identifier matched = null;
+        for (IChunkAnalyzer a : AnalyzerRegistry.getAll()) {
+            if (a.getId().getPath().equals(id.getPath())) {
+                // 多个命名空间下同名，无法判定，退回本模组命名空间由调用方报「未找到」
+                if (matched != null) return ChunkScannerMod.id(id.getPath());
+                matched = a.getId();
+            }
         }
+        return (matched != null) ? matched : ChunkScannerMod.id(id.getPath());
     }
 
     // ==================== 导航命令 ====================

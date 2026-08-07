@@ -20,11 +20,9 @@ import com.billy65536.chunkscanner.config.TaskConfig;
 /**
  * 异步渐进式区块扫描引擎 —— 支持同时运行多个独立扫描任务。
  *
- * 命令：
- *   /cs task begin [name] [id] [config...]
- *   /cs task stop [id]
- *   /cs task pause [id]
- *   /cs task resume [id]
+ * 命令（完整命令树见 {@link com.billy65536.chunkscanner.ChunkScannerCommands}）：
+ *   /cs task begin <analyzer> [id] [config...]
+ *   /cs task stop|pause|resume <id>
  *   /cs task stopall
  *   /cs task status
  *   /cs task list
@@ -32,13 +30,15 @@ import com.billy65536.chunkscanner.config.TaskConfig;
  *   /cs task help
  *   /cs db gui
  *   /cs db open [id]
- *   /cs db delete [id]
- *   /cs db reboot [id]
+ *   /cs db delete <id>
+ *   /cs db reboot <id>
  *   /cs db list
- *   /cs config gui
- *   /cs config reload [quick]
- *   /cs components qshop commitEnhancement
+ *   /cs db export raw|tsv <id> [filename]
+ *   /cs nav go|clear|list|toggle
+ *   /cs components qshop commitEnhancement|removeEnhancement
  *   /cs help
+ *
+ * 配置命令（原 /cs config get|set|reset|gui|reload）已移除，统一迁移至 infrastructure 的 /inf config。
  */
 public class ChunkScanner {
     final ChunkScannerConfig config;
