@@ -6,7 +6,7 @@ import me.shedaniel.autoconfig.annotation.ConfigEntry;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.infrastructure.core.module.ModuleRegistry;
-import com.billy65536.infrastructure.core.security.server.ConfigLocker;
+import com.billy65536.infrastructure.security.ConfigLocker;
 
 /**
  * 配置文件数据模型（AutoConfig 驱动）。

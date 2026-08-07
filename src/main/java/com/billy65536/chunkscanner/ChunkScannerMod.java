@@ -20,7 +20,6 @@ import com.billy65536.chunkscanner.core.navigation.NavigationTickDispatcher;
 import com.billy65536.chunkscanner.core.navigation.NavigationEntry;
 import com.billy65536.chunkscanner.core.navigation.NavigationQueue;
 import com.billy65536.chunkscanner.integration.BaritoneNavigator;
-import com.billy65536.infrastructure.core.security.server.ConfigLocker;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
@@ -266,11 +265,6 @@ public class ChunkScannerMod implements ClientModInitializer {
             LOGGER.info("Item translation mapping built: {} entries", ItemTranslator.size());
             QShopChatListener.register();
 
-            // 进入多人服务器时默认锁定配置（等待服务器授权信号）。
-            if (client.getCurrentServerEntry() != null && !client.isIntegratedServerRunning()) {
-                ConfigLocker.enterServerLock();
-            }
-
             // 若 Baritone 可用且风险警告为 SHOWN，展示警告消息
             if (getConfig().integration.baritone.riskWarning
                     == ChunkScannerConfig.BaritoneRiskWarning.SHOWN
@@ -279,10 +273,9 @@ public class ChunkScannerMod implements ClientModInitializer {
             }
         });
 
-        // 注册断连事件：退出服务器/世界时清理所有扫描会话和映射表，并释放配置锁定
+        // 注册断连事件：退出服务器/世界时清理所有扫描会话和映射表。
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             LOGGER.info("Disconnected from server, shutting down all scan sessions...");
-            ConfigLocker.leaveServerLock();
             scanner.shutdown();
             ItemTranslator.clear();
         });

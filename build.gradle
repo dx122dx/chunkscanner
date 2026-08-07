@@ -30,6 +30,7 @@ loom {
 }
 
 repositories {
+    mavenLocal()
     if (useBmclapi) {
         maven {
             name = 'BMCLAPI Minecraft Libraries'

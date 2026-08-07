@@ -9,7 +9,7 @@ import com.billy65536.chunkscanner.config.ConfigLoader;
 import com.billy65536.infrastructure.core.config.ConfigDescriptor;
 import com.billy65536.infrastructure.core.config.ConfigPath;
 import com.billy65536.infrastructure.core.module.IModule;
-import com.billy65536.infrastructure.core.security.server.ConfigLocker;
+import com.billy65536.infrastructure.security.ConfigLocker;
 
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;

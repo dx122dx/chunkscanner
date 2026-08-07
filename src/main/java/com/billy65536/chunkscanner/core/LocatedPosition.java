@@ -8,7 +8,7 @@ package com.billy65536.chunkscanner.core;
  */
 public record LocatedPosition(String dimensionId, int x, int y, int z) {
 
-    /** 格式化为可读显示文本。例如："minecraft:overworld (123, 64, -456)" */
+    /** 格式化为可读显示文本，维度名会去掉 {@code minecraft:} 前缀。例如："overworld (123, 64, -456)" */
     @Override
     public String toString() {
         String shortDim = shortenDimension(dimensionId);
