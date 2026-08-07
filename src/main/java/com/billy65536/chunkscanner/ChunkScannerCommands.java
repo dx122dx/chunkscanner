@@ -162,6 +162,24 @@ public class ChunkScannerCommands {
                             return 1;
                         })));
 
+        // /cs task modify <id> [config...]  —— 增量修改已有任务的配置
+        taskNode.then(ClientCommandManager.literal("modify")
+                .then(ClientCommandManager.argument("id", StringArgumentType.string())
+                        .suggests(SCAN_ID_SUGGESTIONS) // 仅补全已有扫描 id
+                        .then(ClientCommandManager.argument("config", StringArgumentType.greedyString())
+                                .suggests(TASK_CONFIG_SUGGESTIONS)
+                                .executes(ctx -> {
+                                    scanner.modify(ctx.getSource().getClient(),
+                                            StringArgumentType.getString(ctx, "id"),
+                                            StringArgumentType.getString(ctx, "config"));
+                                    return 1;
+                                }))
+                        .executes(ctx -> {
+                            scanner.modify(ctx.getSource().getClient(),
+                                    StringArgumentType.getString(ctx, "id"), null);
+                            return 1;
+                        })));
+
         // /cs task stop <id>
         taskNode.then(cmdArg("stop", SCAN_ID_SUGGESTIONS,
                 (client, id) -> scanner.stop(client, id)));

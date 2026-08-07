@@ -22,6 +22,7 @@ import com.billy65536.chunkscanner.config.TaskConfig;
  *
  * 命令（完整命令树见 {@link com.billy65536.chunkscanner.ChunkScannerCommands}）：
  *   /cs task begin <analyzer> [id] [config...]
+ *   /cs task modify <id> [config...]
  *   /cs task stop|pause|resume <id>
  *   /cs task stopall
  *   /cs task status
@@ -93,6 +94,10 @@ public class ChunkScanner {
     private static final String KEY_NO_ACTIVE_SCANS  = PREFIX + ".msg.no_active_scans";
     private static final String KEY_STOPPED_ALL      = PREFIX + ".msg.stopped_all";
     private static final String KEY_IDLE             = PREFIX + ".msg.idle";
+
+    private static final String KEY_CONFIG_UPDATED   = PREFIX + ".msg.config_updated";
+    private static final String KEY_CONFIG_REQUIRED  = PREFIX + ".msg.config_required";
+    private static final String KEY_CONFIG_NO_VALID  = PREFIX + ".msg.config_no_valid";
 
     private static final String KEY_STATUS_TITLE     = PREFIX + ".status.title";
     private static final String KEY_STATUS_STOP_HINT = PREFIX + ".status.stop_hint";
@@ -246,6 +251,40 @@ public class ChunkScanner {
                 .append(Text.translatable("chunkscanner.label.id").formatted(Formatting.WHITE)
                         .append(Text.literal(": ")))
                 .append(Text.literal("\"" + scanId + "\"").formatted(Formatting.GOLD)));
+    }
+
+    /**
+     * 修改一个已存在扫描任务的配置（增量合并，保留未指定的字段）。
+     *
+     * <p>与 {@link #start} 不同：本方法不重建会话，仅把新配置与任务现有配置合并，
+     * 经 {@link ScanSession#updateTaskConfig} 合入 sessionConfig 并持久化到数据库。
+     * 部分配置（如 workerThreads）需重启会话才能完全生效，这里只即时生效可热更新的字段。</p>
+     *
+     * @param client     Minecraft 客户端实例
+     * @param scanId     要修改的扫描任务 id
+     * @param configStr  形如 {@code revisit=10 tasks=16} 的配置串；为 null/空白时提示用法
+     */
+    public void modify(MinecraftClient client, String scanId, String configStr) {
+        ScanSession session = sessions.get(scanId);
+        if (session == null) {
+            CoreUtil.sendMsg(client, Text.translatable(KEY_SCAN_NOT_FOUND, scanId).formatted(Formatting.YELLOW));
+            return;
+        }
+        if (configStr == null || configStr.isBlank()) {
+            CoreUtil.sendMsg(client, Text.translatable(KEY_CONFIG_REQUIRED).formatted(Formatting.YELLOW));
+            return;
+        }
+        TaskConfig delta = TaskConfig.parse(configStr);
+        if (delta == null) {
+            // 全部键名未知或取值非法 → 无有效配置，提示玩家（不清空现有配置）
+            CoreUtil.sendMsg(client, Text.translatable(KEY_CONFIG_NO_VALID, configStr).formatted(Formatting.RED));
+            return;
+        }
+        TaskConfig current = session.getTaskConfig();
+        TaskConfig merged = (current != null ? current.copy() : new TaskConfig()).merge(delta);
+        session.updateTaskConfig(merged);
+        CoreUtil.sendMsg(client, Text.translatable(KEY_CONFIG_UPDATED, scanId, merged.toDisplayString())
+                .formatted(Formatting.GREEN));
     }
 
     /**

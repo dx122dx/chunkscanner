@@ -222,4 +222,23 @@ public class TaskConfig {
         cfg.waypointGroup = this.waypointGroup;
         return cfg;
     }
+
+    /**
+     * 将 {@code delta} 中的非 null 字段合并到本配置，返回新实例（本实例不变）。
+     * 用于 {@code /cs task modify}：仅覆盖指定的字段，保留其他已设置的字段。
+     */
+    public TaskConfig merge(TaskConfig delta) {
+        TaskConfig r = this.copy();
+        if (delta.minRevisitIntervalSec != null) r.minRevisitIntervalSec = delta.minRevisitIntervalSec;
+        if (delta.maxTasksPerTick != null) r.maxTasksPerTick = delta.maxTasksPerTick;
+        if (delta.initialTasksPerTick != null) r.initialTasksPerTick = delta.initialTasksPerTick;
+        if (delta.targetTickNs != null) r.targetTickNs = delta.targetTickNs;
+        if (delta.flushIntervalTicks != null) r.flushIntervalTicks = delta.flushIntervalTicks;
+        if (delta.workerThreads != null) r.workerThreads = delta.workerThreads;
+        if (delta.scanRadiusMultiplier != null) r.scanRadiusMultiplier = delta.scanRadiusMultiplier;
+        if (delta.waypointName != null) r.waypointName = delta.waypointName;
+        if (delta.waypointInitials != null) r.waypointInitials = delta.waypointInitials;
+        if (delta.waypointGroup != null) r.waypointGroup = delta.waypointGroup;
+        return r;
+    }
 }
