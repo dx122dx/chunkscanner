@@ -2,7 +2,7 @@ package com.billy65536.chunkscanner.config;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.infrastructure.core.module.ModuleRegistry;
-import com.billy65536.infrastructure.security.ConfigLocker;
+import com.billy65536.infrastructure.security.builtin.ConfigLocker;
 
 import me.shedaniel.autoconfig.AutoConfig;
 import me.shedaniel.autoconfig.ConfigHolder;
