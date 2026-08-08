@@ -3,17 +3,11 @@ package com.billy65536.chunkscanner.components.analyzer;
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.ScanSession;
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.systems.VertexSorter;
+import com.billy65536.infrastructure.core.render.Box;
+import com.billy65536.infrastructure.core.render.BoxRenderer;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.*;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
-import org.joml.Matrix4f;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,6 +17,10 @@ import java.util.List;
 
 /**
  * QShop 告示牌高亮边框渲染器。
+ * <p>
+ * 保留本地缓存与红→绿→黄渐变逻辑；线框盒的矩阵管理与绘制已下沉到
+ * {@link BoxRenderer}（infrastructure 通用渲染器），本类只负责把缓存条目转换为
+ * {@link Box} 列表并委托渲染，行为与原实现一致。
  */
 public final class QShopHighlightRenderer {
 
@@ -59,103 +57,24 @@ public final class QShopHighlightRenderer {
 
         if (cachedEntries.isEmpty()) return;
 
-        renderHighlights(context, now);
-    }
-
-    // ==================== 矩阵管理 ====================
-
-    /**
-     * 使用 JOML 的 lookAt 构建标准视图矩阵，确保与 Minecraft 坐标系兼容。
-     */
-    private static void setupMatrices(WorldRenderContext context) {
-        Camera camera = context.camera();
-        Vec3d camPos = camera.getPos();
-        float yaw = camera.getYaw();
-        float pitch = camera.getPitch();
-
-        // Minecraft 坐标系计算前方向量：
-        // yaw=0 朝 +Z(南), yaw=90 朝 -X(西), pitch>0 朝下
-        float yawRad = yaw * MathHelper.RADIANS_PER_DEGREE;
-        float pitchRad = pitch * MathHelper.RADIANS_PER_DEGREE;
-        float fx = -MathHelper.sin(yawRad) * MathHelper.cos(pitchRad);
-        float fy = -MathHelper.sin(pitchRad);
-        float fz = MathHelper.cos(yawRad) * MathHelper.cos(pitchRad);
-
-        // 用 lookAt 构建视图矩阵
-        float cx = (float) camPos.x;
-        float cy = (float) camPos.y;
-        float cz = (float) camPos.z;
-        Matrix4f viewMatrix = new Matrix4f().lookAt(
-                cx, cy, cz,
-                cx + fx, cy + fy, cz + fz,
-                0f, 1f, 0f
-        );
-
-        // 设置投影矩阵
-        Matrix4f projectionMatrix = context.projectionMatrix();
-        if (projectionMatrix != null) {
-            RenderSystem.setProjectionMatrix(projectionMatrix, VertexSorter.BY_DISTANCE);
+        // 把缓存条目转换为线框盒列表（单方块 1×1×1 + 渐变颜色），委托通用渲染器绘制
+        List<Box> boxes = new ArrayList<>(cachedEntries.size());
+        for (HighlightEntry entry : cachedEntries) {
+            int color = computeColor(entry.enhancementTimestamp(), now);
+            boxes.add(Box.ofBlocks(entry.x(), entry.y(), entry.z(),
+                    entry.x(), entry.y(), entry.z(), color));
         }
-
-        // 写入 RenderSystem model-view 栈
-        MatrixStack modelViewStack = RenderSystem.getModelViewStack();
-        modelViewStack.push();
-        modelViewStack.peek().getPositionMatrix().set(viewMatrix);
-        RenderSystem.applyModelViewMatrix();
+        BoxRenderer.render(context, boxes);
     }
 
-    private static void restoreMatrices() {
-        RenderSystem.getModelViewStack().pop();
-        RenderSystem.applyModelViewMatrix();
-    }
-
-    // ==================== 高亮边框 ====================
-
-    private static void renderHighlights(WorldRenderContext context, long now) {
-        try {
-            setupMatrices(context);
-
-            RenderSystem.enableBlend();
-            RenderSystem.defaultBlendFunc();
-            RenderSystem.depthMask(false);
-            RenderSystem.disableDepthTest();
-            RenderSystem.setShader(GameRenderer::getPositionColorProgram);
-            RenderSystem.lineWidth(2.0f);
-
-            Tessellator tessellator = Tessellator.getInstance();
-            BufferBuilder buffer = tessellator.getBuffer();
-            buffer.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
-
-            for (HighlightEntry entry : cachedEntries) {
-                int color = computeColor(entry.enhancementTimestamp, now);
-                drawWireframeBox(buffer, entry.x(), entry.y(), entry.z(), color);
-            }
-
-            tessellator.draw();
-        } catch (Exception e) {
-            LOGGER.error("RENDER ERROR: {}", e.getMessage(), e);
-        } finally {
-            RenderSystem.lineWidth(1.0f);
-            RenderSystem.enableDepthTest();
-            RenderSystem.depthMask(true);
-            RenderSystem.disableBlend();
-            restoreMatrices();
-        }
-    }
-
-    // ==================== 工具 ====================
-
-    private static void v(BufferBuilder buffer, double x, double y, double z, int r, int g, int b, int a) {
-        buffer.vertex(x, y, z).color(r, g, b, a).next();
-    }
+    // ==================== 数据构建 ====================
 
     private static List<HighlightEntry> buildHighlightEntries(MinecraftClient client) {
         ChunkScanner scanner = ChunkScannerMod.getScanner();
         if (scanner == null) return Collections.emptyList();
 
-        BlockPos playerPos = client.player.getBlockPos();
-        int playerCX = playerPos.getX() >> 4;
-        int playerCZ = playerPos.getZ() >> 4;
+        int playerCX = client.player.getBlockPos().getX() >> 4;
+        int playerCZ = client.player.getBlockPos().getZ() >> 4;
         String playerDim = client.world.getRegistryKey().getValue().toString();
 
         int highlightRadius = ChunkScannerMod.getConfig().components.qshop.highlightRadius;
@@ -194,6 +113,10 @@ public final class QShopHighlightRenderer {
         return entries;
     }
 
+    /**
+     * 根据增强时间戳计算高亮颜色：未增强为红，增强后随时间由红渐变到绿，
+     * 超过渐变周期后转为黄（表示已稳定）。
+     */
     private static int computeColor(long enhancementTimestamp, long now) {
         if (enhancementTimestamp <= 0) return 0xFFFF0000;
         long gradientMs = ChunkScannerMod.getConfig().components.qshop.highlightGradientMs;
@@ -204,31 +127,5 @@ public final class QShopHighlightRenderer {
         int r = (int) (255 * t);
         int g = 255;
         return 0xFF000000 | (r << 16) | (g << 8);
-    }
-
-    private static void drawWireframeBox(BufferBuilder buffer, int bx, int by, int bz, int color) {
-        int r = (color >> 16) & 0xFF;
-        int g = (color >> 8) & 0xFF;
-        int b = color & 0xFF;
-        int a = (color >> 24) & 0xFF;
-
-        double margin = -0.001; // 微偏移避免 z-fighting
-        double x1 = bx - margin, y1 = by - margin, z1 = bz - margin;
-        double x2 = bx + 1.0 + margin, y2 = by + 1.0 + margin, z2 = bz + 1.0 + margin;
-
-        v(buffer, x1, y1, z1, r, g, b, a); v(buffer, x2, y1, z1, r, g, b, a);
-        v(buffer, x2, y1, z1, r, g, b, a); v(buffer, x2, y1, z2, r, g, b, a);
-        v(buffer, x2, y1, z2, r, g, b, a); v(buffer, x1, y1, z2, r, g, b, a);
-        v(buffer, x1, y1, z2, r, g, b, a); v(buffer, x1, y1, z1, r, g, b, a);
-
-        v(buffer, x1, y2, z1, r, g, b, a); v(buffer, x2, y2, z1, r, g, b, a);
-        v(buffer, x2, y2, z1, r, g, b, a); v(buffer, x2, y2, z2, r, g, b, a);
-        v(buffer, x2, y2, z2, r, g, b, a); v(buffer, x1, y2, z2, r, g, b, a);
-        v(buffer, x1, y2, z2, r, g, b, a); v(buffer, x1, y2, z1, r, g, b, a);
-
-        v(buffer, x1, y1, z1, r, g, b, a); v(buffer, x1, y2, z1, r, g, b, a);
-        v(buffer, x2, y1, z1, r, g, b, a); v(buffer, x2, y2, z1, r, g, b, a);
-        v(buffer, x2, y1, z2, r, g, b, a); v(buffer, x2, y2, z2, r, g, b, a);
-        v(buffer, x1, y1, z2, r, g, b, a); v(buffer, x1, y2, z2, r, g, b, a);
     }
 }
