@@ -10,6 +10,9 @@ import java.util.regex.PatternSyntaxException;
 /**
  * QShop 筛选状态与匹配逻辑。
  *
+ * <p>筛选状态现持有于 {@link QShopFilterConfig}：文本维度为 {@link FilterValue}（值 + 匹配模式），
+ * 数值维度（mode/pmin/pmax/qmin/qmax/sort）为 {@link Integer}。本类的 public getter/setter
+ * 全部桥接到底层配置，签名保持不变，GUI（QShopFilterScreen）无需改动。</p>
  */
 public final class QShopFilter {
 
@@ -33,22 +36,11 @@ public final class QShopFilter {
     public static final int PATTERN_REGEX = 3;
 
     // ==================== 筛选状态 ====================
+
+    /** 底层扁平筛选配置（每个维度为 FilterValue）。 */
+    private final QShopFilterConfig cfg = new QShopFilterConfig();
+
     private int cacheVersion = 0;
-
-    /** 模式筛选：0=全部, 1=出售(MODE_SELL), 2=收购(MODE_BUY) */
-    private int modeFilter = 0;
-    private String dimFilter = null;
-    private String ownerFilter = null;
-    private String itemFilter = null;
-    private String itemIdFilter = null;
-    private String flagsFilter = null;
-
-    /** 各文本筛选字段的匹配模式。 */
-    private int dimFilterMode = PATTERN_CONTAINS;
-    private int ownerFilterMode = PATTERN_CONTAINS;
-    private int itemFilterMode = PATTERN_CONTAINS;
-    private int itemIdFilterMode = PATTERN_CONTAINS;
-    private int flagsFilterMode = PATTERN_CONTAINS;
 
     /** 预编译的正则 Pattern 缓存（仅在 PATTERN_REGEX 模式下非 null）。 */
     private Pattern compiledDimPattern = null;
@@ -56,64 +48,169 @@ public final class QShopFilter {
     private Pattern compiledItemPattern = null;
     private Pattern compiledItemIdPattern = null;
 
-    /** 价格范围筛选（null = 不限制）。内部以货币最小单位存储（乘以 100）。 */
-    private Integer priceMinFilter = null;
-    private Integer priceMaxFilter = null;
+    // ==================== 筛选字段存取（桥接 cfg） ====================
 
-    /** 数量范围筛选（null = 不限制）。 */
-    private Integer qtyMinFilter = null;
-    private Integer qtyMaxFilter = null;
+    public int getModeFilter() {
+        return cfg.modeFilter != null ? cfg.modeFilter : 0;
+    }
 
-    /** 排序模式。 */
-    private int sortMode = SORT_NONE;
+    public void setModeFilter(int v) {
+        cfg.modeFilter = v;
+    }
 
-    // ==================== 筛选字段存取 ====================
+    public String getDimFilter() {
+        return cfg.dimFilter != null ? cfg.dimFilter.getValue() : null;
+    }
 
-    public int getModeFilter() { return modeFilter; }
-    public void setModeFilter(int v) { modeFilter = v; }
-    public String getDimFilter() { return dimFilter; }
-    public void setDimFilter(String v) { dimFilter = v; }
-    public int getDimFilterMode() { return dimFilterMode; }
-    public void setDimFilterMode(int v) { dimFilterMode = v; }
-    public String getOwnerFilter() { return ownerFilter; }
-    public void setOwnerFilter(String v) { ownerFilter = v; }
-    public int getOwnerFilterMode() { return ownerFilterMode; }
-    public void setOwnerFilterMode(int v) { ownerFilterMode = v; }
-    public String getItemFilter() { return itemFilter; }
-    public void setItemFilter(String v) { itemFilter = v; }
-    public int getItemFilterMode() { return itemFilterMode; }
-    public void setItemFilterMode(int v) { itemFilterMode = v; }
+    public void setDimFilter(String v) {
+        cfg.dimFilter = withValue(cfg.dimFilter, v);
+    }
 
-    public Integer getPriceMinFilter() { return priceMinFilter; }
-    public void setPriceMinFilter(Integer v) { priceMinFilter = v; }
-    public Integer getPriceMaxFilter() { return priceMaxFilter; }
-    public void setPriceMaxFilter(Integer v) { priceMaxFilter = v; }
+    public int getDimFilterMode() {
+        return modeOf(cfg.dimFilter);
+    }
 
-    public Integer getQtyMinFilter() { return qtyMinFilter; }
-    public void setQtyMinFilter(Integer v) { qtyMinFilter = v; }
-    public Integer getQtyMaxFilter() { return qtyMaxFilter; }
-    public void setQtyMaxFilter(Integer v) { qtyMaxFilter = v; }
+    public void setDimFilterMode(int v) {
+        cfg.dimFilter = withType(cfg.dimFilter, v);
+    }
 
-    public int getSortMode() { return sortMode; }
-    public void setSortMode(int v) { sortMode = v; }
+    public String getOwnerFilter() {
+        return cfg.ownerFilter != null ? cfg.ownerFilter.getValue() : null;
+    }
 
-    public String getItemIdFilter() { return itemIdFilter; }
-    public void setItemIdFilter(String v) { itemIdFilter = v; }
-    public int getItemIdFilterMode() { return itemIdFilterMode; }
-    public void setItemIdFilterMode(int v) { itemIdFilterMode = v; }
+    public void setOwnerFilter(String v) {
+        cfg.ownerFilter = withValue(cfg.ownerFilter, v);
+    }
 
-    public String getFlagsFilter() { return flagsFilter; }
-    public void setFlagsFilter(String v) { flagsFilter = v; }
-    public int getFlagsFilterMode() { return flagsFilterMode; }
-    public void setFlagsFilterMode(int v) { flagsFilterMode = Math.max(0, Math.min(2, v)); }
+    public int getOwnerFilterMode() {
+        return modeOf(cfg.ownerFilter);
+    }
+
+    public void setOwnerFilterMode(int v) {
+        cfg.ownerFilter = withType(cfg.ownerFilter, v);
+    }
+
+    public String getItemFilter() {
+        return cfg.itemFilter != null ? cfg.itemFilter.getValue() : null;
+    }
+
+    public void setItemFilter(String v) {
+        cfg.itemFilter = withValue(cfg.itemFilter, v);
+    }
+
+    public int getItemFilterMode() {
+        return modeOf(cfg.itemFilter);
+    }
+
+    public void setItemFilterMode(int v) {
+        cfg.itemFilter = withType(cfg.itemFilter, v);
+    }
+
+    public Integer getPriceMinFilter() {
+        return cfg.priceMinFilter;
+    }
+
+    public void setPriceMinFilter(Integer v) {
+        cfg.priceMinFilter = v;
+    }
+
+    public Integer getPriceMaxFilter() {
+        return cfg.priceMaxFilter;
+    }
+
+    public void setPriceMaxFilter(Integer v) {
+        cfg.priceMaxFilter = v;
+    }
+
+    public Integer getQtyMinFilter() {
+        return cfg.qtyMinFilter;
+    }
+
+    public void setQtyMinFilter(Integer v) {
+        cfg.qtyMinFilter = v;
+    }
+
+    public Integer getQtyMaxFilter() {
+        return cfg.qtyMaxFilter;
+    }
+
+    public void setQtyMaxFilter(Integer v) {
+        cfg.qtyMaxFilter = v;
+    }
+
+    public int getSortMode() {
+        return cfg.sortMode != null ? cfg.sortMode : SORT_NONE;
+    }
+
+    public void setSortMode(int v) {
+        cfg.sortMode = v;
+    }
+
+    public String getItemIdFilter() {
+        return cfg.itemIdFilter != null ? cfg.itemIdFilter.getValue() : null;
+    }
+
+    public void setItemIdFilter(String v) {
+        cfg.itemIdFilter = withValue(cfg.itemIdFilter, v);
+    }
+
+    public int getItemIdFilterMode() {
+        return modeOf(cfg.itemIdFilter);
+    }
+
+    public void setItemIdFilterMode(int v) {
+        cfg.itemIdFilter = withType(cfg.itemIdFilter, v);
+    }
+
+    public String getFlagsFilter() {
+        return cfg.flagsFilter != null ? cfg.flagsFilter.getValue() : null;
+    }
+
+    public void setFlagsFilter(String v) {
+        cfg.flagsFilter = withValue(cfg.flagsFilter, v);
+    }
+
+    public int getFlagsFilterMode() {
+        return modeOf(cfg.flagsFilter);
+    }
+
+    public void setFlagsFilterMode(int v) {
+        cfg.flagsFilter = withType(cfg.flagsFilter, v);
+    }
+
+    // ==================== 桥接辅助 ====================
+
+    /** 保留既有 type（无则默认 CONTAINS），换 value。 */
+    private static FilterValue withValue(FilterValue old, String value) {
+        int type = old != null ? old.getType() : PATTERN_CONTAINS;
+        return new FilterValue(value, type);
+    }
+
+    /** 保留既有 value，换 type。 */
+    private static FilterValue withType(FilterValue old, int type) {
+        String value = old != null ? old.getValue() : null;
+        return new FilterValue(value, type);
+    }
+
+    /** 取匹配模式（null 视为 CONTAINS）。 */
+    private static int modeOf(FilterValue f) {
+        return f != null ? f.getType() : PATTERN_CONTAINS;
+    }
+
+    // ==================== 状态查询 ====================
 
     /** 筛选条件是否处于激活状态。 */
     public boolean isFilterActive() {
-        return modeFilter != 0 || dimFilter != null || ownerFilter != null
-                || itemFilter != null || itemIdFilter != null || flagsFilter != null
-                || sortMode != SORT_NONE
-                || priceMinFilter != null || priceMaxFilter != null
-                || qtyMinFilter != null || qtyMaxFilter != null;
+        return getModeFilter() != 0
+                || !isEmpty(cfg.dimFilter) || !isEmpty(cfg.ownerFilter)
+                || !isEmpty(cfg.itemFilter) || !isEmpty(cfg.itemIdFilter) || !isEmpty(cfg.flagsFilter)
+                || getSortMode() != SORT_NONE
+                || getPriceMinFilter() != null || getPriceMaxFilter() != null
+                || getQtyMinFilter() != null || getQtyMaxFilter() != null;
+    }
+
+    private static boolean isEmpty(FilterValue f) {
+        return f == null || f.isEmpty();
     }
 
     public int getCacheVersion() {
@@ -122,10 +219,10 @@ public final class QShopFilter {
 
     /** 筛选条件变更后使缓存失效，并预编译正则 Pattern。 */
     public void invalidateCache() {
-        compiledDimPattern = compileIfNeeded(dimFilter, dimFilterMode);
-        compiledOwnerPattern = compileIfNeeded(ownerFilter, ownerFilterMode);
-        compiledItemPattern = compileIfNeeded(itemFilter, itemFilterMode);
-        compiledItemIdPattern = compileIfNeeded(itemIdFilter, itemIdFilterMode);
+        compiledDimPattern = compileIfNeeded(getDimFilter(), getDimFilterMode());
+        compiledOwnerPattern = compileIfNeeded(getOwnerFilter(), getOwnerFilterMode());
+        compiledItemPattern = compileIfNeeded(getItemFilter(), getItemFilterMode());
+        compiledItemIdPattern = compileIfNeeded(getItemIdFilter(), getItemIdFilterMode());
         cacheVersion++;
     }
 
@@ -145,30 +242,30 @@ public final class QShopFilter {
      */
     public boolean matches(QShopDbAdapter.Record r) {
         // 模式筛选
-        if (modeFilter == 1 && r.mode() != QShopContract.MODE_SELL) return false;
-        if (modeFilter == 2 && r.mode() != QShopContract.MODE_BUY) return false;
+        if (getModeFilter() == 1 && r.mode() != QShopContract.MODE_SELL) return false;
+        if (getModeFilter() == 2 && r.mode() != QShopContract.MODE_BUY) return false;
 
         // 文本筛选（null/空串 = 不筛选，否则按指定模式匹配）
-        if (!matchesPattern(r.dimId(), dimFilter, dimFilterMode, compiledDimPattern)) return false;
-        if (!matchesPattern(r.owner(), ownerFilter, ownerFilterMode, compiledOwnerPattern)) return false;
-        if (!matchesPattern(r.itemName(), itemFilter, itemFilterMode, compiledItemPattern)) return false;
-        if (!matchesPattern(r.itemId(), itemIdFilter, itemIdFilterMode, compiledItemIdPattern)) return false;
+        if (!matchesPattern(r.dimId(), getDimFilter(), getDimFilterMode(), compiledDimPattern)) return false;
+        if (!matchesPattern(r.owner(), getOwnerFilter(), getOwnerFilterMode(), compiledOwnerPattern)) return false;
+        if (!matchesPattern(r.itemName(), getItemFilter(), getItemFilterMode(), compiledItemPattern)) return false;
+        if (!matchesPattern(r.itemId(), getItemIdFilter(), getItemIdFilterMode(), compiledItemIdPattern)) return false;
 
         // flags 筛选
-        if (!matchesFlags(r.flags(), flagsFilter, flagsFilterMode)) return false;
+        if (!matchesFlags(r.flags(), getFlagsFilter(), getFlagsFilterMode())) return false;
 
         // 价格范围筛选
-        if (priceMinFilter != null || priceMaxFilter != null) {
+        if (getPriceMinFilter() != null || getPriceMaxFilter() != null) {
             int priceCents = r.price();
-            if (priceMinFilter != null && priceCents < priceMinFilter) return false;
-            if (priceMaxFilter != null && priceCents > priceMaxFilter) return false;
+            if (getPriceMinFilter() != null && priceCents < getPriceMinFilter()) return false;
+            if (getPriceMaxFilter() != null && priceCents > getPriceMaxFilter()) return false;
         }
 
         // 数量范围筛选（潜影盒条目按有效数量比较）
-        if (qtyMinFilter != null || qtyMaxFilter != null) {
+        if (getQtyMinFilter() != null || getQtyMaxFilter() != null) {
             int effectiveQty = getEffectiveQty(r);
-            if (qtyMinFilter != null && effectiveQty < qtyMinFilter) return false;
-            if (qtyMaxFilter != null && effectiveQty > qtyMaxFilter) return false;
+            if (getQtyMinFilter() != null && effectiveQty < getQtyMinFilter()) return false;
+            if (getQtyMaxFilter() != null && effectiveQty > getQtyMaxFilter()) return false;
         }
 
         return true;
@@ -223,7 +320,7 @@ public final class QShopFilter {
      * 根据当前排序模式返回对应的比较器。
      */
     public Comparator<QShopDbAdapter.Record> getSortComparator() {
-        return switch (sortMode) {
+        return switch (getSortMode()) {
             case SORT_PRICE_ASC -> Comparator.comparingInt(QShopDbAdapter.Record::price);
             case SORT_PRICE_DESC -> (a, b) -> Integer.compare(b.price(), a.price());
             case SORT_QTY_ASC -> Comparator.comparingInt(this::getEffectiveQty);
@@ -238,7 +335,6 @@ public final class QShopFilter {
      * 获取排序/筛选时使用的"有效数量"。
      * 潜影盒条目返回箱内物品总数；普通条目返回原始数量。
      */
-    /** 获取潜影盒条目的有效数量（供排序/数量筛选），委托 QShopDisplayUtil 统一实现。 */
     int getEffectiveQty(QShopDbAdapter.Record r) {
         return QShopDisplayUtil.getEffectiveQty(r);
     }
