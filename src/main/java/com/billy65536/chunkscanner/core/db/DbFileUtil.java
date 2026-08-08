@@ -185,6 +185,59 @@ public final class DbFileUtil {
     // ==================== 文件操作 ====================
 
     /**
+     * 将数据库文件（及所有子数据库文件）复制到新的 scanId。
+     * 文件名基于 {@code safeFilenameStem(dstScanId)} 重新生成，
+     * 保留原来的扩展名和 analyzerId 部分。
+     *
+     * @param srcScanId 源 scanId
+     * @param dstScanId 目标 scanId
+     * @return 目标主文件路径；源文件不存在返回 null
+     * @throws IOException 若目标已存在或复制失败
+     */
+    public static Path copyDbFile(String srcScanId, String dstScanId) throws IOException {
+        Path srcFile = resolveFilePath(srcScanId);
+        if (!Files.exists(srcFile)) return null;
+
+        String srcFileName = srcFile.getFileName().toString();
+        String srcStem = safeFilenameStem(srcScanId);
+        String dstStem = safeFilenameStem(dstScanId);
+
+        // 用 dst stem 替换 src stem 生成目标文件名（保留 analyzerId 等中间部分）
+        String dstFileName = srcFileName.replace(srcStem, dstStem);
+        Path dstFile = srcFile.getParent().resolve(dstFileName);
+        if (Files.exists(dstFile)) {
+            throw new IOException("Destination database already exists: " + dstScanId);
+        }
+
+        // 复制主文件
+        Files.copy(srcFile, dstFile);
+        ChunkScannerMod.LOGGER.info("Copied DB file: {} -> {}", srcFileName, dstFileName);
+
+        // 复制子数据库文件（使用与 deleteDbFile 一致的 glob 模式）
+        int extIdx = srcFileName.lastIndexOf('.');
+        if (extIdx > 0) {
+            String fullStem = srcFileName.substring(0, extIdx);
+            String ext = srcFileName.substring(extIdx + 1);
+            String glob = fullStem + ".sub_*." + ext;
+            Path parent = srcFile.getParent();
+            if (parent != null) {
+                try (java.nio.file.DirectoryStream<Path> stream =
+                             Files.newDirectoryStream(parent, glob)) {
+                    for (Path subFile : stream) {
+                        String subName = subFile.getFileName().toString();
+                        String newSubName = subName.replace(srcStem, dstStem);
+                        Path dstSubFile = parent.resolve(newSubName);
+                        Files.copy(subFile, dstSubFile);
+                        ChunkScannerMod.LOGGER.info("Copied sub-db file: {} -> {}", subName, newSubName);
+                    }
+                }
+            }
+        }
+
+        return dstFile;
+    }
+
+    /**
      * 通过 scanId 删除数据库文件及其所有子数据库文件。
      * @return true 表示至少删除了一个文件，false 表示无文件可删
      */

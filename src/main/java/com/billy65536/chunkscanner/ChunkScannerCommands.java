@@ -1,6 +1,9 @@
 package com.billy65536.chunkscanner;
 
+import com.billy65536.chunkscanner.api.DatabaseApi;
 import com.billy65536.chunkscanner.components.analyzer.QShopChatListener;
+import com.billy65536.chunkscanner.components.analyzer.QShopDbAdapter;
+import com.billy65536.chunkscanner.components.view_provider.QShopFilter;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.ConfigLoader;
 import com.billy65536.chunkscanner.config.TaskConfig;
@@ -257,6 +260,39 @@ public class ChunkScannerCommands {
         exportNode.then(buildExportNode("tsv", this::exportDbTsv));
         dbNode.then(exportNode);
 
+        // /cs db copy <src> <dst>
+        dbNode.then(ClientCommandManager.literal("copy")
+                .then(ClientCommandManager.argument("src", StringArgumentType.string())
+                        .suggests(DB_FILE_ID_SUGGESTIONS)
+                        .then(ClientCommandManager.argument("dst", StringArgumentType.greedyString())
+                                .executes(ctx -> {
+                                    copyDb(ctx.getSource().getClient(),
+                                            StringArgumentType.getString(ctx, "src"),
+                                            StringArgumentType.getString(ctx, "dst"));
+                                    return 1;
+                                }))));
+
+        // /cs db filtercopy <src> <dst> [filterArgs...]
+        dbNode.then(ClientCommandManager.literal("filtercopy")
+                .then(ClientCommandManager.argument("src", StringArgumentType.string())
+                        .suggests(DB_FILE_ID_SUGGESTIONS)
+                        .then(ClientCommandManager.argument("dst", StringArgumentType.string())
+                                .then(ClientCommandManager.argument("filter", StringArgumentType.greedyString())
+                                        .executes(ctx -> {
+                                            filterCopyDb(ctx.getSource().getClient(),
+                                                    StringArgumentType.getString(ctx, "src"),
+                                                    StringArgumentType.getString(ctx, "dst"),
+                                                    StringArgumentType.getString(ctx, "filter"));
+                                            return 1;
+                                        }))
+                                .executes(ctx -> {
+                                    // 无 filter 参数 → 等同于普通 copy
+                                    copyDb(ctx.getSource().getClient(),
+                                            StringArgumentType.getString(ctx, "src"),
+                                            StringArgumentType.getString(ctx, "dst"));
+                                    return 1;
+                                }))));
+
         root.then(dbNode);
 
         // ===== /cs nav =====
@@ -433,6 +469,104 @@ public class ChunkScannerCommands {
             sendMsg(client, Text.translatable("chunkscanner.msg.db_delete_failed",
                     scanId, e.getMessage()).formatted(Formatting.RED));
         }
+    }
+
+    /** 全量复制数据库到新的 scanId（原库只读，不动）。 */
+    private void copyDb(MinecraftClient client, String srcScanId, String dstScanId) {
+        try {
+            DatabaseApi.copyDatabase(srcScanId, dstScanId);
+            sendMsg(client, Text.translatable("chunkscanner.msg.db_copied",
+                    srcScanId, dstScanId).formatted(Formatting.GREEN));
+        } catch (Exception e) {
+            sendMsg(client, Text.translatable("chunkscanner.msg.db_copy_failed",
+                    e.getMessage()).formatted(Formatting.RED));
+        }
+    }
+
+    /** 复制数据库 → 打开副本 → 按过滤条件原地删除不匹配记录 → 关闭。 */
+    private void filterCopyDb(MinecraftClient client, String srcScanId,
+                              String dstScanId, String filterArgs) {
+        QShopFilter filter = parseFilterArgs(filterArgs);
+        if (filter == null) {
+            sendMsg(client, Text.translatable("chunkscanner.msg.db_filtercopy_bad_filter",
+                    filterArgs).formatted(Formatting.RED));
+            return;
+        }
+
+        try {
+            // Step 1: 全量复制
+            DatabaseApi.copyDatabase(srcScanId, dstScanId);
+
+            // Step 2: 打开副本 → 原地过滤
+            IChunkDb db = DatabaseApi.openDatabase(dstScanId);
+            if (db == null) {
+                sendMsg(client, Text.translatable("chunkscanner.msg.db_file_not_found",
+                        dstScanId).formatted(Formatting.RED));
+                return;
+            }
+            QShopDbAdapter adapter = new QShopDbAdapter(db);
+            int removed = adapter.filterInPlace(filter);
+            db.close();
+
+            sendMsg(client, Text.translatable("chunkscanner.msg.db_filtercopy_success",
+                    srcScanId, dstScanId, removed).formatted(Formatting.GREEN));
+        } catch (Exception e) {
+            sendMsg(client, Text.translatable("chunkscanner.msg.db_copy_failed",
+                    e.getMessage()).formatted(Formatting.RED));
+        }
+    }
+
+    /**
+     * 将 {@code key=value} 格式的过滤参数字符串解析为 {@link QShopFilter}。
+     * 支持的键：mode(sell/buy/all)、name、owner、minPrice、maxPrice、minQty、maxQty。
+     * 任一参数非法或出现未知键时返回 null。
+     */
+    private static QShopFilter parseFilterArgs(String filterArgs) {
+        if (filterArgs == null || filterArgs.isBlank()) return null;
+        QShopFilter filter = new QShopFilter();
+        String[] parts = filterArgs.split(" ");
+        for (String part : parts) {
+            int eq = part.indexOf('=');
+            if (eq <= 0 || eq >= part.length() - 1) return null;
+            String key = part.substring(0, eq).trim();
+            String value = part.substring(eq + 1).trim();
+            try {
+                switch (key) {
+                    case "mode":
+                        switch (value.toLowerCase()) {
+                            case "sell" -> filter.setModeFilter(1);
+                            case "buy"  -> filter.setModeFilter(2);
+                            case "all"  -> filter.setModeFilter(0);
+                            default -> { return null; }
+                        }
+                        break;
+                    case "name":
+                        filter.setItemFilter(value);
+                        break;
+                    case "owner":
+                        filter.setOwnerFilter(value);
+                        break;
+                    case "minPrice":
+                        filter.setPriceMinFilter(Integer.valueOf(value));
+                        break;
+                    case "maxPrice":
+                        filter.setPriceMaxFilter(Integer.valueOf(value));
+                        break;
+                    case "minQty":
+                        filter.setQtyMinFilter(Integer.valueOf(value));
+                        break;
+                    case "maxQty":
+                        filter.setQtyMaxFilter(Integer.valueOf(value));
+                        break;
+                    default:
+                        return null;
+                }
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        filter.invalidateCache();
+        return filter;
     }
 
     /**

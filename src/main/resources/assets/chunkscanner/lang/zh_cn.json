@@ -246,5 +246,10 @@
     "text.autoconfig.chunkscanner.option.components.qshop.chatInterceptionMethod": "聊天消息拦截方式",
     "text.autoconfig.chunkscanner.option.components.qshop.chatInterceptionMethod.@Tooltip": "SYSTEM_MIXIN=仅 Mixin 拦截系统聊天包，GAME_EVENT=仅 Fabric 事件，BOTH=双通道。若消息被重复捕获可切换为单一通道",
     
-    "chunkscanner.msg.config_locked_server": "配置项 %s 当前被锁定：在多人服务器中，一些危险相关配置需服务器授权后方可修改，断开连接后恢复。"
+    "chunkscanner.msg.config_locked_server": "配置项 %s 当前被锁定：在多人服务器中，一些危险相关配置需服务器授权后方可修改，断开连接后恢复。",
+
+    "chunkscanner.msg.db_copied": "数据库已复制：%s → %s",
+    "chunkscanner.msg.db_copy_failed": "数据库复制失败：%s",
+    "chunkscanner.msg.db_filtercopy_bad_filter": "过滤参数无效：%s",
+    "chunkscanner.msg.db_filtercopy_success": "数据库过滤复制完成：%s → %s，已移除 %d 条记录"
 }

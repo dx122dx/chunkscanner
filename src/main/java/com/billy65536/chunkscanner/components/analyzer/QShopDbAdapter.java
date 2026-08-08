@@ -10,6 +10,7 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.billy65536.chunkscanner.components.view_provider.QShopFilter;
 import com.billy65536.chunkscanner.core.IChunkDb;
 
 /**
@@ -186,6 +187,46 @@ public final class QShopDbAdapter {
             }
         }
         return records;
+    }
+
+    /**
+     * 遍历所有 QShop 记录，在数据库中原地删除不匹配过滤条件的记录。
+     * 匹配的记录保留，不匹配的从主库和增强子库中一并移除。
+     *
+     * @param filter 过滤条件
+     * @return 删除的记录数量
+     */
+    public int filterInPlace(QShopFilter filter) {
+        List<IChunkDb.Entry> entries;
+        try {
+            entries = db.getAllEntries();
+        } catch (Exception e) {
+            LOGGER.warn("QShopDbAdapter.filterInPlace: failed to get entries: {}", e.getMessage());
+            return 0;
+        }
+        if (entries.isEmpty()) return 0;
+
+        int removed = 0;
+        for (IChunkDb.Entry entry : entries) {
+            byte[] key = entry.key();
+            byte[] val = entry.value();
+            if (!isQShopKey(key)) continue;
+            if (val.length < BASE_RECORD_SIZE) continue;
+
+            try {
+                Record rec = parseRecordValue(key, val);
+                if (rec != null && !filter.matches(rec)) {
+                    db.remove(key);
+                    subDb.remove(key);
+                    removed++;
+                }
+            } catch (Exception e) {
+                LOGGER.warn("QShopDbAdapter.filterInPlace: failed to process entry: {}", e.getMessage());
+            }
+        }
+
+        LOGGER.info("QShopDbAdapter.filterInPlace: removed {} records", removed);
+        return removed;
     }
 
     /**

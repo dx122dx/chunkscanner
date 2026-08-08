@@ -27,6 +27,7 @@ import com.billy65536.chunkscanner.screen.DatabaseScreen;
  *   <li><b>加载</b> —— 通过工厂打开数据库实例，或从导出包还原</li>
  *   <li><b>GUI</b> —— 打开数据库浏览器界面</li>
  *   <li><b>导出</b> —— 导出为 ZIP 归档或 TSV 文本</li>
+ *   <li><b>复制与删除</b> —— 数据库文件的复制、删除操作</li>
  * </ol>
  *
  * <p><b>路径约定</b>：数据库文件按游戏上下文分目录存放。
@@ -223,6 +224,23 @@ public final class DatabaseApi {
      */
     public static boolean deleteDatabase(String scanId) throws IOException {
         return DbFileUtil.deleteDbFile(scanId);
+    }
+
+    /**
+     * 将数据库文件（含所有子数据库）复制到新的 scanId。
+     * 原始数据库保持不变，新数据库独立存在。
+     *
+     * @param srcScanId 源 scanId
+     * @param dstScanId 目标 scanId
+     * @return 新数据库的轻量元数据
+     * @throws IOException 若源不存在、目标已存在或复制失败
+     */
+    public static DbFileUtil.FileMeta copyDatabase(String srcScanId, String dstScanId) throws IOException {
+        Path dstFile = DbFileUtil.copyDbFile(srcScanId, dstScanId);
+        if (dstFile == null) {
+            throw new IOException("Source database not found: " + srcScanId);
+        }
+        return DbFileUtil.readFileMeta(dstFile);
     }
 
     // ==================== 导出包（ZIP）读取 ====================
