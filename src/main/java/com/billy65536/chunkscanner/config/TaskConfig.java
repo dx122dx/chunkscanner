@@ -1,6 +1,7 @@
 package com.billy65536.chunkscanner.config;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
+import com.billy65536.infrastructure.core.reflect.FlatConfigs;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
@@ -8,50 +9,64 @@ import com.google.gson.JsonObject;
 /**
  * 任务级配置：每个扫描任务可独立设置参数。
  * 所有字段为 null 时表示使用 ChunkScannerConfig 中的默认值。
+ *
+ * <p>字段上的 {@link FlatConfigs.Key} 声明「解析别名」与「展示键名」：解析期按别名（大小写不敏感）
+ * 匹配命令行输入，展示期按 display 输出驼峰键（{@code initTasks=} / {@code wpName=} 等）。
+ * 解析 / 复制 / 合并 / 展示 / 空值判定 / 键枚举均由 {@link FlatConfigs} 反射驱动，
+ * 新增字段只需加一个带注解的字段即可全链路生效。</p>
+ *
+ * <p>异构业务映射（本配置 → 全局 ChunkScannerConfig）刻意保留手写
+ * {@link #applyTo(ChunkScannerConfig)}，不进通用工具类。</p>
  */
 public class TaskConfig {
 
     private static final Gson GSON = new GsonBuilder().create();
 
     /** 最小重访间隔（秒）。null = 使用默认值。 */
+    @FlatConfigs.Key("revisit")
     public Integer minRevisitIntervalSec;
 
     /** 每 tick 最大 chunk 数。null = 使用默认值。 */
+    @FlatConfigs.Key("tasks")
     public Integer maxTasksPerTick;
 
     /** 初始每 tick chunk 数。null = 使用默认值。 */
+    @FlatConfigs.Key("initTasks")
     public Integer initialTasksPerTick;
 
     /** 目标 tick 耗时（纳秒）。null = 使用默认值。 */
+    @FlatConfigs.Key("targetNs")
     public Long targetTickNs;
 
     /** 批量刷写间隔（tick）。null = 使用默认值。 */
+    @FlatConfigs.Key("flush")
     public Integer flushIntervalTicks;
 
     /** 工作线程数。null = 使用默认值。 */
+    @FlatConfigs.Key("threads")
     public Integer workerThreads;
 
     /** 扫描视距倍率。null = 使用默认值。 */
+    @FlatConfigs.Key("radius")
     public Double scanRadiusMultiplier;
 
     /** 路径点名称。null = 使用默认值。 */
+    @FlatConfigs.Key("wpName")
     public String waypointName;
 
     /** 路径点缩写。null = 使用默认值。 */
+    @FlatConfigs.Key("wpInit")
     public String waypointInitials;
 
     /** 路径点所属组（WaypointSet 名称）。null = 使用默认值。 */
+    @FlatConfigs.Key("wpGroup")
     public String waypointGroup;
 
     /**
      * 命令层补全用的「已识别键名」集合（小写，{@link #parse} 实际接受的写法）。
-     * 与 {@link #toDisplayString()} 的输出别名（如 {@code initTasks=} / {@code wpName=}）不同，
-     * 此处为解析期键名，确保补全结果一定能被 {@link #parse} 识别。
+     * 由 {@link FlatConfigs#keysOf} 反射生成，与解析器物理同源，杜绝键名漂移。
      */
-    public static final java.util.List<String> KNOWN_KEYS = java.util.List.of(
-            "revisit", "tasks", "inittasks", "targetns",
-            "flush", "threads", "radius",
-            "wpname", "wpinit", "wpgroup");
+    public static final java.util.List<String> KNOWN_KEYS = FlatConfigs.keysOf(TaskConfig.class);
 
     /** 创建一个空配置（所有值使用默认值）。 */
     public TaskConfig() {}
@@ -63,62 +78,21 @@ public class TaskConfig {
      * 示例：revisit=60 tasks=16 radius=1.5 wpName=商店
      */
     public static TaskConfig parse(String configStr) {
-        if (configStr == null || configStr.isBlank()) {
-            return null;
-        }
-
-        TaskConfig config = new TaskConfig();
-        String[] parts = configStr.trim().split("\\s+");
-        for (String part : parts) {
-            String[] kv = part.split("=", 2);
-            if (kv.length != 2) continue;
-
-            String key = kv[0].toLowerCase();
-            String value = kv[1];
-
-            try {
-                switch (key) {
-                    case "revisit" -> config.minRevisitIntervalSec = Integer.parseInt(value);
-                    case "tasks" -> config.maxTasksPerTick = Integer.parseInt(value);
-                    case "inittasks" -> config.initialTasksPerTick = Integer.parseInt(value);
-                    case "targetns" -> config.targetTickNs = Long.parseLong(value);
-                    case "flush" -> config.flushIntervalTicks = Integer.parseInt(value);
-                    case "threads" -> config.workerThreads = Integer.parseInt(value);
-                    case "radius" -> config.scanRadiusMultiplier = Double.parseDouble(value);
-                    case "wpname" -> config.waypointName = value;
-                    case "wpinit" -> config.waypointInitials = value;
-                    case "wpgroup" -> config.waypointGroup = value;
-                    default -> ChunkScannerMod.LOGGER.warn("Unknown task config key: {}", key);
-                }
-            } catch (NumberFormatException e) {
-                ChunkScannerMod.LOGGER.warn("Invalid value for {}: {}", key, value);
-            }
-        }
-
-        // 如果所有字段都是 null，返回 null 表示无需配置
-        if (config.isAllNull()) {
-            return null;
-        }
-        return config;
+        return FlatConfigs.createFrom(configStr, TaskConfig.class);
     }
 
     /** 检查所有字段是否都是 null。 */
     public boolean isAllNull() {
-        return minRevisitIntervalSec == null
-                && maxTasksPerTick == null
-                && initialTasksPerTick == null
-                && targetTickNs == null
-                && flushIntervalTicks == null
-                && workerThreads == null
-                && scanRadiusMultiplier == null
-                && waypointName == null
-                && waypointInitials == null
-                && waypointGroup == null;
+        return FlatConfigs.isAllNull(this);
     }
 
     /**
      * 将此任务配置合并到全局配置，返回最终生效的配置值。
      * 此任务配置中为 null 的字段使用 defaults 中的值。
+     *
+     * <p><b>异构业务映射，刻意不走通用工具类</b>：这是「扁平 TaskConfig → 嵌套
+     * ChunkScannerConfig」的唯一映射点，语义稳定且规模小，手写 14 行 {@code if}
+     * 比注解反射更直观、更易追溯。{@link FlatConfigs} 只服务同构操作。
      *
      * <p>注意：{@code defaults.copy()} 是深拷贝，写入 result 不会污染全局配置。
      */
@@ -139,18 +113,7 @@ public class TaskConfig {
 
     /** 生成配置说明字符串（紧凑单行，用于聊天消息）。 */
     public String toDisplayString() {
-        StringBuilder sb = new StringBuilder();
-        if (minRevisitIntervalSec != null) sb.append("revisit=").append(minRevisitIntervalSec).append(" ");
-        if (maxTasksPerTick != null) sb.append("tasks=").append(maxTasksPerTick).append(" ");
-        if (initialTasksPerTick != null) sb.append("initTasks=").append(initialTasksPerTick).append(" ");
-        if (targetTickNs != null) sb.append("targetNs=").append(targetTickNs).append(" ");
-        if (flushIntervalTicks != null) sb.append("flush=").append(flushIntervalTicks).append(" ");
-        if (workerThreads != null) sb.append("threads=").append(workerThreads).append(" ");
-        if (scanRadiusMultiplier != null) sb.append("radius=").append(scanRadiusMultiplier).append(" ");
-        if (waypointName != null) sb.append("wpName=").append(waypointName).append(" ");
-        if (waypointInitials != null) sb.append("wpInit=").append(waypointInitials).append(" ");
-        if (waypointGroup != null) sb.append("wpGroup=").append(waypointGroup).append(" ");
-        return sb.toString().trim();
+        return FlatConfigs.toString(this);
     }
 
     /** 序列化为 JSON 字符串。 */
@@ -209,18 +172,7 @@ public class TaskConfig {
 
     /** 创建当前配置的副本。 */
     public TaskConfig copy() {
-        TaskConfig cfg = new TaskConfig();
-        cfg.minRevisitIntervalSec = this.minRevisitIntervalSec;
-        cfg.maxTasksPerTick = this.maxTasksPerTick;
-        cfg.initialTasksPerTick = this.initialTasksPerTick;
-        cfg.targetTickNs = this.targetTickNs;
-        cfg.flushIntervalTicks = this.flushIntervalTicks;
-        cfg.workerThreads = this.workerThreads;
-        cfg.scanRadiusMultiplier = this.scanRadiusMultiplier;
-        cfg.waypointName = this.waypointName;
-        cfg.waypointInitials = this.waypointInitials;
-        cfg.waypointGroup = this.waypointGroup;
-        return cfg;
+        return FlatConfigs.copy(this);
     }
 
     /**
@@ -228,17 +180,6 @@ public class TaskConfig {
      * 用于 {@code /cs task modify}：仅覆盖指定的字段，保留其他已设置的字段。
      */
     public TaskConfig merge(TaskConfig delta) {
-        TaskConfig r = this.copy();
-        if (delta.minRevisitIntervalSec != null) r.minRevisitIntervalSec = delta.minRevisitIntervalSec;
-        if (delta.maxTasksPerTick != null) r.maxTasksPerTick = delta.maxTasksPerTick;
-        if (delta.initialTasksPerTick != null) r.initialTasksPerTick = delta.initialTasksPerTick;
-        if (delta.targetTickNs != null) r.targetTickNs = delta.targetTickNs;
-        if (delta.flushIntervalTicks != null) r.flushIntervalTicks = delta.flushIntervalTicks;
-        if (delta.workerThreads != null) r.workerThreads = delta.workerThreads;
-        if (delta.scanRadiusMultiplier != null) r.scanRadiusMultiplier = delta.scanRadiusMultiplier;
-        if (delta.waypointName != null) r.waypointName = delta.waypointName;
-        if (delta.waypointInitials != null) r.waypointInitials = delta.waypointInitials;
-        if (delta.waypointGroup != null) r.waypointGroup = delta.waypointGroup;
-        return r;
+        return FlatConfigs.merge(this, delta);
     }
 }
