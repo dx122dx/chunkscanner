@@ -3,6 +3,8 @@ package com.billy65536.chunkscanner.core.db;
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.config.TaskConfig;
 import com.billy65536.chunkscanner.core.IChunkDb;
+import com.billy65536.chunkscanner.core.IDbAdaptor;
+import com.billy65536.chunkscanner.core.AnalyzerRegistry;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
@@ -13,7 +15,6 @@ import net.minecraft.util.Identifier;
 
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -23,17 +24,14 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.regex.Pattern;
-import java.util.stream.Stream;
 
 /**
  * 一个磁盘上的数据库包，是文件与元信息的<b>唯一</b>管理者。
@@ -41,17 +39,22 @@ import java.util.stream.Stream;
  * <p>目录布局：</p>
  * <pre>
  * chunkscanner_&lt;hash&gt;/
- * ├── metadata.json   元信息：scanId / analyzerId / taskConfig / 主库与子库清单
+ * ├── metadata.json   元信息：scanId / analyzerId / adaptorId / taskConfig / 主库与子库清单
  * ├── main.bin        主数据库负载
  * └── &lt;subId&gt;.bin     子数据库负载（subId 为字符串标识）
  * </pre>
  *
  * <p>职责划分：本类负责目录、文件名、元数据、原子写与并发；
  * {@link IChunkDb} 只负责把自己的负载读进内存 / 写出到通道，
- * 通过 {@link DbStorage} 交互，全程不接触任何路径。</p>
+ * 通过 {@link DbStorage} 交互，全程不接触任何路径。数据库包所承载的适配器
+ * （{@link IDbAdaptor}）由 {@link #getAdaptor()} 按 {@code adaptorId} 创建，
+ * 分析器与消费端一律通过适配器访问数据，从不直接接触 {@link IChunkDb}。</p>
  *
  * <p>写时安全：任何一次负载写入都走「写临时文件 → {@code force(true)} → 原子改名」，
  * 元数据写入同理，保证崩溃时磁盘上的旧内容仍然完好。</p>
+ *
+ * <p>目录级管理（列表、查找、删除、遗留迁移）由 {@link DbManager} 负责，
+ * 本类只聚焦于单个包的生命周期。</p>
  */
 public final class DbPackage implements AutoCloseable {
 
@@ -64,9 +67,6 @@ public final class DbPackage implements AutoCloseable {
     /** 子数据库 ID 的合法字符集，同时也是文件名安全字符集。 */
     private static final Pattern SUB_ID_PATTERN = Pattern.compile("[a-z0-9][a-z0-9_-]*");
 
-    /** {@code getDbRoot()} 下的扫描深度：root/type/context/package。 */
-    private static final int MAX_SCAN_DEPTH = 4;
-
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
     private final Path dir;
@@ -77,43 +77,30 @@ public final class DbPackage implements AutoCloseable {
     private final Map<String, IChunkDb> dbs = new LinkedHashMap<>();
 
     private final String scanId;
-    private Identifier analyzerId;
+    private final Identifier analyzerId;
+    private final Identifier adaptorId;
     private TaskConfig taskConfig;
     private volatile boolean closed;
 
-    private DbPackage(Path dir, String scanId, Identifier analyzerId) {
+    /** 已创建的适配器实例（按包唯一）。 */
+    private IDbAdaptor adaptor;
+
+    private DbPackage(Path dir, String scanId, Identifier analyzerId, Identifier adaptorId) {
         this.dir = dir;
         this.scanId = scanId;
-        this.analyzerId = analyzerId;
+        this.analyzerId = analyzerId != null ? analyzerId : ChunkScannerMod.ID_UNKNOWN;
+        this.adaptorId = adaptorId != null ? adaptorId : ChunkScannerMod.id("raw");
     }
 
-    // ==================== 静态入口 ====================
-
-    /** 由 scanId 推导包目录。 */
-    public static Path dirFor(Path parentDir, String scanId) {
-        return parentDir.resolve(DbFileUtil.safeFilenameStem(scanId));
-    }
-
-    /** 在当前游戏上下文目录下打开或创建包。 */
-    public static DbPackage openOrCreate(String scanId, Identifier analyzerId) throws IOException {
-        return openOrCreate(ChunkScannerMod.getDbDir(), scanId, analyzerId);
-    }
-
-    /** 在指定父目录下打开或创建包。 */
-    public static DbPackage openOrCreate(Path parentDir, String scanId, Identifier analyzerId) throws IOException {
-        Path target = dirFor(parentDir, scanId);
-        if (Files.isRegularFile(target.resolve(METADATA_FILE))) {
-            return open(target);
-        }
-        return create(parentDir, scanId, analyzerId);
-    }
+    // ==================== 静态入口（包级创建/打开） ====================
 
     /**
      * 新建一个空包并落盘 metadata.json。
      *
+     * @param adaptorId 本包使用的适配器 ID（记录进 metadata，供视图/适配器查找）
      * @throws IOException 目标目录已存在同名包时
      */
-    public static DbPackage create(Path parentDir, String scanId, Identifier analyzerId) throws IOException {
+    public static DbPackage create(Path parentDir, String scanId, Identifier analyzerId, Identifier adaptorId) throws IOException {
         Objects.requireNonNull(parentDir, "parentDir");
         if (scanId == null || scanId.isEmpty()) {
             throw new IOException("scanId must not be empty");
@@ -124,9 +111,32 @@ public final class DbPackage implements AutoCloseable {
         }
         Files.createDirectories(target);
         DbPackage pkg = new DbPackage(target, scanId,
-                analyzerId != null ? analyzerId : ChunkScannerMod.ID_UNKNOWN);
+                analyzerId != null ? analyzerId : ChunkScannerMod.ID_UNKNOWN,
+                adaptorId != null ? adaptorId : ChunkScannerMod.id("raw"));
         pkg.saveMetadata();
         return pkg;
+    }
+
+    /** 由 scanId 推导包目录。 */
+    public static Path dirFor(Path parentDir, String scanId) {
+        return parentDir.resolve(DbFileUtil.safeFilenameStem(scanId));
+    }
+
+    /**
+     * 构造一个尚未落盘的包实例，仅供 {@link DbManager} 迁移遗留数据使用。
+     *
+     * <p>调用方需自行 {@link #registerNode} 登记已就位的负载文件，再 {@link #saveMetadata()}。</p>
+     */
+    static DbPackage forMigration(Path packageDir, String scanId, Identifier analyzerId,
+                                  Identifier adaptorId, TaskConfig taskConfig) {
+        DbPackage pkg = new DbPackage(packageDir, scanId, analyzerId, adaptorId);
+        pkg.taskConfig = taskConfig;
+        return pkg;
+    }
+
+    /** 登记一个已存在于包目录内的负载文件，仅供 {@link DbManager} 迁移遗留数据使用。 */
+    void registerNode(String nodeId, String fileName, Identifier type, int version) {
+        nodes.put(nodeId, new Node(fileName, type, version));
     }
 
     /** 打开一个已存在的包目录。 */
@@ -151,7 +161,14 @@ public final class DbPackage implements AutoCloseable {
         if (scanId == null || scanId.isEmpty()) {
             throw new IOException("Metadata has no scanId: " + metaFile);
         }
-        DbPackage pkg = new DbPackage(packageDir, scanId, parseId(optString(root, "analyzerId")));
+        Identifier analyzerId = parseId(optString(root, "analyzerId"));
+        Identifier adaptorId = parseId(optString(root, "adaptorId"));
+        // 旧包无 adaptorId：从 analyzerId 推导，未注册则回退 raw
+        if (adaptorId == ChunkScannerMod.ID_UNKNOWN) {
+            adaptorId = AnalyzerRegistry.getAdaptorId(analyzerId);
+        }
+
+        DbPackage pkg = new DbPackage(packageDir, scanId, analyzerId, adaptorId);
         String rawConfig = optString(root, "taskConfig");
         pkg.taskConfig = rawConfig != null && !rawConfig.isBlank() ? TaskConfig.parse(rawConfig) : null;
 
@@ -169,53 +186,6 @@ public final class DbPackage implements AutoCloseable {
         return pkg;
     }
 
-    /**
-     * 列出数据库根目录下所有包的摘要，按最后修改时间倒序。
-     *
-     * <p>扫描前会顺带把遗留的 1.x 扁平文件迁移成新目录结构。</p>
-     */
-    public static List<Info> listAll() {
-        List<Info> out = new ArrayList<>();
-        for (Path packageDir : scanPackageDirs()) {
-            Info info = readInfo(packageDir);
-            if (!info.isEmpty()) out.add(info);
-        }
-        out.sort(Comparator.comparingLong(Info::lastModified).reversed());
-        return out;
-    }
-
-    /** 列出数据库根目录下所有包的 scanId。 */
-    public static List<String> listAllScanIds() {
-        return listAll().stream().map(Info::scanId).toList();
-    }
-
-    /** 跨上下文定位包目录；找不到返回 {@code null}。 */
-    public static Path findDir(String scanId) {
-        if (scanId == null || scanId.isEmpty()) return null;
-        Path direct = dirFor(ChunkScannerMod.getDbDir(), scanId);
-        if (Files.isRegularFile(direct.resolve(METADATA_FILE))) return direct;
-
-        String stem = DbFileUtil.safeFilenameStem(scanId);
-        for (Path packageDir : scanPackageDirs()) {
-            if (packageDir.getFileName().toString().equals(stem)) return packageDir;
-        }
-        return null;
-    }
-
-    /** 跨上下文打开已存在的包；找不到返回 {@code null}。 */
-    public static DbPackage find(String scanId) throws IOException {
-        Path packageDir = findDir(scanId);
-        return packageDir == null ? null : open(packageDir);
-    }
-
-    /** 删除指定 scanId 对应的整个包目录。 */
-    public static boolean deletePackage(String scanId) throws IOException {
-        Path packageDir = findDir(scanId);
-        if (packageDir == null) return false;
-        deleteRecursively(packageDir);
-        return true;
-    }
-
     // ==================== 元信息 ====================
 
     /** 包目录。 */
@@ -231,6 +201,11 @@ public final class DbPackage implements AutoCloseable {
     /** 创建此包的分析器 ID。 */
     public Identifier getAnalyzerId() {
         return analyzerId;
+    }
+
+    /** 本包使用的适配器 ID（决定创建哪个 {@link IDbAdaptor}）。 */
+    public Identifier getAdaptorId() {
+        return adaptorId;
     }
 
     /** 主数据库的实现类型（工厂 ID）；未知时返回 {@code null}。 */
@@ -272,7 +247,7 @@ public final class DbPackage implements AutoCloseable {
     /** 包内所有文件的总字节数。 */
     public long getStorageSize() {
         long total = 0;
-        try (Stream<Path> stream = Files.list(dir)) {
+        try (var stream = Files.list(dir)) {
             total = stream.filter(Files::isRegularFile).mapToLong(DbPackage::sizeOf).sum();
         } catch (IOException | RuntimeException e) {
             ChunkScannerMod.LOGGER.debug("Failed to size package {}: {}", dir, e.toString());
@@ -280,10 +255,16 @@ public final class DbPackage implements AutoCloseable {
         return total;
     }
 
+    /** 本包的轻量摘要（不持有任何打开的资源）。 */
+    public Info toInfo() {
+        return new Info(scanId, analyzerId, adaptorId, getDbType(),
+                getStorageSize(), getLastModifiedTime(), dir);
+    }
+
     /** 包内负载文件的最新修改时间戳；无负载时回退到 metadata.json。 */
     public long getLastModifiedTime() {
         long newest = 0;
-        try (Stream<Path> stream = Files.list(dir)) {
+        try (var stream = Files.list(dir)) {
             newest = stream.filter(Files::isRegularFile)
                     .mapToLong(p -> p.toFile().lastModified())
                     .max().orElse(0);
@@ -293,19 +274,44 @@ public final class DbPackage implements AutoCloseable {
         return newest;
     }
 
-    // ==================== 数据库访问 ====================
+    // ==================== 适配器访问 ====================
 
-    /** 获取主数据库（立即加载负载）。 */
-    public IChunkDb main() {
-        return obtain(MAIN_ID, null, true);
+    /**
+     * 获取本包的适配器（按 {@link #getAdaptorId()} 创建并缓存）。
+     *
+     * <p>若包声明的 adaptorId 未注册任何工厂，回退到内置的 {@code chunkscanner:raw} 适配器。</p>
+     */
+    public IDbAdaptor getAdaptor() {
+        if (closed) throw new IllegalStateException("DbPackage already closed: " + dir);
+        if (adaptor != null) return adaptor;
+        IDbAdaptor.IFactory f = IDbAdaptor.FactoryRegistry.get(adaptorId);
+        if (f == null) f = IDbAdaptor.FactoryRegistry.get(ChunkScannerMod.id("raw"));
+        if (f == null) {
+            throw new IllegalStateException("No IDbAdaptor factory registered (not even raw)");
+        }
+        adaptor = f.create(this);
+        return adaptor;
     }
 
     /**
-     * 获取主数据库但不加载负载，仅用于列表浏览。
-     * 需要读取内容时再调用 {@link IChunkDb#open()}。
+     * 以强类型获取本包的适配器。
+     *
+     * @throws IllegalStateException 当本包适配器类型与 {@code type} 不符时
      */
-    public IChunkDb mainLazy() {
-        return obtain(MAIN_ID, null, false);
+    public <T extends IDbAdaptor> T getAdaptor(Class<T> type) {
+        IDbAdaptor a = getAdaptor();
+        if (!type.isInstance(a)) {
+            throw new IllegalStateException("Package " + scanId + " uses adaptor "
+                    + a.getClass().getName() + ", not " + type.getName());
+        }
+        return type.cast(a);
+    }
+
+    // ==================== 数据库访问（仅供适配器使用） ====================
+
+    /** 获取主数据库（立即加载负载）。适配器专用，消费端请走 {@link #getAdaptor()}。 */
+    public IChunkDb main() {
+        return obtain(MAIN_ID, null, true);
     }
 
     /**
@@ -320,13 +326,19 @@ public final class DbPackage implements AutoCloseable {
         return obtain(requireValidSubId(subId), null, true);
     }
 
-    /**
-     * 获取或创建指定实现类型的子数据库。
-     *
-     * @param type 首次创建时使用的工厂 ID；已存在则以 metadata 中记录的类型为准
-     */
-    public IChunkDb sub(String subId, Identifier type) {
-        return obtain(requireValidSubId(subId), type, true);
+    /** 主数据库当前的 KV 条目总数（用于进度/状态展示）。 */
+    public int size() {
+        return main().size();
+    }
+
+    /** 某个 chunk 的上次扫描时间戳（毫秒），0 表示从未扫描。 */
+    public long getChunkScanTime(String dimensionId, int cx, int cz) {
+        return main().getChunkScanTime(dimensionId, cx, cz);
+    }
+
+    /** 更新某个 chunk 的扫描时间戳。 */
+    public void updateChunkScanTime(String dimensionId, int cx, int cz, long timestamp) {
+        main().updateChunkScanTime(dimensionId, cx, cz, timestamp);
     }
 
     private IChunkDb obtain(String nodeId, Identifier preferredType, boolean load) {
@@ -347,9 +359,10 @@ public final class DbPackage implements AutoCloseable {
             }
 
             DbStorage storage = new NodeStorage(nodeId);
-            IChunkDb db = load
-                    ? factory.create(scanId, analyzerId, storage)
-                    : factory.createMetadataOnly(scanId, analyzerId, storage);
+            IChunkDb db = factory.create(storage);
+            if (load) {
+                db.open();
+            }
             dbs.put(nodeId, db);
             return db;
         }
@@ -401,8 +414,7 @@ public final class DbPackage implements AutoCloseable {
      * 复制为一个新 scanId 的包。
      *
      * <p>不做字节层面的文件拷贝，而是逐个数据库「读入 → 以新身份写出」，
-     * 因此新包的负载、文件名与 metadata 中的 scanId 三者始终自洽——
-     * 这正是旧实现（文件名字符串替换）无法保证的。</p>
+     * 因此新包的负载、文件名与 metadata 中的 scanId 三者始终自洽。</p>
      *
      * @param parentDir  目标父目录
      * @param newScanId  新的扫描 ID
@@ -417,21 +429,21 @@ public final class DbPackage implements AutoCloseable {
         }
         flush();
 
-        DbPackage dst = create(parentDir, newScanId, analyzerId);
+        DbPackage dst = create(parentDir, newScanId, analyzerId, adaptorId);
         try {
             dst.taskConfig = taskConfig != null ? taskConfig.copy() : null;
             for (String nodeId : new ArrayList<>(nodes.keySet())) {
                 IChunkDb src = obtain(nodeId, null, true);
                 Node srcNode = nodes.get(nodeId);
-                Node dstNode = new Node(nodeId + "." + extensionOf(srcNode), srcNode.type, srcNode.version);
+                IChunkDb.IFactory srcFactory = resolveFactory(srcNode, null);
+                Node dstNode = new Node(nodeId + "." + extensionOf(srcNode), srcNode.type, srcFactory.getFormatVersion());
                 dst.nodes.put(nodeId, dstNode);
                 dst.new NodeStorage(nodeId).write(src::writeTo);
-                dstNode.version = src.getFormatVersion();
+                dstNode.version = srcFactory.getFormatVersion();
             }
             dst.saveMetadata();
             return dst;
         } catch (IOException | RuntimeException e) {
-            // 复制中途失败：清掉半成品，避免留下无法解释的残包
             try {
                 dst.close();
                 deleteRecursively(dst.dir);
@@ -451,10 +463,11 @@ public final class DbPackage implements AutoCloseable {
 
     // ==================== 元数据持久化 ====================
 
-    private void saveMetadata() throws IOException {
+    void saveMetadata() throws IOException {
         JsonObject root = new JsonObject();
         root.addProperty("scanId", scanId);
         root.addProperty("analyzerId", (analyzerId != null ? analyzerId : ChunkScannerMod.ID_UNKNOWN).toString());
+        root.addProperty("adaptorId", adaptorId.toString());
         if (taskConfig != null && !taskConfig.isAllNull()) {
             root.addProperty("taskConfig", taskConfig.toDisplayString());
         }
@@ -487,7 +500,7 @@ public final class DbPackage implements AutoCloseable {
         }
     }
 
-    /** 负载写入成功后同步 metadata 中记录的格式版本。 */
+    /** 负载写入成功后同步 metadata 中记录的格式版本（由工厂声明）。 */
     private void onNodeWritten(String nodeId) {
         IChunkDb db;
         synchronized (dbs) {
@@ -495,7 +508,7 @@ public final class DbPackage implements AutoCloseable {
         }
         Node node = nodes.get(nodeId);
         if (db == null || node == null) return;
-        int version = db.getFormatVersion();
+        int version = resolveFactory(node, null).getFormatVersion();
         if (node.version != version) {
             node.version = version;
             saveMetadataQuietly();
@@ -572,148 +585,7 @@ public final class DbPackage implements AutoCloseable {
         return dir.resolve(fileName);
     }
 
-    // ==================== 遗留格式自动迁移 ====================
-
-    /**
-     * 把上下文目录下 1.x 的扁平文件迁移成新的包目录结构。
-     *
-     * <p>旧命名：{@code chunkscanner_<hash>.<analyzer>.<ext>}，
-     * 子库为 {@code chunkscanner_<hash>.<analyzer>.sub_<n>.<ext>}。
-     * 迁移后主库变为 {@code chunkscanner_<hash>/main.<ext>}，
-     * 子库编号 1 映射为 {@code enhancement}，其余映射为 {@code sub_<n>}。</p>
-     *
-     * <p>迁移失败只记录日志，不阻塞列表读取。</p>
-     */
-    private static void migrateLegacyTree(Path root) {
-        List<Path> contextDirs = new ArrayList<>();
-        try (Stream<Path> stream = Files.walk(root, MAX_SCAN_DEPTH - 1)) {
-            stream.filter(Files::isDirectory).forEach(contextDirs::add);
-        } catch (IOException e) {
-            ChunkScannerMod.LOGGER.warn("Failed to scan for legacy databases under {}: {}", root, e.toString());
-            return;
-        }
-        for (Path contextDir : contextDirs) {
-            migrateLegacyDir(contextDir);
-        }
-    }
-
-    private static void migrateLegacyDir(Path contextDir) {
-        List<Path> legacyMains = new ArrayList<>();
-        try (Stream<Path> stream = Files.list(contextDir)) {
-            stream.filter(Files::isRegularFile)
-                    .filter(p -> {
-                        String name = p.getFileName().toString();
-                        return name.startsWith(DbFileUtil.STEM_PREFIX)
-                                && !name.contains(".sub_")
-                                && !name.endsWith(".tmp");
-                    })
-                    .forEach(legacyMains::add);
-        } catch (IOException e) {
-            ChunkScannerMod.LOGGER.warn("Failed to list {}: {}", contextDir, e.toString());
-            return;
-        }
-
-        for (Path mainFile : legacyMains) {
-            try {
-                migrateLegacyPackage(contextDir, mainFile);
-            } catch (IOException | RuntimeException e) {
-                ChunkScannerMod.LOGGER.error("Failed to migrate legacy database {}: {}", mainFile, e.toString());
-            }
-        }
-    }
-
-    private static void migrateLegacyPackage(Path contextDir, Path mainFile) throws IOException {
-        DbFileUtil.LegacyHeader header = DbFileUtil.readLegacyHeader(mainFile);
-        if (header.isEmpty()) return;
-
-        String fileName = mainFile.getFileName().toString();
-        int extDot = fileName.lastIndexOf('.');
-        String ext = extDot >= 0 ? fileName.substring(extDot + 1) : "bin";
-        // 旧文件名形如 chunkscanner_<hash>.<analyzer>.<ext>，去掉扩展名后即子库文件的公共前缀
-        String legacyPrefix = extDot >= 0 ? fileName.substring(0, extDot) : fileName;
-
-        Path packageDir = dirFor(contextDir, header.scanId());
-        if (Files.exists(packageDir)) {
-            ChunkScannerMod.LOGGER.warn("Skipped legacy migration, target already exists: {}", packageDir);
-            return;
-        }
-        Files.createDirectories(packageDir);
-
-        DbPackage pkg = new DbPackage(packageDir, header.scanId(), header.analyzerId());
-        pkg.taskConfig = TaskConfig.fromJson(header.taskConfigJson());
-
-        Identifier type = defaultFactoryId();
-        Files.move(mainFile, packageDir.resolve(MAIN_ID + "." + ext));
-        pkg.nodes.put(MAIN_ID, new Node(MAIN_ID + "." + ext, type, header.version()));
-
-        for (Map.Entry<String, Path> sub : findLegacySubs(contextDir, legacyPrefix, ext).entrySet()) {
-            String subId = sub.getKey();
-            Files.move(sub.getValue(), packageDir.resolve(subId + "." + ext));
-            pkg.nodes.put(subId, new Node(subId + "." + ext, type, header.version()));
-        }
-
-        pkg.saveMetadata();
-        pkg.close();
-        ChunkScannerMod.LOGGER.info("Migrated legacy database {} → {}", fileName, packageDir.getFileName());
-    }
-
-    /** 找出属于同一个旧包的子库文件，返回「新 StringId → 旧文件」。 */
-    private static Map<String, Path> findLegacySubs(Path contextDir, String legacyPrefix, String ext) {
-        Map<String, Path> found = new LinkedHashMap<>();
-        String prefix = legacyPrefix + ".sub_";
-        String suffix = "." + ext;
-        try (Stream<Path> stream = Files.list(contextDir)) {
-            stream.filter(Files::isRegularFile).forEach(p -> {
-                String name = p.getFileName().toString();
-                if (!name.startsWith(prefix) || !name.endsWith(suffix)) return;
-                String num = name.substring(prefix.length(), name.length() - suffix.length());
-                found.put(legacySubId(num), p);
-            });
-        } catch (IOException e) {
-            ChunkScannerMod.LOGGER.warn("Failed to list legacy sub-databases in {}: {}", contextDir, e.toString());
-        }
-        return found;
-    }
-
-    /** 旧的数字子库编号 → 新的 StringId。1 号历来用于聊天增强数据。 */
-    private static String legacySubId(String legacyNumber) {
-        return "1".equals(legacyNumber) ? "enhancement" : "sub_" + legacyNumber;
-    }
-
-    private static Identifier defaultFactoryId() {
-        IChunkDb.IFactory factory = IChunkDb.FactoryRegistry.getDefault();
-        return factory != null ? factory.getId() : ChunkScannerMod.ID_UNKNOWN;
-    }
-
     // ==================== 内部工具 ====================
-
-    private static List<Path> scanPackageDirs() {
-        Path root = ChunkScannerMod.getDbRoot();
-        if (!Files.isDirectory(root)) return List.of();
-        migrateLegacyTree(root);
-
-        List<Path> dirs = new ArrayList<>();
-        try (Stream<Path> stream = Files.walk(root, MAX_SCAN_DEPTH)) {
-            stream.filter(Files::isDirectory)
-                    .filter(p -> p.getFileName().toString().startsWith(DbFileUtil.STEM_PREFIX))
-                    .filter(p -> Files.isRegularFile(p.resolve(METADATA_FILE)))
-                    .forEach(dirs::add);
-        } catch (IOException | UncheckedIOException e) {
-            ChunkScannerMod.LOGGER.warn("Failed to scan database root {}: {}", root, e.toString());
-        }
-        return dirs;
-    }
-
-    private static Info readInfo(Path packageDir) {
-        try {
-            DbPackage pkg = open(packageDir);
-            return new Info(pkg.scanId, pkg.analyzerId, pkg.getDbType(),
-                    pkg.getStorageSize(), pkg.getLastModifiedTime(), packageDir);
-        } catch (IOException | RuntimeException e) {
-            ChunkScannerMod.LOGGER.warn("Skipped unreadable database package {}: {}", packageDir, e.toString());
-            return Info.EMPTY;
-        }
-    }
 
     private static String requireValidSubId(String subId) {
         if (subId == null || MAIN_ID.equals(subId) || !SUB_ID_PATTERN.matcher(subId).matches()) {
@@ -736,10 +608,10 @@ public final class DbPackage implements AutoCloseable {
         }
     }
 
-    private static void deleteRecursively(Path target) throws IOException {
+    static void deleteRecursively(Path target) throws IOException {
         if (!Files.exists(target)) return;
-        try (Stream<Path> stream = Files.walk(target)) {
-            for (Path p : stream.sorted(Comparator.reverseOrder()).toList()) {
+        try (var stream = Files.walk(target)) {
+            for (Path p : stream.sorted(java.util.Comparator.reverseOrder()).toList()) {
                 Files.deleteIfExists(p);
             }
         }
@@ -762,7 +634,7 @@ public final class DbPackage implements AutoCloseable {
         if (raw == null || raw.isEmpty()) return ChunkScannerMod.ID_UNKNOWN;
         Identifier parsed = raw.indexOf(':') >= 0
                 ? Identifier.tryParse(raw)
-                : ChunkScannerMod.id(raw.toLowerCase(Locale.ROOT));
+                : ChunkScannerMod.id(raw.toLowerCase(java.util.Locale.ROOT));
         return parsed != null ? parsed : ChunkScannerMod.ID_UNKNOWN;
     }
 
@@ -802,17 +674,18 @@ public final class DbPackage implements AutoCloseable {
      *
      * @param scanId       扫描 ID
      * @param analyzerId   分析器 ID
+     * @param adaptorId    适配器 ID
      * @param dbType       主库实现类型
      * @param size         包内文件总字节数
      * @param lastModified 最新修改时间戳
      * @param dir          包目录
      */
-    public record Info(String scanId, Identifier analyzerId, Identifier dbType,
+    public record Info(String scanId, Identifier analyzerId, Identifier adaptorId, Identifier dbType,
                        long size, long lastModified, Path dir) {
 
         /** 无法识别时的空值。 */
         public static final Info EMPTY = new Info("", ChunkScannerMod.ID_UNKNOWN,
-                ChunkScannerMod.ID_UNKNOWN, 0, 0, null);
+                ChunkScannerMod.ID_UNKNOWN, ChunkScannerMod.ID_UNKNOWN, 0, 0, null);
 
         /** 是否为无效摘要。 */
         public boolean isEmpty() {

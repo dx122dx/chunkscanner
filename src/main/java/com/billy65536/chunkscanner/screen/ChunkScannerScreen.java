@@ -296,7 +296,7 @@ public class ChunkScannerScreen extends Screen {
             tooltip.add(Text.translatable("chunkscanner.tooltip.session.total",
                     s.totalScannedChunks.get(), s.totalFoundChunks.get(), s.totalErrors.get())
                     .formatted(Formatting.GRAY));
-            int dbSize = s.db != null ? s.db.size() : 0;
+            int dbSize = s.pkg != null ? s.pkg.size() : 0;
             Text dbRateText;
             if (s.paused) {
                 dbRateText = Text.translatable("chunkscanner.tooltip.session.db_rate_paused", dbSize, s.getTasksPerTick())

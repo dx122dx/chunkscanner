@@ -67,10 +67,8 @@ public class BinaryChunkDb implements IChunkDb {
     /** 任务配置元数据键（仅用于 v1–v3 兼容读取时剔除）。 */
     private static final byte[] TASK_CONFIG_KEY = "__taskConfig__".getBytes(StandardCharsets.UTF_8);
 
-    /** 扫描任务 ID，由所属 {@link DbPackage} 注入。 */
-    private final String scanId;
-    /** 创建该数据库的分析器 ID，由所属 {@link DbPackage} 注入。 */
-    private final Identifier analyzerId;
+    /** 日志标签（与所属包无强关联，仅用于诊断）。 */
+    private final String label;
     /** 持久化通道。 */
     private final DbStorage storage;
 
@@ -104,48 +102,25 @@ public class BinaryChunkDb implements IChunkDb {
     private volatile boolean opened = false;
 
     /** 创建纯内存实例（无持久化）。 */
-    public BinaryChunkDb(String scanId) {
-        this(scanId, ChunkScannerMod.ID_UNKNOWN, DbStorage.NONE, true);
-    }
-
-    /** 创建纯内存实例（无持久化）。 */
-    public BinaryChunkDb(String scanId, Identifier analyzerId) {
-        this(scanId, analyzerId, DbStorage.NONE, true);
+    public BinaryChunkDb() {
+        this(DbStorage.NONE, "binary");
     }
 
     /**
-     * 完整构造函数。
+     * 由 {@link IChunkDb.IFactory} 创建的实例。
      *
-     * @param scanId     扫描任务 ID
-     * @param analyzerId 分析器 ID
-     * @param storage    持久化通道，纯内存实例传 {@link DbStorage#NONE}
-     * @param loadNow    是否立即加载负载；false 表示延迟到 {@link #open()}
+     * <p>构造时<b>不</b>加载负载，由 {@link DbPackage} 按需 {@link #open()}。</p>
+     *
+     * @param storage 持久化通道，纯内存实例传 {@link DbStorage#NONE}
+     * @param label   日志标签
      */
-    public BinaryChunkDb(String scanId, Identifier analyzerId, DbStorage storage, boolean loadNow) {
-        this.scanId = scanId;
-        this.analyzerId = analyzerId != null ? analyzerId : ChunkScannerMod.ID_UNKNOWN;
+    public BinaryChunkDb(DbStorage storage, String label) {
         this.storage = storage != null ? storage : DbStorage.NONE;
+        this.label = label != null ? label : "binary";
 
         stringPool.put(0, "");
         stringPoolReverse.put("", 0);
-
-        if (loadNow) {
-            load();
-            opened = true;
-        }
     }
-
-    @Override
-    public String getScanId() { return scanId; }
-
-    @Override
-    public Identifier getAnalyzerId() { return analyzerId; }
-
-    @Override
-    public Identifier getFactoryId() { return ChunkScannerMod.id("binary"); }
-
-    @Override
-    public int getFormatVersion() { return formatVersion; }
 
     // ==================== 字符串池 ====================
 
@@ -291,8 +266,8 @@ public class BinaryChunkDb implements IChunkDb {
             // 加载阶段就失败了：内存里只有半截数据，写回等于用残缺内容覆盖原负载（不可逆）。
             if (!loadFailWarned) {
                 loadFailWarned = true;
-                ChunkScannerMod.LOGGER.error("[scan:{}] Refusing to flush: previous load failed, "
-                        + "writing would destroy the existing payload.", scanId);
+                ChunkScannerMod.LOGGER.error("[{}] Refusing to flush: previous load failed, "
+                        + "writing would destroy the existing payload.", label);
             }
             return;
         }
@@ -304,7 +279,7 @@ public class BinaryChunkDb implements IChunkDb {
             // RuntimeException（如 BufferOverflowException）同样必须拦截：
             // dirty 已被置为 false，若异常逃逸则这批数据再也不会被写盘。
             dirty = true;
-            ChunkScannerMod.LOGGER.error("[scan:{}] Flush failed: {}", scanId, e.toString());
+            ChunkScannerMod.LOGGER.error("[{}] Flush failed: {}", label, e.toString());
         }
     }
 
@@ -318,13 +293,13 @@ public class BinaryChunkDb implements IChunkDb {
     private void load() {
         try {
             if (!storage.read(this::readFrom)) {
-                ChunkScannerMod.LOGGER.info("[scan:{}] No existing payload, starting fresh.", scanId);
+                ChunkScannerMod.LOGGER.info("[{}] No existing payload, starting fresh.", label);
             }
         } catch (IOException | RuntimeException e) {
             // 标记加载失败：内存中只有半截数据，禁止后续 flush 覆盖磁盘原内容。
             loadFailed = true;
-            ChunkScannerMod.LOGGER.error("[scan:{}] Load failed: {} — database is now read-only "
-                    + "to protect the existing payload.", scanId, e.toString());
+            ChunkScannerMod.LOGGER.error("[{}] Load failed: {} — database is now read-only "
+                    + "to protect the existing payload.", label, e.toString());
         }
     }
 
@@ -367,8 +342,8 @@ public class BinaryChunkDb implements IChunkDb {
             verifyCrc(channel, buf);
         }
 
-        ChunkScannerMod.LOGGER.info("[scan:{}] Loaded {} kv, {} strings, {} metas (v{}).",
-                scanId, kvStore.size(), stringPool.size() - 1, chunkScanTime.size(), version);
+        ChunkScannerMod.LOGGER.info("[{}] Loaded {} kv, {} strings, {} metas (v{}).",
+                label, kvStore.size(), stringPool.size() - 1, chunkScanTime.size(), version);
     }
 
     /** 跳过 v1–v4 内嵌的 scanId / analyzerId / taskConfig：这些字段已迁往 metadata.json。 */
@@ -480,8 +455,8 @@ public class BinaryChunkDb implements IChunkDb {
         int storedCrc = buf.getInt();
         int computedCrc = (int) crc.getValue();
         if (computedCrc != storedCrc) {
-            ChunkScannerMod.LOGGER.warn("[scan:{}] CRC32 mismatch: stored=0x{}, computed=0x{} — payload may be corrupted.",
-                    scanId, Integer.toHexString(storedCrc), Integer.toHexString(computedCrc));
+            ChunkScannerMod.LOGGER.warn("[{}] CRC32 mismatch: stored=0x{}, computed=0x{} — payload may be corrupted.",
+                    label, Integer.toHexString(storedCrc), Integer.toHexString(computedCrc));
         }
     }
 
@@ -639,13 +614,11 @@ public class BinaryChunkDb implements IChunkDb {
         public String getExt() { return "bin"; }
 
         @Override
-        public IChunkDb create(String scanId, Identifier analyzerId, DbStorage storage) {
-            return new BinaryChunkDb(scanId, analyzerId, storage, true);
-        }
+        public int getFormatVersion() { return CURRENT_VERSION; }
 
         @Override
-        public IChunkDb createMetadataOnly(String scanId, Identifier analyzerId, DbStorage storage) {
-            return new BinaryChunkDb(scanId, analyzerId, storage, false);
+        public IChunkDb create(DbStorage storage) {
+            return new BinaryChunkDb(storage, "binary");
         }
     }
 

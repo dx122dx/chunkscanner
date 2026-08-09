@@ -12,6 +12,7 @@ import com.billy65536.chunkscanner.core.IChunkAnalyzer;
 import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.ScanSession;
 import com.billy65536.chunkscanner.core.db.DbExportUtil;
+import com.billy65536.chunkscanner.core.db.DbManager;
 import com.billy65536.chunkscanner.core.db.DbPackage;
 import com.billy65536.chunkscanner.core.navigation.ChunkScannerNavigation;
 import com.billy65536.chunkscanner.core.navigation.NavigationEntry;
@@ -83,7 +84,7 @@ public class ChunkScannerCommands {
     private static final SuggestionProvider<FabricClientCommandSource> DB_FILE_ID_SUGGESTIONS =
             (ctx, builder) -> {
                 String remaining = builder.getRemaining().toLowerCase();
-                for (String id : DbPackage.listAllScanIds()) {
+                for (String id : DbManager.listAllScanIds()) {
                     if (id.toLowerCase().startsWith(remaining)) {
                         builder.suggest(id);
                     }
@@ -456,7 +457,7 @@ public class ChunkScannerCommands {
         }
 
         try {
-            if (DbPackage.deletePackage(scanId)) {
+            if (DbManager.deletePackage(scanId)) {
                 sendMsg(client, Text.translatable("chunkscanner.msg.db_deleted", scanId)
                         .formatted(Formatting.GREEN));
             } else {
@@ -504,7 +505,7 @@ public class ChunkScannerCommands {
             }
             int removed;
             try (DbPackage pkg = dstPkg) {
-                removed = new QShopDbAdapter(pkg).filterInPlace(filter);
+                removed = pkg.getAdaptor(QShopDbAdapter.class).filterInPlace(filter);
             }
 
             sendMsg(client, Text.translatable("chunkscanner.msg.db_filtercopy_success",
@@ -583,10 +584,10 @@ public class ChunkScannerCommands {
         // 若扫描活跃则先刷写，确保导出包含最新数据
         ScanSession activeSession = scanner.getSession(scanId);
         if (activeSession != null) {
-            activeSession.db.flush();
+            activeSession.pkg.flush();
         }
 
-        Path dir = DbPackage.findDir(scanId);
+        Path dir = DbManager.findDir(scanId);
         if (dir == null) {
             sendMsg(client, Text.translatable("chunkscanner.msg.db_file_not_found", scanId)
                     .formatted(Formatting.RED));
@@ -620,7 +621,7 @@ public class ChunkScannerCommands {
     private void exportDbTsv(String scanId, String customFileName,
                              MinecraftClient client) {
         exportDb(scanId, customFileName, client,
-                (pkg, outFile) -> DbExportUtil.exportTsv(pkg.main(), outFile),
+                (pkg, outFile) -> DbExportUtil.exportTsv(pkg, outFile),
                 "chunkscanner.msg.db_export_tsv_success", "tsv");
     }
 
@@ -630,7 +631,7 @@ public class ChunkScannerCommands {
      * 通过 scanner.startWithDb() 恢复扫描（保留已有数据）。
      */
     private void rebootScanFromDb(String scanId, MinecraftClient client) {
-        Path dir = DbPackage.findDir(scanId);
+        Path dir = DbManager.findDir(scanId);
         if (dir == null) {
             sendMsg(client, Text.translatable("chunkscanner.msg.db_file_not_found", scanId)
                     .formatted(Formatting.RED));
@@ -780,7 +781,7 @@ public class ChunkScannerCommands {
      * 在聊天中列出所有 DB 文件及其大小、分析器。
      */
     public static void chatListDbFiles(MinecraftClient client) {
-        List<DbPackage.Info> files = DbPackage.listAll();
+        List<DbPackage.Info> files = DbManager.listAll();
         if (files.isEmpty()) {
             sendMsg(client, Text.translatable("chunkscanner.gui.database.no_files").formatted(Formatting.GRAY));
             return;

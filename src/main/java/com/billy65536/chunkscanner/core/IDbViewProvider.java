@@ -13,16 +13,13 @@ import net.minecraft.client.gui.screen.Screen;
  *
  * <p>视图类型的注册通过 {@link DbViewProviderRegistry.ITypeDescriptor} 和 {@link DbViewProviderRegistry} 完成。</p>
  *
- * <p>数据访问（文件路径、条目、元数据等）通过 {@link #getDb()} 直接访问底层 {@link IChunkDb} 实例，
- * 不再需要将 IChunkDb 操作转发到 {@link IDbViewProvider} 接口。</p>
+ * <p>数据访问统一经由 {@link com.billy65536.chunkscanner.core.IDbAdaptor} 完成，
+ * 视图提供者不直接接触底层 {@link IChunkDb} 实例。</p>
  *
  * <p>渲染协议通过 {@link #getLayout(TextRenderer)} 返回的 {@link ILayout} 统一处理，
  * DatabaseScreen 不再需要关心视图是否为特化、如何渲染等细节。</p>
  */
 public interface IDbViewProvider {
-
-    /** 获取底层数据库实例，用于直接执行数据访问操作。 */
-    IChunkDb getDb();
 
     /**
      * 获取此视图的渲染布局。

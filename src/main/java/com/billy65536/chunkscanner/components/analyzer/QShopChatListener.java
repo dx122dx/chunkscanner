@@ -551,7 +551,7 @@ public final class QShopChatListener {
 
             if (session.pkg == null) continue;
 
-            QShopDbAdapter adapter = new QShopDbAdapter(session.pkg);
+            QShopDbAdapter adapter = session.pkg.getAdaptor(QShopDbAdapter.class);
             int cx = click.x() >> 4;
             int cz = click.z() >> 4;
 
@@ -623,7 +623,7 @@ public final class QShopChatListener {
 
             if (session.pkg == null) continue;
 
-            QShopDbAdapter adapter = new QShopDbAdapter(session.pkg);
+            QShopDbAdapter adapter = session.pkg.getAdaptor(QShopDbAdapter.class);
             int cx = targetPos.getX() >> 4;
             int cz = targetPos.getZ() >> 4;
 
@@ -690,7 +690,7 @@ public final class QShopChatListener {
 
             if (session.pkg == null) continue;
 
-            QShopDbAdapter adapter = new QShopDbAdapter(session.pkg);
+            QShopDbAdapter adapter = session.pkg.getAdaptor(QShopDbAdapter.class);
             int cx = targetPos.getX() >> 4;
             int cz = targetPos.getZ() >> 4;
 

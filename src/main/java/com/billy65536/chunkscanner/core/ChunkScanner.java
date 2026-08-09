@@ -211,7 +211,7 @@ public class ChunkScanner {
                 .append(Text.literal(" ").formatted(Formatting.WHITE))
                 .append(Text.translatable(KEY_STATUS_DB).formatted(Formatting.WHITE))
                 .append(Text.literal(": ").formatted(Formatting.WHITE))
-                .append(Text.literal(String.valueOf(session.db != null ? session.db.size() : 0))
+                .append(Text.literal(String.valueOf(session.pkg != null ? session.pkg.size() : 0))
                         .formatted(Formatting.YELLOW)));
     }
 
@@ -419,7 +419,7 @@ public class ChunkScanner {
                     .append(Text.literal("  ").formatted(Formatting.GRAY))
                     .append(Text.translatable(KEY_STATUS_DB).formatted(Formatting.GRAY))
                     .append(Text.literal(": ").formatted(Formatting.GRAY))
-                    .append(Text.literal(String.valueOf(s.db != null ? s.db.size() : 0))
+                    .append(Text.literal(String.valueOf(s.pkg != null ? s.pkg.size() : 0))
                             .formatted(Formatting.WHITE)));
         }
     }

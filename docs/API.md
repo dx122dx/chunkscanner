@@ -83,13 +83,13 @@ String filePath  = DatabaseApi.resolveFilePath(scanId);               // 调试�
 
 ### 3.3 加载与删除
 
-```java
-try (IChunkDb db = DatabaseApi.openDatabase(scanId)) {                // 完整加载
-    byte[] v = db.get(key);
-}
+数据库包是访问数据的唯一入口，包内数据一律经**适配器**读写，
+调用方不再直接接触 `IChunkDb`：
 
-try (IChunkDb db = DatabaseApi.openDatabase(scanId, true)) {          // 元数据 only，延迟加载
-    db.open();
+```java
+try (DbPackage pkg = DatabaseApi.openPackage(scanId)) {
+    MyAdaptor adaptor = pkg.getAdaptor(MyAdaptor.class);
+    List<MyRecord> records = adaptor.getAllRecords();
 }
 
 DatabaseApi.deleteDatabase(scanId);                                   // 不可恢复
@@ -99,9 +99,9 @@ DatabaseApi.deleteDatabase(scanId);                                   // 不可�
 
 ```java
 // 导出（两种入口）
-Path zip  = DatabaseApi.exportZip(db);                                 // 默认到 export/ 目录
-Path zip2 = DatabaseApi.exportZip(db, customPath);                     // 自定义输出
-Path tsv  = DatabaseApi.exportTsv(db);
+Path zip  = DatabaseApi.exportZip(pkg, null);                          // 默认到 export/ 目录
+Path zip2 = DatabaseApi.exportZip(pkg, customPath);                    // 自定义输出
+Path tsv  = DatabaseApi.exportTsv(pkg, null);
 Path tsv2 = DatabaseApi.exportTsv(scanId, path);                       // 按 scanId
 
 // 导入
@@ -176,33 +176,50 @@ Chunk Scanner 内置 `chunkscanner:player_near` **不可注销**；未注册的 
 ## 5. RegistryApi
 
 ```java
-// 1. 分析器 / 数据库视图 / 数据库工厂三注册器统一入口
+// 1. 分析器 / 适配器 / 数据库视图 / 数据库工厂四注册器统一入口
 RegistryApi.analyzers();        // AnalyzerRegistry
+RegistryApi.adaptorFactories(); // IDbAdaptor.FactoryRegistry
 RegistryApi.dbViewProviders();  // DbViewProviderRegistry
 RegistryApi.dbFactories();      // IChunkDb.FactoryRegistry
 
-// 2. 视图提供者查询
-List<IDbViewProvider> views = RegistryApi.viewProvidersFor(analyzerId);
+// 2. 视图提供者查询（按适配器，而非分析器）
+List<ITypeDescriptor> views = RegistryApi.viewProvidersFor(adaptorId);
 ```
 
-### 5.1 视图提供者契约（关键）
+### 5.1 分析器 / 适配器 / 视图三者的串联（关键）
 
-`IDbViewProvider.applicableAnalyzers()` 返回的集合：
-- **非空** → 仅对列出的 analyzer 适用
-- **空集** → 视为**通用（universal）**，对所有 analyzer 适用
+三者**独立注册**，通过 id 单向声明串联：
+
+| 环节 | 声明方式 | 默认值 |
+|---|---|---|
+| 分析器写数据用哪个适配器 | `IChunkAnalyzer.getAdaptorId()` | `chunkscanner:raw` |
+| 数据库包用哪个适配器 | 建包时由分析器声明推导，写入 `metadata.json` 的 `adaptorId` | 同上 |
+| 视图能读懂哪些适配器 | `ITypeDescriptor.applicableAdaptors()` | 无默认，必须显式声明 |
 
 ```java
-boolean universal = provider.applicableAnalyzers().isEmpty();
+// 消费端取数据的唯一正规渠道
+try (DbPackage pkg = DatabaseApi.openPackage("my-scan")) {
+    MyAdaptor adaptor = pkg.getAdaptor(MyAdaptor.class); // 类型不符会抛 IllegalStateException
+}
 ```
 
-`viewProvidersFor(analyzerId)` 合并「指定 analyzer 的特化视图」与「所有 universal 视图」，
-并返回**不可变列表**（修改会抛 `UnsupportedOperationException`）。
+`viewProvidersFor(adaptorId)` **只**返回显式声明了该 adaptorId 的视图；
+一个都没有时回退到内置 `chunkscanner:raw` 视图。返回**不可变列表**
+（修改会抛 `UnsupportedOperationException`）。
+
+> 注意：`applicableAdaptors()` 返回空集**不再**表示「通用」，而是表示该视图对任何包都不可见。
 
 ### 5.2 注册第三方扩展点
 
-外部模组注册分析器请使用**自己的命名空间**（`new Identifier("mymod", "...")`），
-避免与 Chunk Scanner 内置 id 冲突；ViewProvider 的 `applicableAnalyzers()` 应列出你的 analyzer id
-（若想让视图对所有 analyzer 可见，留空集合即可）。
+外部模组注册分析器/适配器/视图请使用**自己的命名空间**
+（`new Identifier("mymod", "...")`），避免与 Chunk Scanner 内置 id 冲突。
+典型的一套扩展需要三次注册：
+
+```java
+RegistryApi.registerAdaptor(new MyAdaptor.Factory());  // 先注册适配器
+RegistryApi.registerAnalyzer(new MyAnalyzer());        // getAdaptorId() 指向它
+RegistryApi.registerViewProvider(new MyViewType());    // applicableAdaptors() 含它
+```
 
 ---
 

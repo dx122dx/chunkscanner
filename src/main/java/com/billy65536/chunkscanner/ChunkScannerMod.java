@@ -3,8 +3,10 @@ package com.billy65536.chunkscanner;
 import com.billy65536.chunkscanner.components.analyzer.ItemTranslator;
 import com.billy65536.chunkscanner.components.analyzer.QShopAnalyzer;
 import com.billy65536.chunkscanner.components.analyzer.QShopChatListener;
+import com.billy65536.chunkscanner.components.analyzer.QShopDbAdapter;
 import com.billy65536.chunkscanner.components.analyzer.QShopHighlightRenderer;
 import com.billy65536.chunkscanner.components.analyzer.SignAnalyzer;
+import com.billy65536.chunkscanner.components.analyzer.SignDbAdaptor;
 import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 import com.billy65536.chunkscanner.components.view_provider.QShopDbViewProvider;
 import com.billy65536.chunkscanner.components.view_provider.RawDbProvider;
@@ -15,6 +17,8 @@ import com.billy65536.chunkscanner.core.AnalyzerRegistry;
 import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.core.IChunkDb;
+import com.billy65536.chunkscanner.core.IDbAdaptor;
+import com.billy65536.chunkscanner.core.RawDbAdaptor;
 import com.billy65536.chunkscanner.core.navigation.ChunkScannerNavigation;
 import com.billy65536.chunkscanner.core.navigation.NavigationTickDispatcher;
 import com.billy65536.chunkscanner.core.navigation.NavigationEntry;
@@ -229,11 +233,16 @@ public class ChunkScannerMod implements ClientModInitializer {
         // 注册数据库工厂（必须最先注册，ScanSession 依赖它创建数据库）
         IChunkDb.FactoryRegistry.register(new BinaryChunkDb.Factory());
 
-        // 注册分析器
-        AnalyzerRegistry.register(new SignAnalyzer());
-        AnalyzerRegistry.register(new QShopAnalyzer(), id("qshop_view"));
+        // 注册数据库适配器（raw 必须最先注册，作为未知 adaptorId 的兜底）
+        IDbAdaptor.FactoryRegistry.register(new RawDbAdaptor.Factory());
+        IDbAdaptor.FactoryRegistry.register(new SignDbAdaptor.Factory());
+        IDbAdaptor.FactoryRegistry.register(new QShopDbAdapter.Factory());
 
-        // 注册 DbViewProvider 类型（提供数据库浏览的不同视图）
+        // 注册分析器（各自通过 getAdaptorId() 指向上面的适配器）
+        AnalyzerRegistry.register(new SignAnalyzer());
+        AnalyzerRegistry.register(new QShopAnalyzer());
+
+        // 注册 DbViewProvider 类型（各自通过 applicableAdaptors() 声明可读的适配器）
         DbViewProviderRegistry.register(new RawDbProvider.Type());
         DbViewProviderRegistry.register(new SignDbViewProvider.Type());
         DbViewProviderRegistry.register(new QShopDbViewProvider.Type());

@@ -10,9 +10,13 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.components.view_provider.QShopFilter;
+import com.billy65536.chunkscanner.core.IDbAdaptor;
 import com.billy65536.chunkscanner.core.IChunkDb;
 import com.billy65536.chunkscanner.core.db.DbPackage;
+
+import net.minecraft.util.Identifier;
 
 /**
  * QShop 数据库适配器 —— 所有 QShop 二进制格式定义和数据库读写的唯一权威。
@@ -42,13 +46,14 @@ import com.billy65536.chunkscanner.core.db.DbPackage;
  *   <li>DB 操作 — {@link IChunkDb#put} / {@link IChunkDb#get} / …</li>
  * </ol>
  */
-public final class QShopDbAdapter {
+public final class QShopDbAdapter implements IDbAdaptor {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("chunkscanner.components.qshop.adapter");
 
     /** 增强数据附属库在 {@link DbPackage} 中的 StringId。 */
     public static final String SUB_ENHANCEMENT = "enhancement";
 
+    private final DbPackage pkg;
     private final IChunkDb db;
     private final IChunkDb subDb;
 
@@ -57,8 +62,14 @@ public final class QShopDbAdapter {
      * 增强数据取附属库 {@value #SUB_ENHANCEMENT}（不存在则自动创建）。
      */
     public QShopDbAdapter(DbPackage pkg) {
+        this.pkg = pkg;
         this.db = pkg.main();
         this.subDb = pkg.sub(SUB_ENHANCEMENT);
+    }
+
+    @Override
+    public DbPackage pkg() {
+        return pkg;
     }
 
     // ==================== 公开记录类型 ====================
@@ -122,6 +133,11 @@ public final class QShopDbAdapter {
         byte[] prefix = makeChunkPrefix(dimId, cx, cz);
         int count = db.removeAllWithPrefix(prefix);
         return count > 0;
+    }
+
+    /** 主库中已扫描过的区块数量（用于统计展示）。 */
+    public int getScannedChunkCount() {
+        return db.getAllChunkMetas().size();
     }
 
     /**
@@ -332,14 +348,22 @@ public final class QShopDbAdapter {
         return true;
     }
 
-    /** @return 底层主数据库实例 */
-    public IChunkDb getMainDb() {
-        return db;
+    /** @return qshop 适配器的唯一标识符 */
+    public static Identifier id() {
+        return ChunkScannerMod.id("qshop");
     }
 
-    /** @return 增强数据附属库实例（StringId 为 {@value #SUB_ENHANCEMENT}） */
-    public IChunkDb getSubDb() {
-        return subDb;
+    /** qshop 适配器工厂。 */
+    public static final class Factory implements IDbAdaptor.IFactory {
+        @Override
+        public Identifier getId() {
+            return id();
+        }
+
+        @Override
+        public IDbAdaptor create(DbPackage pkg) {
+            return new QShopDbAdapter(pkg);
+        }
     }
 
     // ==================== 格式常量 ====================

@@ -45,6 +45,19 @@ public interface IChunkAnalyzer {
     /** 唯一标识符，不可变，用于注册和命令选择。 */
     Identifier getId();
 
+    /**
+     * 本分析器写入数据时使用的数据库适配器 ID（adaptorId）。
+     *
+     * <p>{@link com.billy65536.chunkscanner.core.db.DbPackage} 据此决定元数据中的 adaptorId，
+     * 并据此创建对应的 {@link com.billy65536.chunkscanner.core.IDbAdaptor} 实例。
+     * 默认返回 {@code chunkscanner:raw}（原始 KV 适配器）。</p>
+     *
+     * @return 适配器 ID；不得为 {@code null}
+     */
+    default Identifier getAdaptorId() {
+        return com.billy65536.chunkscanner.ChunkScannerMod.id("raw");
+    }
+
     /** 显示名称，用于 GUI 展示。 */
     Text getName();
 

@@ -19,32 +19,15 @@ import java.util.Map;
  * 键为 byte[]，值为 byte[]，存储层自行负责序列化/反序列化。
  * 内置字符串池（intern）用于高效压缩重复字符串。</p>
  *
- * <p><b>职责边界</b>：本接口<b>不触及任何文件操作</b>。目录布局、文件命名、
- * 临时文件、原子改名、元数据（scanId / analyzerId / taskConfig / 子库清单）
- * 全部由 {@link DbPackage} 管理；实现只通过 {@link DbStorage} 拿到一个
- * {@link FileChannel} 来读写自己的负载。</p>
+ * <p><b>职责边界</b>：本接口<b>不触及任何文件操作</b>，也<b>不持有任何身份信息</b>
+ * （scanId / analyzerId / adaptorId 等均由 {@link DbPackage} 统一掌管）。
+ * 目录布局、文件命名、临时文件、原子改名、元数据全部由 {@link DbPackage} 管理；
+ * 实现只通过 {@link DbStorage} 拿到一个 {@link FileChannel} 来读写自己的负载。</p>
+ *
+ * <p><b>访问约束</b>：分析器与消费端（视图、命令、GUI）不得直接接触本接口实例，
+ * 一律经由所属 {@code DbPackage} 的适配器（{@code IDbAdaptor}）间接访问。</p>
  */
 public interface IChunkDb {
-
-    // ==================== DB 元信息 ====================
-
-    /** 获取此数据库实例的扫描 ID（由所属 {@link DbPackage} 注入）。 */
-    String getScanId();
-
-    /** 创建此数据库的分析器 ID（由所属 {@link DbPackage} 注入）。 */
-    Identifier getAnalyzerId();
-
-    /**
-     * 返回创建此数据库的 {@link IFactory#getId() 工厂标识符}。
-     * 默认返回 {@code null}，表示未指定/未知类型。
-     */
-    default Identifier getFactoryId() { return null; }
-
-    /**
-     * 当前负载的格式版本号，由 {@link DbPackage} 记录进 metadata。
-     * 默认返回 0，表示实现未做版本管理。
-     */
-    default int getFormatVersion() { return 0; }
 
     // ==================== 字符串池 ====================
 
@@ -162,20 +145,17 @@ public interface IChunkDb {
         String getExt();
 
         /**
-         * 创建数据库实例（完整模式，构造时立即从 storage 加载负载）。
-         *
-         * @param scanId     扫描任务 ID
-         * @param analyzerId 分析器 ID
-         * @param storage    持久化通道，纯内存实例传 {@link DbStorage#NONE}
+         * 当前负载的格式版本号，由 {@link DbPackage} 记录进 metadata。
+         * 默认返回 0，表示实现未做版本管理。
          */
-        IChunkDb create(String scanId, Identifier analyzerId, DbStorage storage);
+        default int getFormatVersion() { return 0; }
 
         /**
-         * 创建数据库实例（元数据模式，延迟加载）。
+         * 创建数据库实例（构造时<b>不</b>加载负载，由 {@link DbPackage} 按需 {@link IChunkDb#open()}）。
          *
-         * @return 未加载负载的实例，需调用 {@link IChunkDb#open()} 后才能读取内容
+         * @param storage 持久化通道，纯内存实例传 {@link DbStorage#NONE}
          */
-        IChunkDb createMetadataOnly(String scanId, Identifier analyzerId, DbStorage storage);
+        IChunkDb create(DbStorage storage);
     }
 
     /** 数据库工厂全局注册表。 */

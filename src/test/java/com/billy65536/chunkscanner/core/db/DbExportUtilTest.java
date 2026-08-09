@@ -48,22 +48,10 @@ class DbExportUtilTest {
 
     /** 最小化 IChunkDb 存根，只关心导出用到的方法。 */
     private static final class StubDb implements IChunkDb {
-        private final String scanId;
-        private final Identifier analyzerId;
-        private final Path filePath;
         private final List<Entry> entries;
 
-        StubDb(String scanId, Identifier analyzerId, Path filePath, List<Entry> entries) {
-            this.scanId = scanId;
-            this.analyzerId = analyzerId;
-            this.filePath = filePath;
+        StubDb(List<Entry> entries) {
             this.entries = entries;
-        }
-
-        @Override public String getScanId() { return scanId; }
-        @Override public Identifier getAnalyzerId() { return analyzerId; }
-        @Override public Identifier getFactoryId() {
-            return new Identifier("chunkscanner", "binary");
         }
 
         @Override public List<Entry> getAllEntries() { return entries; }
@@ -167,11 +155,11 @@ class DbExportUtilTest {
         @DisplayName("每行输出 hex key + tab + hex value")
         void lines_shouldBeHexTabHex(@TempDir Path dir) throws IOException {
             Path out = dir.resolve("out.tsv");
-            IChunkDb db = new StubDb("scan-1", new Identifier("chunkscanner", "qshop"), null,
+            IChunkDb db = new StubDb(
                     List.of(IChunkDb.Entry.of(hex("aabb"), hex("11")),
                             IChunkDb.Entry.of(hex("0000ff"), new byte[0])));
 
-            DbExportUtil.exportTsv(db, out);
+            DbExportUtil.writeTsv(db.getAllEntries(), out);
 
             List<String> lines = Files.readAllLines(out, StandardCharsets.UTF_8);
             assertEquals(2, lines.size());
@@ -183,10 +171,10 @@ class DbExportUtilTest {
         @DisplayName("空数据库生成空文件")
         void emptyDb_shouldProduceEmptyFile(@TempDir Path dir) throws IOException {
             Path out = dir.resolve("empty.tsv");
-            IChunkDb db = new StubDb("scan-1", new Identifier("chunkscanner", "qshop"), null,
+            IChunkDb db = new StubDb(
                     List.of());
 
-            DbExportUtil.exportTsv(db, out);
+            DbExportUtil.writeTsv(db.getAllEntries(), out);
 
             assertEquals(0, Files.size(out));
         }
@@ -195,9 +183,9 @@ class DbExportUtilTest {
         @DisplayName("返回实际写入的路径")
         void shouldReturnOutPath(@TempDir Path dir) throws IOException {
             Path out = dir.resolve("ret.tsv");
-            IChunkDb db = new StubDb("s", new Identifier("chunkscanner", "qshop"), null, List.of());
+            IChunkDb db = new StubDb(List.of());
 
-            assertEquals(out, DbExportUtil.exportTsv(db, out));
+            assertEquals(out, DbExportUtil.writeTsv(db.getAllEntries(), out));
         }
     }
 

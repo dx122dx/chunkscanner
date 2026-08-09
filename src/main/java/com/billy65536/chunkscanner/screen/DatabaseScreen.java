@@ -26,12 +26,12 @@ import net.minecraft.util.Identifier;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.db.DbExportUtil;
+import com.billy65536.chunkscanner.core.db.DbManager;
 import com.billy65536.chunkscanner.core.db.DbPackage;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.TaskConfig;
 import com.billy65536.chunkscanner.core.AnalyzerRegistry;
 import com.billy65536.chunkscanner.core.IChunkAnalyzer;
-import com.billy65536.chunkscanner.core.IChunkDb;
 import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.CoreUtil;
 import com.billy65536.chunkscanner.core.IDbViewProvider;
@@ -72,9 +72,8 @@ public class DatabaseScreen extends Screen {
     // ==================== KV 视图页 ====================
 
     private IDbViewProvider openedDb;
-    /** 当前打开的数据库包，负责其内所有 {@link IChunkDb} 的生命周期。 */
+    /** 当前打开的数据库包，是访问包内数据的唯一入口，负责其生命周期。 */
     private DbPackage openedPackage;
-    private IChunkDb rawChunkDb;
     private IDbViewProvider currentView;
     private boolean showingKvView = false;
 
@@ -129,7 +128,8 @@ public class DatabaseScreen extends Screen {
         kvPanel.endDrag();
         kvHScroll.endDrag();
 
-        viewTypes = new ArrayList<>(DbViewProviderRegistry.getAll());
+        // 视图列表在打开具体数据库包后按其 adaptorId 过滤得出
+        viewTypes = new ArrayList<>();
         selectedViewTypeIdx = 0;
 
         scanDbFiles();
@@ -150,7 +150,7 @@ public class DatabaseScreen extends Screen {
     // ==================== 文件列表扫描 ====================
 
     private void scanDbFiles() {
-        dbFiles = DbPackage.listAll();
+        dbFiles = DbManager.listAll();
     }
 
     // ==================== 打开/关闭数据库 ====================
@@ -166,13 +166,18 @@ public class DatabaseScreen extends Screen {
             return;
         }
         openedPackage = pkg;
-        IChunkDb db = pkg.mainLazy();
-        rawChunkDb = db;
-        openedDb = createDefaultViewProvider(pkg, meta.analyzerId());
+        // 视图候选：只保留声明了本包 adaptorId 的视图（一个都没有时回退到 raw 视图）
+        viewTypes = new ArrayList<>(DbViewProviderRegistry.forAdaptor(pkg.getAdaptorId()));
+        selectedViewTypeIdx = 0;
         try {
-            db.open();
+            openedDb = createDefaultViewProvider(pkg);
         } catch (Exception e) {
             ChunkScannerMod.LOGGER.warn("Failed to open database: {}", e.getMessage());
+            closeOpenedDb();
+            return;
+        }
+        if (openedDb == null) {
+            ChunkScannerMod.LOGGER.warn("No usable view provider for adaptor '{}'", pkg.getAdaptorId());
             closeOpenedDb();
             return;
         }
@@ -193,34 +198,25 @@ public class DatabaseScreen extends Screen {
     private void closeOpenedDb() {
         if (openedPackage != null) {
             openedPackage.close();
-        } else if (rawChunkDb != null) {
-            rawChunkDb.close();
         }
         openedPackage = null;
         openedDb = null;
-        rawChunkDb = null;
         currentView = null;
         cachedTaskConfig = null;
     }
 
     /**
-     * 根据分析器的默认视图提供者 id 创建视图提供者实例。
-     * 经 DbViewProviderRegistry 获取，不直接依赖任何具体的 view_provider 实现（避免 screen→components 耦合）。
-     * 若默认视图不可用，回退到 "raw" 视图。
+     * 创建包的默认视图提供者：取候选视图列表的第一项。
+     *
+     * <p>候选列表已由 {@link DbViewProviderRegistry#forAdaptor} 按包的 adaptorId 过滤，
+     * 并在无匹配时回退到 raw 视图；本方法不直接依赖任何具体的 view_provider 实现
+     * （避免 screen→components 耦合）。</p>
+     *
+     * @return 视图提供者；连 raw 视图都未注册时返回 {@code null}
      */
-    private static IDbViewProvider createDefaultViewProvider(DbPackage pkg, Identifier analyzerId) {
-        Identifier viewId = AnalyzerRegistry.getDefaultViewProvider(analyzerId);
-        IDbViewProvider provider = createView(viewId, pkg);
-        if (provider == null) {
-            provider = createView(ChunkScannerMod.id("raw"), pkg);
-        }
-        return provider;
-    }
-
-    private static IDbViewProvider createView(Identifier viewId, DbPackage pkg) {
-        DbViewProviderRegistry.ITypeDescriptor desc = DbViewProviderRegistry.get(viewId);
-        if (desc == null) return null;
-        return desc.create(pkg);
+    private IDbViewProvider createDefaultViewProvider(DbPackage pkg) {
+        if (viewTypes.isEmpty()) return null;
+        return viewTypes.get(0).create(pkg);
     }
 
     // ==================== 视图提供者 ====================
@@ -282,23 +278,19 @@ public class DatabaseScreen extends Screen {
         }
     }
 
-    private boolean isCurrentTypeApplicable() {
-        if (rawChunkDb == null || viewTypes.isEmpty()) return true;
-        DbViewProviderRegistry.ITypeDescriptor selectedType = viewTypes.get(selectedViewTypeIdx);
-        Set<Identifier> applicable = selectedType.applicableAnalyzers();
-        if (applicable.isEmpty()) return true;
-        return applicable.contains(rawChunkDb.getAnalyzerId());
-    }
-
-    private boolean isUniversallyApplicable() {
-        if (viewTypes.isEmpty()) return true;
-        return viewTypes.get(selectedViewTypeIdx).applicableAnalyzers().isEmpty();
+    /**
+     * 当前视图是否显式声明支持本包的适配器。
+     *
+     * <p>视图列表已按 adaptorId 过滤，唯一的例外是无匹配时回退的 raw 视图。</p>
+     */
+    private boolean isDeclaredForCurrentAdaptor() {
+        if (openedPackage == null || viewTypes.isEmpty()) return false;
+        Set<Identifier> applicable = viewTypes.get(selectedViewTypeIdx).applicableAdaptors();
+        return applicable != null && applicable.contains(openedPackage.getAdaptorId());
     }
 
     private Formatting getProviderColor() {
-        if (!isCurrentTypeApplicable()) return Formatting.RED;
-        if (isUniversallyApplicable()) return Formatting.YELLOW;
-        return Formatting.GREEN;
+        return isDeclaredForCurrentAdaptor() ? Formatting.GREEN : Formatting.YELLOW;
     }
 
     // ==================== 按钮重建 ====================
@@ -407,7 +399,8 @@ public class DatabaseScreen extends Screen {
     }
 
     private void exportAsTsv() {
-        if (rawChunkDb == null) return;
+        if (openedPackage == null) return;
+        final DbPackage pkg = openedPackage;
         Path dir = ChunkScannerMod.getDbRoot();
 
         // 在后台线程通过 EDT 调度 JFileChooser，避免 AWT 模态对话框阻塞 GL 渲染线程
@@ -415,7 +408,7 @@ public class DatabaseScreen extends Screen {
             try {
                 final JFileChooser chooser = new JFileChooser();
                 chooser.setDialogTitle(Text.translatable("chunkscanner.gui.database.export_tsv").getString());
-                chooser.setSelectedFile(new File(rawChunkDb.getScanId() + "_export.tsv"));
+                chooser.setSelectedFile(new File(pkg.getScanId() + "_export.tsv"));
                 chooser.setFileFilter(new FileNameExtensionFilter("TSV Files (*.tsv)", "tsv"));
 
                 // 设置默认目录
@@ -434,7 +427,7 @@ public class DatabaseScreen extends Screen {
                         outPath = outPath.resolveSibling(outPath.getFileName() + ".tsv");
                     }
                     try {
-                        rawChunkDb.flush(); // 确保数据最新
+                        pkg.flush(); // 确保数据最新
                         Files.createDirectories(outPath.getParent());
                         exportToFile(outPath);
                     } catch (Exception e) {
@@ -682,7 +675,7 @@ public class DatabaseScreen extends Screen {
 
         context.drawCenteredTextWithShadow(textRenderer,
                 Text.translatable("chunkscanner.gui.database.kv_title",
-                        rawChunkDb != null ? rawChunkDb.getScanId() : "?")
+                        openedPackage != null ? openedPackage.getScanId() : "?")
                         .formatted(Formatting.GOLD, Formatting.BOLD),
                 centerX, 12, 0xFFFFFF);
 
@@ -691,7 +684,7 @@ public class DatabaseScreen extends Screen {
 
         int kvSize = layout != null ? layout.getItemCount() : 0;
         int metaSize = layout != null ? layout.getMetaCount() : 0;
-        Text aName = rawChunkDb != null ? GuiUtil.getAnalyzerDisplayName(rawChunkDb.getAnalyzerId()) : Text.empty();
+        Text aName = openedPackage != null ? GuiUtil.getAnalyzerDisplayName(openedPackage.getAnalyzerId()) : Text.empty();
         Text vName = viewTypes.isEmpty() ? Text.empty() : viewTypes.get(selectedViewTypeIdx).getName();
 
         context.drawTextWithShadow(textRenderer,
@@ -1030,7 +1023,7 @@ public class DatabaseScreen extends Screen {
     private void deleteDbFile(DbPackage.Info meta) {
         try {
             closeOpenedDb();
-            DbPackage.deletePackage(meta.scanId());
+            DbManager.deletePackage(meta.scanId());
             showingKvView = false;
             layout = null;
             scanDbFiles();

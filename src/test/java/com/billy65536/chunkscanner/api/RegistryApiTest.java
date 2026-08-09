@@ -35,7 +35,7 @@ class RegistryApiTest {
             @Override public Identifier getId() { return id; }
             @Override public Text getName() { return Text.literal(path); }
             @Override public Text getDescription() { return Text.literal("desc:" + path); }
-            @Override public Set<Identifier> applicableAnalyzers() { return applicable; }
+            @Override public Set<Identifier> applicableAdaptors() { return applicable; }
             @Override public IDbViewProvider create(DbPackage pkg) { return null; }
         };
     }
@@ -43,30 +43,14 @@ class RegistryApiTest {
     // ==================== 视图适用性契约 ====================
 
     @Nested
-    @DisplayName("viewProvidersFor —— 空集表示通用")
+    @DisplayName("viewProvidersFor —— 按 adaptorId 显式声明")
     class ViewApplicability {
 
         @Test
-        @DisplayName("applicableAnalyzers 为空集的视图，对任意分析器均可见")
-        void emptySet_shouldBeUniversal() {
-            DbViewProviderRegistry.ITypeDescriptor universal =
-                    viewType("test.api.view.universal", Set.of());
-            RegistryApi.registerViewProvider(universal);
-
-            List<DbViewProviderRegistry.ITypeDescriptor> forA =
-                    RegistryApi.viewProvidersFor(ChunkScannerMod.id("test.api.analyzer.a"));
-            List<DbViewProviderRegistry.ITypeDescriptor> forB =
-                    RegistryApi.viewProvidersFor(ChunkScannerMod.id("test.api.analyzer.b"));
-
-            assertTrue(forA.contains(universal), "空集视图应对分析器 a 可见");
-            assertTrue(forB.contains(universal), "空集视图应对分析器 b 可见");
-        }
-
-        @Test
-        @DisplayName("applicableAnalyzers 非空时，仅对集合内的分析器可见")
-        void nonEmptySet_shouldBeRestricted() {
-            Identifier target = ChunkScannerMod.id("test.api.analyzer.target");
-            Identifier other = ChunkScannerMod.id("test.api.analyzer.other");
+        @DisplayName("仅对 applicableAdaptors 中声明的适配器可见")
+        void declaredAdaptor_shouldBeVisible() {
+            Identifier target = ChunkScannerMod.id("test.api.adaptor.target");
+            Identifier other = ChunkScannerMod.id("test.api.adaptor.other");
 
             DbViewProviderRegistry.ITypeDescriptor restricted =
                     viewType("test.api.view.restricted", Set.of(target));
@@ -77,13 +61,24 @@ class RegistryApiTest {
         }
 
         @Test
-        @DisplayName("applicableAnalyzers 返回 null 时按通用处理（防 NPE）")
-        void nullSet_shouldBeTreatedAsUniversal() {
+        @DisplayName("applicableAdaptors 为空集的视图对任何适配器都不可见")
+        void emptySet_shouldBeInvisible() {
+            DbViewProviderRegistry.ITypeDescriptor empty =
+                    viewType("test.api.view.emptyset", Set.of());
+            RegistryApi.registerViewProvider(empty);
+
+            assertFalse(RegistryApi.viewProvidersFor(ChunkScannerMod.id("test.api.adaptor.any"))
+                    .contains(empty));
+        }
+
+        @Test
+        @DisplayName("applicableAdaptors 返回 null 时不可见且不抛 NPE")
+        void nullSet_shouldBeInvisible() {
             DbViewProviderRegistry.ITypeDescriptor nullApplicable =
                     viewType("test.api.view.nullset", null);
             RegistryApi.registerViewProvider(nullApplicable);
 
-            assertTrue(RegistryApi.viewProvidersFor(ChunkScannerMod.id("test.api.analyzer.any"))
+            assertFalse(RegistryApi.viewProvidersFor(ChunkScannerMod.id("test.api.adaptor.any2"))
                     .contains(nullApplicable));
         }
 
@@ -91,7 +86,7 @@ class RegistryApiTest {
         @DisplayName("返回的列表不可修改")
         void result_shouldBeUnmodifiable() {
             List<DbViewProviderRegistry.ITypeDescriptor> result =
-                    RegistryApi.viewProvidersFor(ChunkScannerMod.id("test.api.analyzer.unmod"));
+                    RegistryApi.viewProvidersFor(ChunkScannerMod.id("test.api.adaptor.unmod"));
             assertThrows(UnsupportedOperationException.class,
                     () -> result.add(viewType("test.api.view.shouldfail", Set.of())));
         }
@@ -147,7 +142,6 @@ class RegistryApiTest {
         @DisplayName("注册 null 分析器不抛异常")
         void registerNullAnalyzer_shouldNotThrow() {
             assertDoesNotThrow(() -> RegistryApi.registerAnalyzer(null));
-            assertDoesNotThrow(() -> RegistryApi.registerAnalyzer(null, ChunkScannerMod.id("raw")));
         }
 
         @Test
@@ -159,19 +153,12 @@ class RegistryApiTest {
         }
 
         @Test
-        @DisplayName("defaultViewProviderId 为 chunkscanner:raw")
-        void defaultViewProviderId_shouldBeRaw() {
-            Identifier def = RegistryApi.defaultViewProviderId();
-            assertEquals("chunkscanner", def.getNamespace());
-            assertEquals("raw", def.getPath());
-        }
-
-        @Test
-        @DisplayName("未注册分析器的默认视图回退为 chunkscanner:raw")
-        void unregisteredAnalyzer_defaultViewShouldFallbackToRaw() {
-            Identifier fallback = RegistryApi.getDefaultViewProvider(
-                    ChunkScannerMod.id("test.api.analyzer.nodefault"));
-            assertEquals(RegistryApi.defaultViewProviderId(), fallback);
+        @DisplayName("未注册分析器的适配器 id 回退为 chunkscanner:raw")
+        void unregisteredAnalyzer_adaptorShouldFallbackToRaw() {
+            Identifier fallback = RegistryApi.getAdaptorId(
+                    ChunkScannerMod.id("test.api.analyzer.noadaptor"));
+            assertEquals("chunkscanner", fallback.getNamespace());
+            assertEquals("raw", fallback.getPath());
         }
 
         @Test
@@ -211,8 +198,7 @@ class RegistryApiTest {
                     new com.billy65536.chunkscanner.core.IChunkDb.IFactory() {
                         @Override public Identifier getId() { return dup; }
                         @Override public String getExt() { return "bin"; }
-                        @Override public com.billy65536.chunkscanner.core.IChunkDb create(String s, Identifier a, com.billy65536.chunkscanner.core.db.DbStorage st) { return null; }
-                        @Override public com.billy65536.chunkscanner.core.IChunkDb createMetadataOnly(String s, Identifier a, com.billy65536.chunkscanner.core.db.DbStorage st) { return null; }
+                        @Override public com.billy65536.chunkscanner.core.IChunkDb create(com.billy65536.chunkscanner.core.db.DbStorage st) { return null; }
                     });
             // 首次注册应成功（注册表初始为空）
             assertTrue(first, "首次注册应成功（测试隔离前提下）");

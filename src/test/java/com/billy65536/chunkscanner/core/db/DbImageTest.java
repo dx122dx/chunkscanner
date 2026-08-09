@@ -84,11 +84,12 @@ class DbImageTest {
     class MetaParse {
 
         @Test
-        @DisplayName("解析 scanId / analyzerId / database.type / database.file / export.files")
+        @DisplayName("解析 scanId / analyzerId / adaptorId / database.type / database.file / export.files")
         void shouldParseNewSchema() throws IOException {
             String json = "{"
                     + "\"scanId\":\"scan-1\","
                     + "\"analyzerId\":\"chunkscanner:sign\","
+                    + "\"adaptorId\":\"chunkscanner:sign\","
                     + "\"database\":{\"type\":\"chunkscanner:binary\",\"file\":\"main.dat\"},"
                     + "\"export\":{\"time\":\"2026-08-09T12:00:00Z\","
                     + "\"files\":[{\"name\":\"main.dat\",\"sha256\":\"abc123\"}]}"
@@ -98,6 +99,7 @@ class DbImageTest {
 
             assertEquals("scan-1", meta.scanId());
             assertEquals(new Identifier("chunkscanner", "sign"), meta.analyzerId());
+            assertEquals(new Identifier("chunkscanner", "sign"), meta.adaptorId());
             assertEquals(new Identifier("chunkscanner", "binary"), meta.databaseType());
             assertEquals("main.dat", meta.mainFile());
             assertEquals("2026-08-09T12:00:00Z", meta.exportTime());
@@ -113,6 +115,14 @@ class DbImageTest {
             DbImage.Meta meta = DbImage.Meta.parse(stringInputStream(json));
             assertNull(meta.databaseType());
             assertNull(meta.mainFile());
+        }
+
+        @Test
+        @DisplayName("旧版导出包无 adaptorId 字段时解析为 null（还原时由分析器推导）")
+        void missingAdaptorId_shouldBeNull() throws IOException {
+            String json = "{\"scanId\":\"s\",\"analyzerId\":\"chunkscanner:sign\"}";
+            DbImage.Meta meta = DbImage.Meta.parse(stringInputStream(json));
+            assertNull(meta.adaptorId());
         }
 
         @Test

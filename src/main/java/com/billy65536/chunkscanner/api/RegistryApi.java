@@ -12,16 +12,24 @@ import com.billy65536.chunkscanner.core.AnalyzerRegistry;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.core.IChunkAnalyzer;
 import com.billy65536.chunkscanner.core.IChunkDb;
+import com.billy65536.chunkscanner.core.IDbAdaptor;
 
 /**
  * 注册公共 API。
  *
- * <p>统一收敛三类扩展点的注册与查询：</p>
+ * <p>统一收敛四类扩展点的注册与查询：</p>
  * <ul>
  *   <li>{@link IChunkAnalyzer 分析器} —— 决定扫描时从区块中提取什么数据</li>
+ *   <li>{@link IDbAdaptor 数据库适配器} —— 决定数据以什么格式落库、以什么强类型读出</li>
  *   <li>{@link DbViewProviderRegistry.ITypeDescriptor 数据库视图} —— 决定数据库 GUI 如何展示数据</li>
  *   <li>{@link IChunkDb.IFactory 数据库工厂} —— 决定底层存储引擎</li>
  * </ul>
+ *
+ * <p><b>三者如何串起来</b>：分析器通过
+ * {@link IChunkAnalyzer#getAdaptorId()} 声明自己写入数据所用的适配器，该 id 会写入
+ * 数据库包的 metadata；视图则通过
+ * {@link DbViewProviderRegistry.ITypeDescriptor#applicableAdaptors()} 声明自己能读懂
+ * 哪些适配器。GUI 只展示声明了当前包适配器的视图。三者独立注册，互不耦合。</p>
  *
  * <p><b>调用时机</b>：所有注册必须在客户端初始化阶段完成（Fabric 的
  * {@code onInitializeClient}）。运行期注册虽不会报错，但已打开的 GUI 与
@@ -33,10 +41,13 @@ import com.billy65536.chunkscanner.core.IChunkDb;
  *
  * <h2>使用示例</h2>
  * <pre>{@code
- * // 注册分析器，并指定其数据库默认使用的视图
- * RegistryApi.registerAnalyzer(new MyAnalyzer(), new Identifier("qab", "shop_view"));
+ * // 注册适配器（分析器通过 getAdaptorId() 指向它）
+ * RegistryApi.registerAdaptor(new MyAdaptor.Factory());
  *
- * // 注册视图类型
+ * // 注册分析器
+ * RegistryApi.registerAnalyzer(new MyAnalyzer());
+ *
+ * // 注册视图类型（其 applicableAdaptors() 需含 MyAdaptor 的 id）
  * RegistryApi.registerViewProvider(new MyViewType());
  *
  * // 注册自定义存储引擎
@@ -53,27 +64,18 @@ public final class RegistryApi {
     // ==================== 分析器 ====================
 
     /**
-     * 注册一个分析器，默认视图为 {@code chunkscanner:raw}（原始 KV 十六进制视图）。
+     * 注册一个分析器。
      *
-     * <p>重复注册同 id 会覆盖旧的分析器及其默认视图关联。</p>
+     * <p>分析器所用的适配器由其 {@link IChunkAnalyzer#getAdaptorId()} 自行声明，
+     * 默认为 {@code chunkscanner:raw}。适配器需另行
+     * {@linkplain #registerAdaptor 注册}。</p>
+     *
+     * <p>重复注册同 id 会覆盖旧值。</p>
      *
      * @param analyzer 分析器实例，{@code null} 或 id 为 {@code null} 时忽略
      */
     public static void registerAnalyzer(IChunkAnalyzer analyzer) {
         AnalyzerRegistry.register(analyzer);
-    }
-
-    /**
-     * 注册一个分析器并指定其数据库默认使用的视图。
-     *
-     * <p>视图 id 无需在此之前注册，但在数据库 GUI 打开前必须已注册，
-     * 否则会回退到 {@code chunkscanner:raw}。</p>
-     *
-     * @param analyzer            分析器实例，{@code null} 或 id 为 {@code null} 时忽略
-     * @param defaultViewProvider 默认视图 id，{@code null} 视为 {@code chunkscanner:raw}
-     */
-    public static void registerAnalyzer(IChunkAnalyzer analyzer, Identifier defaultViewProvider) {
-        AnalyzerRegistry.register(analyzer, defaultViewProvider);
     }
 
     /** 通过 id 获取分析器，未注册返回 {@code null}。 */
@@ -101,17 +103,51 @@ public final class RegistryApi {
     }
 
     /**
-     * 获取分析器关联的默认视图 id。
+     * 获取分析器声明的适配器 id。
      *
-     * @return 关联的视图 id；未注册时返回 {@code chunkscanner:raw}
+     * @return 适配器 id；分析器未注册时返回 {@code chunkscanner:raw}
      */
-    public static Identifier getDefaultViewProvider(Identifier analyzerId) {
-        return AnalyzerRegistry.getDefaultViewProvider(analyzerId);
+    public static Identifier getAdaptorId(Identifier analyzerId) {
+        return AnalyzerRegistry.getAdaptorId(analyzerId);
     }
 
-    /** 默认视图 id（{@code chunkscanner:raw}）。 */
-    public static Identifier defaultViewProviderId() {
-        return AnalyzerRegistry.DEFAULT_VIEW;
+    // ==================== 数据库适配器 ====================
+
+    /**
+     * 注册一个数据库适配器工厂。
+     *
+     * <p>适配器是分析器写入、消费端读取数据的唯一正规渠道：它把包内的裸键值负载
+     * 包装成业务语义明确的强类型方法。数据库包会在 metadata 中记录自己的适配器 id，
+     * 消费端通过 {@code pkg.getAdaptor(MyAdaptor.class)} 取用。</p>
+     *
+     * <p>适配器 id 未注册时，包会回退到内置的 {@code chunkscanner:raw} 适配器。
+     * 重复注册同 id 会覆盖旧值。</p>
+     *
+     * @param factory 适配器工厂，{@code null} 或 id 为 {@code null} 时忽略
+     * @return {@code true} 表示注册成功
+     */
+    public static boolean registerAdaptor(IDbAdaptor.IFactory factory) {
+        if (factory == null || factory.getId() == null) {
+            ChunkScannerMod.LOGGER.warn("Attempted to register null db adaptor factory, ignored");
+            return false;
+        }
+        IDbAdaptor.FactoryRegistry.register(factory);
+        return true;
+    }
+
+    /** 通过 id 获取适配器工厂，未注册返回 {@code null}。 */
+    public static IDbAdaptor.IFactory getAdaptorFactory(Identifier id) {
+        return IDbAdaptor.FactoryRegistry.get(id);
+    }
+
+    /** 指定适配器是否已注册。 */
+    public static boolean hasAdaptor(Identifier id) {
+        return IDbAdaptor.FactoryRegistry.get(id) != null;
+    }
+
+    /** 所有已注册的适配器工厂（只读，保持注册顺序）。 */
+    public static Collection<IDbAdaptor.IFactory> adaptorFactories() {
+        return IDbAdaptor.FactoryRegistry.getAll();
     }
 
     // ==================== 数据库视图 ====================
@@ -120,8 +156,8 @@ public final class RegistryApi {
      * 注册一个数据库视图类型。
      *
      * <p>视图类型决定数据库 GUI 中"视图选择器"里的可选项。
-     * 通过 {@link DbViewProviderRegistry.ITypeDescriptor#applicableAnalyzers()}
-     * 限定适用的分析器，返回空集表示适用于所有数据库。</p>
+     * 通过 {@link DbViewProviderRegistry.ITypeDescriptor#applicableAdaptors()}
+     * 声明自己能读懂哪些适配器，GUI 只展示声明了当前包适配器的视图。</p>
      *
      * <p>重复注册同 id 会覆盖旧值。</p>
      *
@@ -153,22 +189,16 @@ public final class RegistryApi {
     }
 
     /**
-     * 列出适用于指定分析器的所有视图类型。
+     * 列出能读懂指定适配器的所有视图类型。
      *
-     * <p>包含显式声明适用该分析器的视图，以及适用范围为空集（通用）的视图。</p>
+     * <p>只返回在 {@link DbViewProviderRegistry.ITypeDescriptor#applicableAdaptors()}
+     * 中显式声明了该适配器的视图；一个都没有时回退到内置的 {@code chunkscanner:raw} 视图。</p>
      *
-     * @param analyzerId 分析器 id
+     * @param adaptorId 适配器 id
      * @return 适用的视图类型列表（只读）
      */
-    public static List<DbViewProviderRegistry.ITypeDescriptor> viewProvidersFor(Identifier analyzerId) {
-        List<DbViewProviderRegistry.ITypeDescriptor> result = new ArrayList<>();
-        for (DbViewProviderRegistry.ITypeDescriptor type : DbViewProviderRegistry.getAll()) {
-            java.util.Set<Identifier> applicable = type.applicableAnalyzers();
-            if (applicable == null || applicable.isEmpty() || applicable.contains(analyzerId)) {
-                result.add(type);
-            }
-        }
-        return Collections.unmodifiableList(result);
+    public static List<DbViewProviderRegistry.ITypeDescriptor> viewProvidersFor(Identifier adaptorId) {
+        return DbViewProviderRegistry.forAdaptor(adaptorId);
     }
 
     // ==================== 数据库工厂 ====================

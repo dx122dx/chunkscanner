@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.TaskConfig;
+import com.billy65536.chunkscanner.core.db.DbManager;
 import com.billy65536.chunkscanner.core.db.DbPackage;
 
 import net.minecraft.client.MinecraftClient;
@@ -44,10 +45,8 @@ public class ScanSession {
     private final ChunkScanner chunkScanner;
     public final String scanId;
     public final IChunkAnalyzer analyzer;
-    /** 本任务的数据库包（拥有文件与元信息，负责其内所有 {@link IChunkDb} 的生命周期）。 */
+    /** 本任务的数据库包（拥有文件与元信息，是访问数据的唯一入口）。 */
     public final DbPackage pkg;
-    /** 主数据库（由 {@link #pkg} 持有，会话不单独关闭）。 */
-    public final IChunkDb db;
     /** 此任务独立的配置副本（合并了全局默认值和任务级配置覆盖）。 */
     ChunkScannerConfig sessionConfig;
     /** 原始任务配置引用（用于显示、数据库持久化和任务恢复）。 */
@@ -113,7 +112,7 @@ public class ScanSession {
      */
     private static DbPackage openPackage(String scanId, Identifier analyzerId) {
         try {
-            return DbPackage.openOrCreate(scanId, analyzerId);
+            return DbManager.openOrCreate(scanId, analyzerId);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to open database package for scan '" + scanId + "'", e);
         }
@@ -131,7 +130,6 @@ public class ScanSession {
         this.scanId = scanId;
         this.analyzer = analyzer;
         this.pkg = existingPkg;
-        this.db = existingPkg.main();
         // 合并任务配置与全局配置：非 null 字段覆盖，null 字段继承全局默认
         this.sessionConfig = (taskConfig != null ? taskConfig : new TaskConfig()).applyTo(this.chunkScanner.config);
         this.pendingChunks = new PriorityBlockingQueue<>(1024);
@@ -203,7 +201,7 @@ public class ScanSession {
         long packed = CoreUtil.packChunkPos(cx, cz);
         if (enqueuedChunks.contains(packed)) return;
 
-        long lastMs = db.getChunkScanTime(dimId, cx, cz);
+        long lastMs = pkg.getChunkScanTime(dimId, cx, cz);
         if (lastMs > 0 && sessionConfig.scanner.minRevisitIntervalSec > 0) {
             if (nowSec - (lastMs / 1000) < sessionConfig.scanner.minRevisitIntervalSec) return;
         }
@@ -236,7 +234,7 @@ public class ScanSession {
         if (paused) {
             if (++flushCounter >= sessionConfig.scanner.flushIntervalTicks) {
                 flushCounter = 0;
-                db.flush();
+                pkg.flush();
             }
             return;
         }
@@ -301,7 +299,7 @@ public class ScanSession {
 
         if (++flushCounter >= sessionConfig.scanner.flushIntervalTicks) {
             flushCounter = 0;
-            db.flush();
+            pkg.flush();
         }
 
         // 每 ~200 ticks 输出一次调试统计
@@ -327,7 +325,7 @@ public class ScanSession {
         List<TaskResult> batch = new ArrayList<>();
         resultQueue.drainTo(batch);
         for (TaskResult t : batch) {
-            db.updateChunkScanTime(t.dimId, t.cx, t.cz, t.timestamp);
+            pkg.updateChunkScanTime(t.dimId, t.cx, t.cz, t.timestamp);
             totalScannedChunks.incrementAndGet();
             totalFoundChunks.addAndGet(t.foundCount);
             totalErrors.addAndGet(t.errorCount);
@@ -379,7 +377,7 @@ public class ScanSession {
                 boolean isFound = foundChunks.contains(packed);
                 boolean isErr = errorChunks.contains(packed);
                 boolean isEnqueued = enqueuedChunks.contains(packed);
-                long lastMs = db.getChunkScanTime(dimId, cx, cz);
+                long lastMs = pkg.getChunkScanTime(dimId, cx, cz);
                 // 超出重访期 = 已扫描过 且 距上次扫描 >= minRevisitIntervalSec
                 boolean pastRevisit = lastMs > 0 && revisitSec > 0
                         && nowSec - (lastMs / 1000) >= revisitSec;

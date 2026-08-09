@@ -4,12 +4,12 @@ import net.minecraft.client.font.TextRenderer;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.IChunkDb;
+import com.billy65536.chunkscanner.core.RawDbAdaptor;
 import com.billy65536.chunkscanner.core.db.DbPackage;
 import com.billy65536.chunkscanner.core.IDbViewProvider;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
@@ -20,24 +20,18 @@ import com.billy65536.chunkscanner.gui.layout.ILayout;
 /**
  * 原始（Raw）数据库视图提供者。
  *
- * <p>封装 ChunkDb，直接显示原始字节的键值对，不进行结构化解析。
- * 适用于所有分析器（applicableAnalyzers 为空集）。</p>
+ * <p>封装 raw 适配器，直接显示原始字节的键值对，不进行结构化解析。
+ * 对应 adaptorId {@code chunkscanner:raw}，是所有数据库包的兜底视图。</p>
  */
 public class RawDbProvider implements IDbViewProvider {
 
     private static final int KEY_COLOR = 0xFFFFFF00;
     private static final String[] HEADERS = {"Key", "Value"};
 
-
-    private final IChunkDb db;
+    private final RawDbAdaptor ad;
 
     public RawDbProvider(DbPackage pkg) {
-        this.db = pkg.main();
-    }
-
-    @Override
-    public IChunkDb getDb() {
-        return db;
+        this.ad = pkg.getAdaptor(RawDbAdaptor.class);
     }
 
     @Override
@@ -45,8 +39,8 @@ public class RawDbProvider implements IDbViewProvider {
         List<IChunkDb.Entry> entries;
         int metaCount;
         try {
-            entries = db.getAllEntries();
-            metaCount = db.getAllChunkMetas().size();
+            entries = ad.getAllEntries();
+            metaCount = ad.getAllChunkMetas().size();
         } catch (Exception e) {
             entries = List.of();
             metaCount = 0;
@@ -66,7 +60,7 @@ public class RawDbProvider implements IDbViewProvider {
 
     // ==================== 类型描述符 ====================
 
-    /** Raw 视图类型描述符：直接显示原始字节。适用于所有分析器。 */
+    /** Raw 视图类型描述符：直接显示原始字节。对应 adaptorId {@code chunkscanner:raw}。 */
     public static class Type implements DbViewProviderRegistry.ITypeDescriptor {
         @Override
         public Identifier getId() { return ChunkScannerMod.id("raw"); }
@@ -82,8 +76,8 @@ public class RawDbProvider implements IDbViewProvider {
         }
 
         @Override
-        public Set<Identifier> applicableAnalyzers() {
-            return Collections.emptySet(); // 适用于所有
+        public Set<Identifier> applicableAdaptors() {
+            return Set.of(ChunkScannerMod.id("raw"));
         }
 
         @Override

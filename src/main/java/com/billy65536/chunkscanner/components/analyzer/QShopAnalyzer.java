@@ -136,7 +136,7 @@ public class QShopAnalyzer implements IChunkAnalyzer {
         // 从全局配置读取 QShop 正则模式（缓存编译结果）
         LocalePatterns patterns = getPatterns();
 
-        QShopDbAdapter adapter = new QShopDbAdapter(pkg);
+        QShopDbAdapter adapter = pkg.getAdaptor(QShopDbAdapter.class);
         adapter.deleteChunk(dimId, cx, cz);
 
         int count = 0;
@@ -355,6 +355,11 @@ public class QShopAnalyzer implements IChunkAnalyzer {
     @Override
     public Identifier getId() {
         return ChunkScannerMod.id("qshop");
+    }
+
+    @Override
+    public Identifier getAdaptorId() {
+        return QShopDbAdapter.id();
     }
 
     @Override

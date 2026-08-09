@@ -29,7 +29,7 @@ class DbViewProviderRegistryTest {
             @Override public Identifier getId() { return ChunkScannerMod.id(id); }
             @Override public Text getName() { return Text.literal(name); }
             @Override public Text getDescription() { return Text.literal("desc: " + name); }
-            @Override public Set<Identifier> applicableAnalyzers() { return Set.of(); }
+            @Override public Set<Identifier> applicableAdaptors() { return Set.of(); }
             @Override public IDbViewProvider create(DbPackage pkg) { return null; }
         };
     }

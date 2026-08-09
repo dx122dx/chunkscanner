@@ -109,19 +109,24 @@ public final class DbExportUtil {
     }
 
     /**
-     * 导出单个数据库的全部条目为 TSV 文件（hex key + tab + hex value）。
+     * 导出数据库包主库的全部条目为 TSV 文件（hex key + tab + hex value）。
      *
-     * @param db      已打开的数据库实例
+     * <p>本工具属于底层设施，直接与 {@link DbPackage} 对接，不经过适配器。</p>
+     *
+     * @param pkg     已打开的数据库包
      * @param outFile 输出文件路径，为 {@code null} 时自动生成到 export 目录
      * @return 实际写入的文件路径
      * @throws IOException 如果导出失败
      */
-    public static Path exportTsv(IChunkDb db, Path outFile) throws IOException {
+    public static Path exportTsv(DbPackage pkg, Path outFile) throws IOException {
         Path outPath = (outFile != null)
                 ? outFile
-                : ensureExportDir().resolve(buildDefaultFileName(db.getAnalyzerId(), db.getScanId(), "tsv"));
+                : ensureExportDir().resolve(buildDefaultFileName(pkg.getAnalyzerId(), pkg.getScanId(), "tsv"));
+        return writeTsv(pkg.main().getAllEntries(), outPath);
+    }
 
-        List<IChunkDb.Entry> entries = db.getAllEntries();
+    /** 把 KV 条目逐行写成「hex key + tab + hex value」。 */
+    static Path writeTsv(List<IChunkDb.Entry> entries, Path outPath) throws IOException {
         try (BufferedWriter writer = Files.newBufferedWriter(outPath, StandardCharsets.UTF_8)) {
             for (IChunkDb.Entry entry : entries) {
                 writer.write(bytesToHex(entry.key()));

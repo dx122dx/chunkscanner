@@ -13,7 +13,6 @@ import java.util.Set;
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.components.analyzer.QShopContract;
 import com.billy65536.chunkscanner.components.analyzer.QShopDbAdapter;
-import com.billy65536.chunkscanner.core.IChunkDb;
 import com.billy65536.chunkscanner.core.IDbViewProvider;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.core.LocatedPosition;
@@ -24,24 +23,14 @@ import com.billy65536.chunkscanner.gui.layout.ILayout;
 /**
  * QShop 分析器特化的 DbViewProvider。
  *
- * <p>解析 qshop 分析器生成的二进制 KV 数据，将原始字节转换为可读的商店信息。
+ * <p>通过 {@link QShopDbAdapter} 解析 qshop 分析器生成的二进制 KV 数据，将原始字节转换为可读的商店信息。
  * 筛选状态与匹配逻辑由 {@link QShopFilter} 负责，展示辅助由 {@link QShopDisplayUtil} 负责，
  * 本类仅承担展示布局的构建与接口适配。</p>
- *
- * 键格式（34 字节）：
- *   "qshop:" (6B) | dimPoolId:u32 (4B) | cx:i32 (4B) | cz:i32 (4B) | keyHi:u64 (8B) | keyLo:u64 (8B)
- *
- * 值格式（48 字节）：
- *   keyHi:u64 (8B) | keyLo:u64 (8B) | owner:u32 (4B) | mode+quantity packed:u32 (4B) |
- *   itemName:u32 (4B) | price:u32 (4B) | timestamp:u64 (8B) | itemId:u32 (4B) | flags:u32 (4B)
- *
- *   mode+quantity 打包：byte0 = mode (0=出售,1=收购), bytes1-3 = quantity (24-bit unsigned)
- *   price：整数，真实价格 = price / 100.0
  */
 public class QShopDbViewProvider implements IDbViewProvider {
 
     private final DbPackage pkg;
-    private final IChunkDb db;
+    private final QShopDbAdapter ad;
 
     /** 缓存筛选并排序后的记录。仅渲染线程访问，无需同步。 */
     private List<QShopDbAdapter.Record> cachedFilteredSorted;
@@ -52,12 +41,7 @@ public class QShopDbViewProvider implements IDbViewProvider {
 
     public QShopDbViewProvider(DbPackage pkg) {
         this.pkg = pkg;
-        this.db = pkg.main();
-    }
-
-    @Override
-    public IChunkDb getDb() {
-        return db;
+        this.ad = pkg.getAdaptor(QShopDbAdapter.class);
     }
 
     // ==================== 筛选接口 ====================
@@ -89,7 +73,7 @@ public class QShopDbViewProvider implements IDbViewProvider {
         List<QShopDbAdapter.Record> matched = getFilteredSortedRecords();
         int metaCount;
         try {
-            metaCount = db.getAllChunkMetas().size();
+            metaCount = ad.getScannedChunkCount();
         } catch (Exception e) {
             metaCount = 0;
         }
@@ -182,7 +166,7 @@ public class QShopDbViewProvider implements IDbViewProvider {
         if (cacheVersion == filter.getCacheVersion() && cachedFilteredSorted != null) {
             return cachedFilteredSorted;
         }
-        List<QShopDbAdapter.Record> records = new QShopDbAdapter(pkg).getAllRecords();
+        List<QShopDbAdapter.Record> records = ad.getAllRecords();
         List<QShopDbAdapter.Record> matched = new ArrayList<>();
         for (QShopDbAdapter.Record r : records) {
             if (filter.matches(r)) {
@@ -199,7 +183,7 @@ public class QShopDbViewProvider implements IDbViewProvider {
 
     // ==================== 类型描述符 ====================
 
-    /** QShop 视图类型描述符：解析 QShop 数据为结构化展示。仅适用于 qshop 分析器。 */
+    /** QShop 视图类型描述符：解析 QShop 数据为结构化展示。对应 adaptorId {@code chunkscanner:qshop}。 */
     public static class Type implements DbViewProviderRegistry.ITypeDescriptor {
         @Override
         public Identifier getId() { return ChunkScannerMod.id("qshop_view"); }
@@ -215,13 +199,12 @@ public class QShopDbViewProvider implements IDbViewProvider {
         }
 
         @Override
-        public Set<Identifier> applicableAnalyzers() {
+        public Set<Identifier> applicableAdaptors() {
             return Set.of(ChunkScannerMod.id("qshop"));
         }
 
         @Override
         public IDbViewProvider create(DbPackage pkg) {
-            if (!ChunkScannerMod.id("qshop").equals(pkg.getAnalyzerId())) return null;
             return new QShopDbViewProvider(pkg);
         }
     }

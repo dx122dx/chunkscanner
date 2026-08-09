@@ -3,6 +3,7 @@ package com.billy65536.chunkscanner.core.db;
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.AnalyzerRegistry;
 import com.billy65536.chunkscanner.core.IChunkDb;
+import com.billy65536.chunkscanner.core.IDbAdaptor;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -102,6 +103,12 @@ public final class DbImage {
             errors.add("Field 'analyzerId' is missing or empty");
         } else if (AnalyzerRegistry.get(meta.analyzerId()) == null) {
             errors.add("Field 'analyzerId' is not a registered analyzer: " + meta.analyzerId());
+        }
+
+        // adaptorId 缺失（旧版导出包）时由 DbPackage 按分析器推导，不算错误
+        if (meta.adaptorId() != null && IDbAdaptor.FactoryRegistry.get(meta.adaptorId()) == null) {
+            warnings.add("Field 'adaptorId' is not a registered adaptor: " + meta.adaptorId()
+                    + "; data will only be readable through the raw adaptor");
         }
 
         if (meta.databaseType() == null) {
@@ -234,11 +241,13 @@ public final class DbImage {
      * @param exportTime   导出时间（ISO-8601，来自 {@code export.time}）
      * @param scanId       扫描 ID
      * @param analyzerId   分析器 ID
+     * @param adaptorId    适配器 ID，决定还原后用哪个 {@link com.billy65536.chunkscanner.core.IDbAdaptor}
+     *                     解读数据；1.x 与早期 2.0 导出包无此字段，为 null（还原时由分析器推导）
      * @param databaseType 主库工厂 ID（可为 null）
      * @param mainFile     主库负载文件名（可为 null）
      * @param files        各文件声明（name + sha256），来自 {@code export.files}
      */
-    public record Meta(String exportTime, String scanId, Identifier analyzerId,
+    public record Meta(String exportTime, String scanId, Identifier analyzerId, Identifier adaptorId,
                        Identifier databaseType, String mainFile, List<FileEntry> files) {
 
         /** 从输入流解析 metadata.json。 */
@@ -252,6 +261,8 @@ public final class DbImage {
             String scanId = optString(obj, "scanId");
             String analyzerRaw = optString(obj, "analyzerId");
             Identifier analyzerId = (analyzerRaw != null) ? parseIdentifier(analyzerRaw) : null;
+            String adaptorRaw = optString(obj, "adaptorId");
+            Identifier adaptorId = (adaptorRaw != null) ? parseIdentifier(adaptorRaw) : null;
 
             Identifier databaseType = null;
             String mainFile = null;
@@ -276,7 +287,7 @@ public final class DbImage {
                     }
                 }
             }
-            return new Meta(exportTime, scanId, analyzerId, databaseType, mainFile, files);
+            return new Meta(exportTime, scanId, analyzerId, adaptorId, databaseType, mainFile, files);
         }
 
         /** 解析标识符，兼容无命名空间的写法。空字符串视作未定义哨兵。 */

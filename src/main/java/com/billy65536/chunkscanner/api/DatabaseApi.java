@@ -11,9 +11,10 @@ import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.util.Identifier;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
-import com.billy65536.chunkscanner.core.IChunkDb;
+import com.billy65536.chunkscanner.core.IDbAdaptor;
 import com.billy65536.chunkscanner.core.db.DbExportUtil;
 import com.billy65536.chunkscanner.core.db.DbImage;
+import com.billy65536.chunkscanner.core.db.DbManager;
 import com.billy65536.chunkscanner.core.db.DbPackage;
 import com.billy65536.chunkscanner.core.db.DbValidationResult;
 import com.billy65536.chunkscanner.screen.DatabaseScreen;
@@ -32,7 +33,7 @@ import com.billy65536.chunkscanner.screen.DatabaseScreen;
  *
  * <p><b>存储模型</b>：一个数据库是磁盘上的一个 {@link DbPackage} 目录
  * （{@code chunkscanner_<hash>/}），内含 {@code metadata.json}、主库负载与若干子库负载。
- * {@link IChunkDb} 只是包内某个负载的内存视图，不持有任何路径。</p>
+ * 包内数据一律通过包声明的适配器（{@link IDbAdaptor}）访问，调用方不接触底层键值存储。</p>
  *
  * <p><b>路径约定</b>：包按游戏上下文分目录存放。
  * {@link #dbRoot()} 是不区分上下文的总根目录（列表查询使用），
@@ -48,10 +49,9 @@ import com.billy65536.chunkscanner.screen.DatabaseScreen;
  *     System.out.println(info.scanId() + " -> " + info.analyzerId());
  * }
  *
- * // 打开某个数据库包并导出（记得关闭）
+ * // 打开某个数据库包，经适配器读取数据（记得关闭）
  * try (DbPackage pkg = DatabaseApi.openPackage("my-scan")) {
- *     IChunkDb main = pkg.main();
- *     IChunkDb extra = pkg.sub("enhancement");
+ *     MyAdaptor adaptor = pkg.getAdaptor(MyAdaptor.class);
  *     Path zip = DatabaseApi.exportZip(pkg, null);
  * }
  *
@@ -108,7 +108,7 @@ public final class DatabaseApi {
      * @return 摘要列表；无数据库时返回空列表，不为 {@code null}
      */
     public static List<DbPackage.Info> listDatabases() {
-        return DbPackage.listAll();
+        return DbManager.listAll();
     }
 
     /**
@@ -117,7 +117,7 @@ public final class DatabaseApi {
      * @return scanId 列表；无数据库时返回空列表，不为 {@code null}
      */
     public static List<String> listScanIds() {
-        return DbPackage.listAllScanIds();
+        return DbManager.listAllScanIds();
     }
 
     /**
@@ -129,7 +129,7 @@ public final class DatabaseApi {
     public static List<DbPackage.Info> listDatabasesByAnalyzer(Identifier analyzerId) {
         if (analyzerId == null) return Collections.emptyList();
         List<DbPackage.Info> result = new ArrayList<>();
-        for (DbPackage.Info info : DbPackage.listAll()) {
+        for (DbPackage.Info info : DbManager.listAll()) {
             if (analyzerId.equals(info.analyzerId())) {
                 result.add(info);
             }
@@ -145,7 +145,7 @@ public final class DatabaseApi {
      */
     public static DbPackage.Info getMeta(String scanId) {
         if (scanId == null) return null;
-        for (DbPackage.Info info : DbPackage.listAll()) {
+        for (DbPackage.Info info : DbManager.listAll()) {
             if (scanId.equals(info.scanId())) {
                 return info;
             }
@@ -155,7 +155,7 @@ public final class DatabaseApi {
 
     /** 指定 scanId 的数据库包是否存在。 */
     public static boolean exists(String scanId) {
-        return DbPackage.findDir(scanId) != null;
+        return DbManager.findDir(scanId) != null;
     }
 
     /**
@@ -164,7 +164,7 @@ public final class DatabaseApi {
      * @return 包目录；不存在时返回 {@code null}
      */
     public static Path resolveDir(String scanId) {
-        return DbPackage.findDir(scanId);
+        return DbManager.findDir(scanId);
     }
 
     // ==================== 加载 ====================
@@ -175,50 +175,28 @@ public final class DatabaseApi {
      * <p>包已存在时直接打开（此时 {@code analyzerId} 被忽略，以包内 metadata 为准）。
      * 调用方负责 {@link DbPackage#close()}。</p>
      *
+     * <p>新建时的适配器 id 由分析器声明推导（见
+     * {@link com.billy65536.chunkscanner.core.IChunkAnalyzer#getAdaptorId()}）。</p>
+     *
      * @param scanId     扫描任务 id
      * @param analyzerId 新建时写入 metadata 的分析器 id
      * @throws IOException 如果目录创建或 metadata 写入失败
      */
     public static DbPackage createDatabase(String scanId, Identifier analyzerId) throws IOException {
-        return DbPackage.openOrCreate(scanId, analyzerId);
+        return DbManager.openOrCreate(scanId, analyzerId);
     }
 
     /**
      * 按 scanId 打开已存在的数据库包。
      *
-     * <p>调用方负责 {@link DbPackage#close()}（推荐 try-with-resources）。</p>
+     * <p>数据读写请通过 {@link DbPackage#getAdaptor(Class)} 取得适配器完成。
+     * 调用方负责 {@link DbPackage#close()}（推荐 try-with-resources）。</p>
      *
      * @return 数据库包；不存在时返回 {@code null}
      * @throws IOException 如果 metadata 损坏或不可读
      */
     public static DbPackage openPackage(String scanId) throws IOException {
-        return DbPackage.find(scanId);
-    }
-
-    /**
-     * 按 scanId 打开数据库包的主库（完整模式，立即加载数据）。
-     *
-     * <p>便捷方法；需要访问子库或任务配置时请改用 {@link #openPackage(String)}。
-     * 调用方负责在使用完毕后调用 {@link IChunkDb#close()}。</p>
-     *
-     * @param scanId 扫描任务 id
-     * @return 主库实例；数据库不存在或无可用工厂时返回 {@code null}
-     */
-    public static IChunkDb openDatabase(String scanId) {
-        DbPackage pkg = openPackageQuietly(scanId);
-        return pkg == null ? null : pkg.main();
-    }
-
-    /**
-     * 按 scanId 打开数据库包的主库（元数据模式，延迟加载）。
-     *
-     * <p>返回的实例未加载 KV 数据，需调用 {@link IChunkDb#open()} 后才能读取内容。</p>
-     *
-     * @return 主库实例；数据库不存在或无可用工厂时返回 {@code null}
-     */
-    public static IChunkDb openDatabaseMetadataOnly(String scanId) {
-        DbPackage pkg = openPackageQuietly(scanId);
-        return pkg == null ? null : pkg.mainLazy();
+        return DbManager.find(scanId);
     }
 
     /**
@@ -228,7 +206,7 @@ public final class DatabaseApi {
      * @throws IOException 如果删除失败
      */
     public static boolean deleteDatabase(String scanId) throws IOException {
-        return DbPackage.deletePackage(scanId);
+        return DbManager.deletePackage(scanId);
     }
 
     /**
@@ -243,15 +221,14 @@ public final class DatabaseApi {
      * @throws IOException 若源不存在、目标已存在或复制失败
      */
     public static DbPackage.Info copyDatabase(String srcScanId, String dstScanId) throws IOException {
-        DbPackage src = DbPackage.find(srcScanId);
+        DbPackage src = DbManager.find(srcScanId);
         if (src == null) {
             throw new IOException("Source database not found: " + srcScanId);
         }
         try (src) {
             Path parent = src.getDir().getParent() != null ? src.getDir().getParent() : dbDir();
             try (DbPackage dst = src.copyTo(parent, dstScanId)) {
-                return new DbPackage.Info(dst.getScanId(), dst.getAnalyzerId(), dst.getDbType(),
-                        dst.getStorageSize(), dst.getLastModifiedTime(), dst.getDir());
+                return dst.toInfo();
             }
         }
     }
@@ -331,7 +308,7 @@ public final class DatabaseApi {
      * @throws IOException 如果数据库不存在或写入失败
      */
     public static Path exportZip(String scanId, Path outFile) throws IOException {
-        DbPackage pkg = DbPackage.find(scanId);
+        DbPackage pkg = DbManager.find(scanId);
         if (pkg == null) {
             throw new IOException("Database not found: " + scanId);
         }
@@ -341,15 +318,15 @@ public final class DatabaseApi {
     }
 
     /**
-     * 将数据库全部 KV 条目导出为 TSV 文本（每行：十六进制 key + tab + 十六进制 value）。
+     * 将数据库包主库的全部 KV 条目导出为 TSV 文本（每行：十六进制 key + tab + 十六进制 value）。
      *
-     * @param db      已打开的数据库实例
+     * @param pkg     已打开的数据库包
      * @param outFile 输出路径；{@code null} 时自动生成到 {@link #exportDir()}
      * @return 实际写入的文件路径
      * @throws IOException 如果写入失败
      */
-    public static Path exportTsv(IChunkDb db, Path outFile) throws IOException {
-        return DbExportUtil.exportTsv(db, outFile);
+    public static Path exportTsv(DbPackage pkg, Path outFile) throws IOException {
+        return DbExportUtil.exportTsv(pkg, outFile);
     }
 
     /**
@@ -361,12 +338,12 @@ public final class DatabaseApi {
      * @throws IOException 如果数据库不存在或写入失败
      */
     public static Path exportTsv(String scanId, Path outFile) throws IOException {
-        DbPackage pkg = DbPackage.find(scanId);
+        DbPackage pkg = DbManager.find(scanId);
         if (pkg == null) {
             throw new IOException("Database not found: " + scanId);
         }
         try (pkg) {
-            return DbExportUtil.exportTsv(pkg.main(), outFile);
+            return DbExportUtil.exportTsv(pkg, outFile);
         }
     }
 
@@ -415,21 +392,5 @@ public final class DatabaseApi {
      */
     public static Screen createGui(String scanId) {
         return new DatabaseScreen(scanId);
-    }
-
-    // ==================== 内部工具 ====================
-
-    /** 打开包，失败时记录日志并返回 {@code null}，供不抛异常的便捷方法使用。 */
-    private static DbPackage openPackageQuietly(String scanId) {
-        try {
-            DbPackage pkg = DbPackage.find(scanId);
-            if (pkg == null) {
-                ChunkScannerMod.LOGGER.warn("Database '{}' not found", scanId);
-            }
-            return pkg;
-        } catch (IOException e) {
-            ChunkScannerMod.LOGGER.error("Failed to open database '{}': {}", scanId, e.toString());
-            return null;
-        }
     }
 }
