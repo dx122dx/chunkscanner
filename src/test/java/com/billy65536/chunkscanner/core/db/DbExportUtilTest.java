@@ -1,6 +1,8 @@
 package com.billy65536.chunkscanner.core.db;
 
+import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 import com.billy65536.chunkscanner.core.IChunkDb;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -38,6 +40,12 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("DbExportUtil")
 class DbExportUtilTest {
 
+    @BeforeAll
+    static void registerDefaultFactory() {
+        // 单元测试不触发 ChunkScannerMod 装配，需手动注册默认数据库工厂
+        IChunkDb.FactoryRegistry.register(new BinaryChunkDb.Factory());
+    }
+
     /** 最小化 IChunkDb 存根，只关心导出用到的方法。 */
     private static final class StubDb implements IChunkDb {
         private final String scanId;
@@ -54,7 +62,6 @@ class DbExportUtilTest {
 
         @Override public String getScanId() { return scanId; }
         @Override public Identifier getAnalyzerId() { return analyzerId; }
-        @Override public Path getFilePath() { return filePath; }
         @Override public Identifier getFactoryId() {
             return new Identifier("chunkscanner", "binary");
         }
@@ -62,8 +69,6 @@ class DbExportUtilTest {
         @Override public List<Entry> getAllEntries() { return entries; }
 
         // 导出路径未用到的方法，仅满足接口
-        @Override public long getStorageSize() { return 0; }
-        @Override public long getLastModifiedTime() { return 0; }
         @Override public int intern(String s) { return 0; }
         @Override public String lookup(int id) { return null; }
         @Override public void put(byte[] key, byte[] value) {}
@@ -78,6 +83,8 @@ class DbExportUtilTest {
         @Override public boolean isOpen() { return false; }
         @Override public void flush() {}
         @Override public void close() {}
+        @Override public void readFrom(java.nio.channels.FileChannel channel) throws java.io.IOException {}
+        @Override public void writeTo(java.nio.channels.FileChannel channel) throws java.io.IOException {}
     }
 
     private static byte[] hex(String s) {
@@ -200,46 +207,44 @@ class DbExportUtilTest {
     @DisplayName("exportRawZip")
     class ExportRawZip {
 
-        @Test
-        @DisplayName("主文件缺失抛 IOException")
-        void missingMainFile_shouldThrow(@TempDir Path dir) throws IOException {
-            Path out = dir.resolve("out.zip");
-            IChunkDb db = new StubDb("scan-1", new Identifier("chunkscanner", "qshop"),
-                    dir.resolve("nope.dat"), List.of());
+        /** 构造一个含 metadata.json 与主负载文件的最小化包目录。 */
+        private DbPackage newPackage(@TempDir Path dir, byte[] content) throws IOException {
+            Path pkgDir = dir.resolve("pkg-" + DbFileUtil.safeFilenameStem("scan-1"));
+            Files.createDirectories(pkgDir);
+            Files.write(pkgDir.resolve("main.bin"), content);
 
-            IOException e = assertThrows(IOException.class, () -> DbExportUtil.exportRawZip(db, out));
-            assertTrue(e.getMessage().contains("not found"));
+            String meta = "{"
+                    + "\"scanId\":\"scan-1\","
+                    + "\"analyzerId\":\"chunkscanner:sign\","
+                    + "\"database\":{\"type\":\"chunkscanner:binary\",\"file\":\"main.bin\"},"
+                    + "\"export\":{\"time\":\"2026-08-09T12:00:00Z\","
+                    + "\"files\":[{\"name\":\"main.bin\",\"sha256\":\"deadbeef\"}]}"
+                    + "}";
+            Files.write(pkgDir.resolve("metadata.json"), meta.getBytes(StandardCharsets.UTF_8));
+            return DbPackage.open(pkgDir);
         }
 
         @Test
-        @DisplayName("归档包含全部相关文件与 metadata.json")
+        @DisplayName("归档包含主数据库文件与 metadata.json")
         void zip_shouldContainFilesAndMeta(@TempDir Path dir) throws IOException {
-            // 构造一个真实数据库文件 + 关联文件
-            Path dbFile = dir.resolve("chunkscanner_abc.dat");
-            Files.writeString(dbFile, "hello dat content");
-            Path idxFile = dir.resolve("chunkscanner_abc.idx");
-            Files.writeString(idxFile, "idx data");
-            // 无关文件不应被打包
-            Files.writeString(dir.resolve("chunkscanner_zzz.dat"), "other");
-
+            DbPackage pkg = newPackage(dir, "hello dat".getBytes(StandardCharsets.UTF_8));
             Path out = dir.resolve("out.zip");
-            IChunkDb db = new StubDb("scan-1", new Identifier("chunkscanner", "qshop"), dbFile, List.of());
 
-            Path written = DbExportUtil.exportRawZip(db, out);
+            Path written = DbExportUtil.exportRawZip(pkg, out);
             assertEquals(out, written);
 
             try (ZipFile zip = new ZipFile(out.toFile())) {
-                assertNotNull(zip.getEntry("chunkscanner_abc.dat"));
-                assertNotNull(zip.getEntry("chunkscanner_abc.idx"));
-                assertNull(zip.getEntry("chunkscanner_zzz.dat"), "无关文件不得混入归档");
+                assertNotNull(zip.getEntry("main.bin"), "主数据库文件应被归档");
                 assertNotNull(zip.getEntry("metadata.json"));
 
                 String meta = new String(zip.getInputStream(zip.getEntry("metadata.json"))
                         .readAllBytes(), StandardCharsets.UTF_8);
-                assertTrue(meta.contains("\"databaseName\": \"scan-1\""));
-                assertTrue(meta.contains("\"scannerId\": \"chunkscanner:qshop\""));
-                assertTrue(meta.contains("\"databaseType\": \"chunkscanner:binary\""));
-                assertTrue(meta.contains("\"mainFile\": \"chunkscanner_abc.dat\""));
+                assertTrue(meta.contains("\"scanId\": \"scan-1\""));
+                assertTrue(meta.contains("\"analyzerId\": \"chunkscanner:sign\""));
+                assertTrue(meta.contains("\"type\": \"chunkscanner:binary\""),
+                        "metadata.database.type 应记录数据库类型");
+                assertTrue(meta.contains("\"file\": \"main.bin\""),
+                        "metadata.database.file 应记录主文件名");
                 assertTrue(meta.contains("\"sha256\""), "metadata.json 应记录每个文件的 SHA-256");
             }
         }
@@ -248,16 +253,13 @@ class DbExportUtilTest {
         @DisplayName("归档内文件内容与 SHA-256 元数据一致")
         void sha256_shouldMatchArchiveContent(@TempDir Path dir) throws IOException, java.security.NoSuchAlgorithmException {
             byte[] content = "payload for hash check".getBytes(StandardCharsets.UTF_8);
-            Path dbFile = dir.resolve("chunkscanner_hash.dat");
-            Files.write(dbFile, content);
+            DbPackage pkg = newPackage(dir, content);
 
             Path out = dir.resolve("out.zip");
-            IChunkDb db = new StubDb("scan-1", new Identifier("chunkscanner", "qshop"), dbFile, List.of());
-
-            DbExportUtil.exportRawZip(db, out);
+            DbExportUtil.exportRawZip(pkg, out);
 
             try (ZipFile zip = new ZipFile(out.toFile())) {
-                ZipEntry entry = zip.getEntry("chunkscanner_hash.dat");
+                ZipEntry entry = zip.getEntry("main.bin");
                 byte[] actual = zip.getInputStream(entry).readAllBytes();
                 assertArrayEquals(content, actual, "归档内文件内容不得被改写");
 
@@ -274,18 +276,14 @@ class DbExportUtilTest {
         @Test
         @DisplayName("exportTime 使用 ISO_OFFSET_DATE_TIME 格式")
         void exportTime_shouldBeIsoOffset(@TempDir Path dir) throws IOException {
-            Path dbFile = dir.resolve("chunkscanner_t.dat");
-            Files.writeString(dbFile, "x");
-
+            DbPackage pkg = newPackage(dir, "x".getBytes(StandardCharsets.UTF_8));
             Path out = dir.resolve("out.zip");
-            IChunkDb db = new StubDb("scan-1", new Identifier("chunkscanner", "qshop"), dbFile, List.of());
-
-            DbExportUtil.exportRawZip(db, out);
+            DbExportUtil.exportRawZip(pkg, out);
 
             try (ZipFile zip = new ZipFile(out.toFile())) {
                 String meta = new String(zip.getInputStream(zip.getEntry("metadata.json"))
                         .readAllBytes(), StandardCharsets.UTF_8);
-                String time = meta.replaceAll("(?s).*\"exportTime\": \"([^\"]+)\".*", "$1");
+                String time = meta.replaceAll("(?s).*\"time\":\\s*\"([^\"]+)\".*", "$1");
                 assertTrue(Pattern.matches(
                         "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})", time),
                         "应带时区（UTC 时输出 Z 后缀，其他时区为 ±hh:mm，均允许纳秒小数位），实际: " + time);

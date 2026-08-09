@@ -84,7 +84,7 @@ public final class QShopHighlightRenderer {
         for (ScanSession session : sessions) {
             if (!ChunkScannerMod.id("qshop").equals(session.analyzer.getId())) continue;
 
-            QShopDbAdapter adapter = new QShopDbAdapter(session.db);
+            QShopDbAdapter adapter = new QShopDbAdapter(session.pkg);
             List<QShopDbAdapter.Record> records;
             try {
                 records = adapter.getAllRecords();

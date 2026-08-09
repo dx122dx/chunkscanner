@@ -17,6 +17,7 @@ import com.billy65536.chunkscanner.core.IChunkDb;
 import com.billy65536.chunkscanner.core.IDbViewProvider;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.core.LocatedPosition;
+import com.billy65536.chunkscanner.core.db.DbPackage;
 import com.billy65536.chunkscanner.gui.layout.TableLayoutBuilder;
 import com.billy65536.chunkscanner.gui.layout.ILayout;
 
@@ -39,6 +40,7 @@ import com.billy65536.chunkscanner.gui.layout.ILayout;
  */
 public class QShopDbViewProvider implements IDbViewProvider {
 
+    private final DbPackage pkg;
     private final IChunkDb db;
 
     /** 缓存筛选并排序后的记录。仅渲染线程访问，无需同步。 */
@@ -48,8 +50,9 @@ public class QShopDbViewProvider implements IDbViewProvider {
     /** 筛选状态与匹配逻辑。 */
     private final QShopFilter filter = new QShopFilter();
 
-    public QShopDbViewProvider(IChunkDb db) {
-        this.db = db;
+    public QShopDbViewProvider(DbPackage pkg) {
+        this.pkg = pkg;
+        this.db = pkg.main();
     }
 
     @Override
@@ -179,7 +182,7 @@ public class QShopDbViewProvider implements IDbViewProvider {
         if (cacheVersion == filter.getCacheVersion() && cachedFilteredSorted != null) {
             return cachedFilteredSorted;
         }
-        List<QShopDbAdapter.Record> records = new QShopDbAdapter(db).getAllRecords();
+        List<QShopDbAdapter.Record> records = new QShopDbAdapter(pkg).getAllRecords();
         List<QShopDbAdapter.Record> matched = new ArrayList<>();
         for (QShopDbAdapter.Record r : records) {
             if (filter.matches(r)) {
@@ -217,9 +220,9 @@ public class QShopDbViewProvider implements IDbViewProvider {
         }
 
         @Override
-        public IDbViewProvider create(IChunkDb db) {
-            if (!ChunkScannerMod.id("qshop").equals(db.getAnalyzerId())) return null;
-            return new QShopDbViewProvider(db);
+        public IDbViewProvider create(DbPackage pkg) {
+            if (!ChunkScannerMod.id("qshop").equals(pkg.getAnalyzerId())) return null;
+            return new QShopDbViewProvider(pkg);
         }
     }
 }

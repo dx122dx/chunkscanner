@@ -1,5 +1,7 @@
 package com.billy65536.chunkscanner.core;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -14,6 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.TaskConfig;
+import com.billy65536.chunkscanner.core.db.DbPackage;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.Identifier;
@@ -41,6 +44,9 @@ public class ScanSession {
     private final ChunkScanner chunkScanner;
     public final String scanId;
     public final IChunkAnalyzer analyzer;
+    /** 本任务的数据库包（拥有文件与元信息，负责其内所有 {@link IChunkDb} 的生命周期）。 */
+    public final DbPackage pkg;
+    /** 主数据库（由 {@link #pkg} 持有，会话不单独关闭）。 */
     public final IChunkDb db;
     /** 此任务独立的配置副本（合并了全局默认值和任务级配置覆盖）。 */
     ChunkScannerConfig sessionConfig;
@@ -87,30 +93,30 @@ public class ScanSession {
     private volatile ChunkStatusBreakdown cachedBreakdown;
     private volatile long lastBreakdownTime = 0;
 
-    /** 新建会话（通过 FactoryRegistry 创建数据库）。 */
+    /** 新建会话（打开或创建同名数据库包）。 */
     ScanSession(ChunkScanner chunkScanner, String scanId, IChunkAnalyzer analyzer) {
-        this(chunkScanner, scanId, analyzer, null, createDb(scanId, analyzer.getId()));
+        this(chunkScanner, scanId, analyzer, null, openPackage(scanId, analyzer.getId()));
     }
 
-    /** 从已有数据库恢复会话。 */
-    ScanSession(ChunkScanner chunkScanner, String scanId, IChunkAnalyzer analyzer, IChunkDb existingDb) {
-        this(chunkScanner, scanId, analyzer, null, existingDb);
+    /** 从已有数据库包恢复会话。 */
+    ScanSession(ChunkScanner chunkScanner, String scanId, IChunkAnalyzer analyzer, DbPackage existingPkg) {
+        this(chunkScanner, scanId, analyzer, null, existingPkg);
     }
 
     /** 新建会话并应用任务级配置。 */
     ScanSession(ChunkScanner chunkScanner, String scanId, IChunkAnalyzer analyzer, TaskConfig taskConfig) {
-        this(chunkScanner, scanId, analyzer, taskConfig, createDb(scanId, analyzer.getId()));
+        this(chunkScanner, scanId, analyzer, taskConfig, openPackage(scanId, analyzer.getId()));
     }
 
     /**
-     * 通过 FactoryRegistry 创建数据库实例。
+     * 打开或创建数据库包（文件与元信息由 {@link DbPackage} 统一管理）。
      */
-    private static IChunkDb createDb(String scanId, Identifier analyzerId) {
-        IChunkDb.IFactory factory = IChunkDb.FactoryRegistry.getDefault();
-        if (factory == null) {
-            throw new IllegalStateException("No ChunkDb factory registered");
+    private static DbPackage openPackage(String scanId, Identifier analyzerId) {
+        try {
+            return DbPackage.openOrCreate(scanId, analyzerId);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to open database package for scan '" + scanId + "'", e);
         }
-        return factory.create(scanId, analyzerId, ChunkScannerMod.getDbDir());
     }
 
     /**
@@ -118,13 +124,14 @@ public class ScanSession {
      * @param scanId 扫描任务唯一标识
      * @param analyzer 使用的分析器实例
      * @param taskConfig 任务级配置覆盖（可为 null，使用全局默认）
-     * @param existingDb 已有数据库实例（用于恢复扫描）
+     * @param existingPkg 已打开的数据库包（新建或恢复扫描均由调用方准备）
      */
-    ScanSession(ChunkScanner chunkScanner, String scanId, IChunkAnalyzer analyzer, TaskConfig taskConfig, IChunkDb existingDb) {
+    ScanSession(ChunkScanner chunkScanner, String scanId, IChunkAnalyzer analyzer, TaskConfig taskConfig, DbPackage existingPkg) {
         this.chunkScanner = chunkScanner;
         this.scanId = scanId;
         this.analyzer = analyzer;
-        this.db = existingDb;
+        this.pkg = existingPkg;
+        this.db = existingPkg.main();
         // 合并任务配置与全局配置：非 null 字段覆盖，null 字段继承全局默认
         this.sessionConfig = (taskConfig != null ? taskConfig : new TaskConfig()).applyTo(this.chunkScanner.config);
         this.pendingChunks = new PriorityBlockingQueue<>(1024);
@@ -150,8 +157,8 @@ public class ScanSession {
         active = true;
         String dim = client.world.getRegistryKey().getValue().toString();
         currentDimensionId = dim;
-        // 将任务配置序列化到数据库，便于后续恢复
-        db.setTaskConfig(this.taskConfig);
+        // 将任务配置写入包元信息，便于后续恢复
+        pkg.setTaskConfig(this.taskConfig);
         ChunkScannerMod.LOGGER.debug("[scan:{}] Session started (analyzer={}, threads={}, radius={})",
                 scanId, analyzer.getId(), sessionConfig.scanner.workerThreads, sessionConfig.scanner.scanRadiusMultiplier);
     }
@@ -177,7 +184,7 @@ public class ScanSession {
                 Thread.currentThread().interrupt();
             }
         }
-        if (db != null) db.close();
+        if (pkg != null) pkg.close();
         ChunkScannerMod.LOGGER.debug("[scan:{}] Session stopped (scanned={}, found={}, errors={})",
                 scanId, totalScannedChunks.get(), totalFoundChunks.get(), totalErrors.get());
     }
@@ -258,7 +265,7 @@ public class ScanSession {
             try {
                 scanExecutor.execute(() -> {
                     try {
-                        AnalyzeResult r = analyzer.analyze(chunk, ecx, ecz, dimId, db, now, world);
+                        AnalyzeResult r = analyzer.analyze(chunk, ecx, ecz, dimId, pkg, now, world);
                         if (!resultQueue.offer(new TaskResult(
                                 r.isFound() ? 1 : 0,
                                 r.isError() ? 1 : 0,
@@ -428,8 +435,8 @@ public class ScanSession {
         // 清除已入队记录，下次 dispatch 会用新的 revisitInterval 重入队
         enqueuedChunks.clear();
 
-        // 持久化到数据库（null 表示清除配置）
-        db.setTaskConfig(newConfig);
+        // 持久化到包元信息（null 表示清除配置）
+        pkg.setTaskConfig(newConfig);
     }
 
     // ==================== 内部类型 ====================

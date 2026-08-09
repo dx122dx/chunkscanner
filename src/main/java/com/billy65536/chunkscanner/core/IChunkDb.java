@@ -1,10 +1,12 @@
 package com.billy65536.chunkscanner.core;
 
-import com.billy65536.chunkscanner.config.TaskConfig;
+import com.billy65536.chunkscanner.core.db.DbPackage;
+import com.billy65536.chunkscanner.core.db.DbStorage;
 
 import net.minecraft.util.Identifier;
 
-import java.nio.file.Path;
+import java.io.IOException;
+import java.nio.channels.FileChannel;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -13,20 +15,23 @@ import java.util.Map;
 /**
  * 通用区块数据库接口。
  *
- * 设计目标：为分析器提供泛用的键值存储，不预设数据结构。
- * 每个 scanId 创建一个独立数据库实例，键为 byte[]，值为 byte[]。
- * 存储层自行负责序列化/反序列化，分析器无需关心。
+ * <p>设计目标：为分析器提供泛用的键值存储，不预设数据结构。
+ * 键为 byte[]，值为 byte[]，存储层自行负责序列化/反序列化。
+ * 内置字符串池（intern）用于高效压缩重复字符串。</p>
  *
- * 内置字符串池（intern）用于高效压缩重复字符串。
+ * <p><b>职责边界</b>：本接口<b>不触及任何文件操作</b>。目录布局、文件命名、
+ * 临时文件、原子改名、元数据（scanId / analyzerId / taskConfig / 子库清单）
+ * 全部由 {@link DbPackage} 管理；实现只通过 {@link DbStorage} 拿到一个
+ * {@link FileChannel} 来读写自己的负载。</p>
  */
 public interface IChunkDb {
 
     // ==================== DB 元信息 ====================
 
-    /** 获取此数据库实例的扫描 ID。 */
+    /** 获取此数据库实例的扫描 ID（由所属 {@link DbPackage} 注入）。 */
     String getScanId();
-    
-    /** 创建此数据库的分析器 ID。 */
+
+    /** 创建此数据库的分析器 ID（由所属 {@link DbPackage} 注入）。 */
     Identifier getAnalyzerId();
 
     /**
@@ -35,11 +40,11 @@ public interface IChunkDb {
      */
     default Identifier getFactoryId() { return null; }
 
-    /** 文件大小（字节）。 */
-    long getStorageSize();
-
-    /** 最后修改时间戳。 */
-    long getLastModifiedTime();
+    /**
+     * 当前负载的格式版本号，由 {@link DbPackage} 记录进 metadata。
+     * 默认返回 0，表示实现未做版本管理。
+     */
+    default int getFormatVersion() { return 0; }
 
     // ==================== 字符串池 ====================
 
@@ -97,55 +102,34 @@ public interface IChunkDb {
 
     // ==================== 生命周期 ====================
 
-    /** 打开数据库，加载数据到内存。已有实现可留空。 */
+    /** 打开数据库，通过 {@link DbStorage} 加载负载到内存。已加载时应为空操作。 */
     void open();
 
     /** 是否已打开。 */
     boolean isOpen();
 
-    /** 将内存数据刷写到磁盘。 */
+    /** 若有未保存修改，通过 {@link DbStorage} 写回负载。 */
     void flush();
 
-    /** 关闭数据库，释放资源。 */
+    /** 关闭数据库，释放资源（实现应先 {@link #flush()}）。 */
     void close();
 
-    /** 获取数据库文件路径（可能为 null，如仅元数据时）。 */
-    Path getFilePath();
-
-    // ==================== 子数据库 ====================
+    // ==================== 负载读写（由 DbPackage 驱动） ====================
 
     /**
-     * 获取或创建子数据库。
+     * 从通道读取全部负载内容。
      *
-     * <p>子数据库用于存储与主数据分离的附加数据（如聊天增强数据），
-     * 使得主数据库在重访区块时可以被安全清除而不丢失增强数据。</p>
-     *
-     * <p>id=0 返回自身，id>0 返回独立存储的子数据库。
-     * 子数据库拥有独立的字符串池和 KV 存储，文件独立。
-     * 注意：父子数据库之间字符串 ID 不通用，intern/lookup 必须在同一实例内配对使用。</p>
-     *
-     * @param id 子数据库标识（非负整数，0 = 自身）
-     * @return 子数据库实例
-     * @throws UnsupportedOperationException 如果实现不支持子数据库
+     * <p>通道由 {@link DbPackage} 打开并负责关闭，实现不得假设其对应任何具体路径。</p>
      */
-    default IChunkDb getSubDb(int id) {
-        if (id == 0) return this;
-        throw new UnsupportedOperationException("Sub-database not supported");
-    }
-
-    // ==================== 任务配置持久化 ====================
+    void readFrom(FileChannel channel) throws IOException;
 
     /**
-     * 获取存储在数据库中的任务配置。
-     * @return 任务配置，如果未存储则返回 null
+     * 将全部负载内容写入通道。
+     *
+     * <p>通道指向 {@link DbPackage} 准备好的临时文件，写入完成后由 DbPackage
+     * 负责 {@code force} 与原子改名，实现不得自行做任何文件操作。</p>
      */
-    default TaskConfig getTaskConfig() { return null; }
-
-    /**
-     * 将任务配置序列化并存储到数据库。
-     * @param config 任务配置，null 表示清除已有配置
-     */
-    default void setTaskConfig(TaskConfig config) {}
+    void writeTo(FileChannel channel) throws IOException;
 
     // ==================== 辅助类型 ====================
 
@@ -172,30 +156,26 @@ public interface IChunkDb {
         Identifier getId();
 
         /**
-         * 数据库文件扩展标识符，由实现自行指定。
-         * 推荐使用 id + 版本号形式，如: “bin”
+         * 数据库负载文件的扩展名（不含点号），由实现自行指定，如 {@code "bin"}。
+         * {@link DbPackage} 用它拼出包内文件名，如 {@code main.bin}。
          */
         String getExt();
 
         /**
-         * 创建数据库实例（完整模式，构造时立即加载数据）。
+         * 创建数据库实例（完整模式，构造时立即从 storage 加载负载）。
          *
-         * @param scanId        扫描任务 ID
-         * @param analyzerId  分析器 ID
-         * @param dbDir         数据库文件存储目录
-         * @return 新的 IChunkDb 实例
+         * @param scanId     扫描任务 ID
+         * @param analyzerId 分析器 ID
+         * @param storage    持久化通道，纯内存实例传 {@link DbStorage#NONE}
          */
-        IChunkDb create(String scanId, Identifier analyzerId, Path dbDir);
+        IChunkDb create(String scanId, Identifier analyzerId, DbStorage storage);
 
         /**
          * 创建数据库实例（元数据模式，延迟加载）。
          *
-         * @param scanId        扫描任务 ID
-         * @param analyzerId  分析器 ID
-         * @param dbDir         数据库文件存储目录
-         * @return 新的 IChunkDb 实例（未加载数据，需调用 open()）
+         * @return 未加载负载的实例，需调用 {@link IChunkDb#open()} 后才能读取内容
          */
-        IChunkDb createMetadataOnly(String scanId, Identifier analyzerId, Path dbDir);
+        IChunkDb createMetadataOnly(String scanId, Identifier analyzerId, DbStorage storage);
     }
 
     /** 数据库工厂全局注册表。 */

@@ -16,6 +16,7 @@ import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.IChunkDb;
 import com.billy65536.chunkscanner.core.IDbViewProvider;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
+import com.billy65536.chunkscanner.core.db.DbPackage;
 import com.billy65536.chunkscanner.core.LocatedPosition;
 import com.billy65536.chunkscanner.gui.layout.TableLayoutBuilder;
 import com.billy65536.chunkscanner.gui.layout.ILayout;
@@ -48,8 +49,8 @@ public class SignDbViewProvider implements IDbViewProvider {
     private List<SignRecord> cachedRecords;
     private volatile boolean cacheValid = false;
 
-    public SignDbViewProvider(IChunkDb db) {
-        this.db = db;
+    public SignDbViewProvider(DbPackage pkg) {
+        this.db = pkg.main();
     }
 
     @Override
@@ -184,10 +185,10 @@ public class SignDbViewProvider implements IDbViewProvider {
         }
 
         @Override
-        public IDbViewProvider create(IChunkDb db) {
+        public IDbViewProvider create(DbPackage pkg) {
             // 仅适用于 sign 分析器生成的数据库
-            if (!ChunkScannerMod.id("sign").equals(db.getAnalyzerId())) return null;
-            return new SignDbViewProvider(db);
+            if (!ChunkScannerMod.id("sign").equals(pkg.getAnalyzerId())) return null;
+            return new SignDbViewProvider(pkg);
         }
     }
 }

@@ -9,11 +9,10 @@ import com.billy65536.chunkscanner.config.ConfigLoader;
 import com.billy65536.chunkscanner.config.TaskConfig;
 import com.billy65536.chunkscanner.core.AnalyzerRegistry;
 import com.billy65536.chunkscanner.core.IChunkAnalyzer;
-import com.billy65536.chunkscanner.core.IChunkDb;
 import com.billy65536.chunkscanner.core.ChunkScanner;
 import com.billy65536.chunkscanner.core.ScanSession;
 import com.billy65536.chunkscanner.core.db.DbExportUtil;
-import com.billy65536.chunkscanner.core.db.DbFileUtil;
+import com.billy65536.chunkscanner.core.db.DbPackage;
 import com.billy65536.chunkscanner.core.navigation.ChunkScannerNavigation;
 import com.billy65536.chunkscanner.core.navigation.NavigationEntry;
 import com.billy65536.chunkscanner.gui.GuiUtil;
@@ -32,7 +31,6 @@ import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -85,7 +83,7 @@ public class ChunkScannerCommands {
     private static final SuggestionProvider<FabricClientCommandSource> DB_FILE_ID_SUGGESTIONS =
             (ctx, builder) -> {
                 String remaining = builder.getRemaining().toLowerCase();
-                for (String id : DbFileUtil.listAllScanIds()) {
+                for (String id : DbPackage.listAllScanIds()) {
                     if (id.toLowerCase().startsWith(remaining)) {
                         builder.suggest(id);
                     }
@@ -432,7 +430,7 @@ public class ChunkScannerCommands {
     /** 导出操作函数接口。 */
     @FunctionalInterface
     private interface ExportAction {
-        Path export(IChunkDb db, Path outFile) throws IOException;
+        Path export(DbPackage pkg, Path outFile) throws IOException;
     }
 
     /** 导出命令执行接口。 */
@@ -458,7 +456,7 @@ public class ChunkScannerCommands {
         }
 
         try {
-            if (DbFileUtil.deleteDbFile(scanId)) {
+            if (DbPackage.deletePackage(scanId)) {
                 sendMsg(client, Text.translatable("chunkscanner.msg.db_deleted", scanId)
                         .formatted(Formatting.GREEN));
             } else {
@@ -498,15 +496,16 @@ public class ChunkScannerCommands {
             DatabaseApi.copyDatabase(srcScanId, dstScanId);
 
             // Step 2: 打开副本 → 原地过滤
-            IChunkDb db = DatabaseApi.openDatabase(dstScanId);
-            if (db == null) {
+            DbPackage dstPkg = DatabaseApi.openPackage(dstScanId);
+            if (dstPkg == null) {
                 sendMsg(client, Text.translatable("chunkscanner.msg.db_file_not_found",
                         dstScanId).formatted(Formatting.RED));
                 return;
             }
-            QShopDbAdapter adapter = new QShopDbAdapter(db);
-            int removed = adapter.filterInPlace(filter);
-            db.close();
+            int removed;
+            try (DbPackage pkg = dstPkg) {
+                removed = new QShopDbAdapter(pkg).filterInPlace(filter);
+            }
 
             sendMsg(client, Text.translatable("chunkscanner.msg.db_filtercopy_success",
                     srcScanId, dstScanId, removed).formatted(Formatting.GREEN));
@@ -570,7 +569,7 @@ public class ChunkScannerCommands {
     }
 
     /**
-     * 通用数据库导出流程：验证 → 刷写 → 打开 DB → 执行导出 → 反馈。
+     * 通用数据库导出流程：验证 → 刷写 → 打开数据库包 → 执行导出 → 反馈。
      */
     private void exportDb(String scanId, String customFileName,
                           MinecraftClient client,
@@ -587,29 +586,19 @@ public class ChunkScannerCommands {
             activeSession.db.flush();
         }
 
-        Path file = DbFileUtil.resolveFilePath(scanId);
-        if (!Files.exists(file)) {
+        Path dir = DbPackage.findDir(scanId);
+        if (dir == null) {
             sendMsg(client, Text.translatable("chunkscanner.msg.db_file_not_found", scanId)
                     .formatted(Formatting.RED));
             return;
         }
 
-        DbFileUtil.FileMeta meta = DbFileUtil.readFileMeta(file);
-        if (meta == null || meta == DbFileUtil.FileMeta.EMPTY) {
-            sendMsg(client, Text.translatable("chunkscanner.msg.db_file_not_found", scanId)
-                    .formatted(Formatting.RED));
-            return;
-        }
-
-        try {
-            IChunkDb.IFactory dbFactory = IChunkDb.FactoryRegistry.getDefault();
-            IChunkDb db = dbFactory.create(scanId, meta.analyzerId(), ChunkScannerMod.getDbDir());
-
+        try (DbPackage pkg = DbPackage.open(dir)) {
             Path outFile = null;
             if (customFileName != null && !customFileName.isBlank()) {
                 outFile = DbExportUtil.getExportDir().resolve(customFileName);
             }
-            Path exported = action.export(db, outFile);
+            Path exported = action.export(pkg, outFile);
             sendMsg(client, Text.translatable(successKey,
                     exported.getFileName().toString()).formatted(Formatting.GREEN));
         } catch (Exception e) {
@@ -619,7 +608,7 @@ public class ChunkScannerCommands {
         }
     }
 
-    /** 导出数据库为 ZIP（raw）格式，包含原始文件与 metadata.json。 */
+    /** 导出数据库为 ZIP（raw）格式，包含负载文件与 metadata.json。 */
     private void exportDbRaw(String scanId, String customFileName,
                              MinecraftClient client) {
         exportDb(scanId, customFileName, client,
@@ -631,51 +620,47 @@ public class ChunkScannerCommands {
     private void exportDbTsv(String scanId, String customFileName,
                              MinecraftClient client) {
         exportDb(scanId, customFileName, client,
-                DbExportUtil::exportTsv,
+                (pkg, outFile) -> DbExportUtil.exportTsv(pkg.main(), outFile),
                 "chunkscanner.msg.db_export_tsv_success", "tsv");
     }
 
     /**
-     * 从已有的数据库文件恢复/重启扫描任务。
-     * 读取文件的 scanId 和 analyzerId 元数据，创建 BinaryChunkDb 实例，
-     * 读取存储在 DB 中的 TaskConfig 并恢复应用，
+     * 从已有的数据库包恢复/重启扫描任务。
+     * 读取包元信息中的 scanId、analyzerId 与 TaskConfig，
      * 通过 scanner.startWithDb() 恢复扫描（保留已有数据）。
      */
     private void rebootScanFromDb(String scanId, MinecraftClient client) {
-        Path file = DbFileUtil.resolveFilePath(scanId);
-        if (!Files.exists(file)) {
+        Path dir = DbPackage.findDir(scanId);
+        if (dir == null) {
             sendMsg(client, Text.translatable("chunkscanner.msg.db_file_not_found", scanId)
                     .formatted(Formatting.RED));
             return;
         }
 
-        DbFileUtil.FileMeta meta = DbFileUtil.readFileMeta(file);
-        Identifier aid = meta.analyzerId();
-        if (meta.isEmpty() || aid == null || aid.getPath().isEmpty()
-                || ChunkScannerMod.ID_UNKNOWN.equals(aid)) {
-            sendMsg(client, Text.translatable("chunkscanner.msg.db_file_corrupt")
-                    .formatted(Formatting.RED));
-            return;
-        }
-
-        IChunkDb existingDb;
+        DbPackage pkg;
         try {
-            Path fileDir = file.getParent();
-            IChunkDb.IFactory dbFactory = IChunkDb.FactoryRegistry.getDefault();
-            existingDb = dbFactory.create(meta.scanId(), meta.analyzerId(), fileDir);
+            pkg = DbPackage.open(dir);
         } catch (Exception e) {
             sendMsg(client, Text.translatable("chunkscanner.msg.db_file_corrupt")
                     .formatted(Formatting.RED));
             return;
         }
 
-        // 读取存储在数据库中的任务配置
-        TaskConfig storedConfig = existingDb.getTaskConfig();
+        Identifier aid = pkg.getAnalyzerId();
+        if (aid == null || aid.getPath().isEmpty() || ChunkScannerMod.ID_UNKNOWN.equals(aid)) {
+            pkg.close();
+            sendMsg(client, Text.translatable("chunkscanner.msg.db_file_corrupt")
+                    .formatted(Formatting.RED));
+            return;
+        }
+
+        // 读取存储在包元信息中的任务配置
+        TaskConfig storedConfig = pkg.getTaskConfig();
         if (storedConfig != null) {
             ChunkScannerMod.LOGGER.info("Restored TaskConfig from DB for '{}': {}", scanId, storedConfig.toDisplayString());
         }
 
-        scanner.startWithDb(client, meta.scanId(), meta.analyzerId(), storedConfig, existingDb);
+        scanner.startWithDb(client, pkg.getScanId(), aid, storedConfig, pkg);
     }
 
     private static void sendMsg(MinecraftClient client, Text msg) {
@@ -795,15 +780,15 @@ public class ChunkScannerCommands {
      * 在聊天中列出所有 DB 文件及其大小、分析器。
      */
     public static void chatListDbFiles(MinecraftClient client) {
-        List<DbFileUtil.FileMeta> files = DbFileUtil.listAllDbFiles();
+        List<DbPackage.Info> files = DbPackage.listAll();
         if (files.isEmpty()) {
             sendMsg(client, Text.translatable("chunkscanner.gui.database.no_files").formatted(Formatting.GRAY));
             return;
         }
         sendMsg(client, Text.translatable("chunkscanner.gui.database.title")
                 .formatted(Formatting.GOLD, Formatting.BOLD));
-        for (DbFileUtil.FileMeta meta : files) {
-            String sizeStr = GuiUtil.formatSize(meta.fileSize());
+        for (DbPackage.Info meta : files) {
+            String sizeStr = GuiUtil.formatSize(meta.size());
             String aName = meta.analyzerId() != null && !ChunkScannerMod.ID_UNKNOWN.equals(meta.analyzerId())
                     ? meta.analyzerId().toString() : "?";
             sendMsg(client, Text.literal("  ")

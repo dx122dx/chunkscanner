@@ -10,6 +10,7 @@ import java.util.Set;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.IChunkDb;
+import com.billy65536.chunkscanner.core.db.DbPackage;
 import com.billy65536.chunkscanner.core.IDbViewProvider;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.gui.GuiUtil;
@@ -30,8 +31,8 @@ public class RawDbProvider implements IDbViewProvider {
 
     private final IChunkDb db;
 
-    public RawDbProvider(IChunkDb db) {
-        this.db = db;
+    public RawDbProvider(DbPackage pkg) {
+        this.db = pkg.main();
     }
 
     @Override
@@ -86,8 +87,8 @@ public class RawDbProvider implements IDbViewProvider {
         }
 
         @Override
-        public IDbViewProvider create(IChunkDb db) {
-            return new RawDbProvider(db);
+        public IDbViewProvider create(DbPackage pkg) {
+            return new RawDbProvider(pkg);
         }
     }
 }

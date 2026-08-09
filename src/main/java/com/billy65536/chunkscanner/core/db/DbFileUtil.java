@@ -1,287 +1,159 @@
 package com.billy65536.chunkscanner.core.db;
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.stream.Stream;
-
 import com.billy65536.chunkscanner.ChunkScannerMod;
 
 import net.minecraft.util.Identifier;
 
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+
 /**
- * DB 文件工具类 —— 统一所有二进制文件元数据读取和文件操作。
+ * 数据库文件名与旧格式嗅探工具。
+ *
+ * <p>目录布局、元数据与生命周期由 {@link DbPackage} 负责；本类只保留两件与
+ * 具体存储实现无关的纯函数职责：</p>
+ * <ul>
+ *   <li>由 scanId 推导安全的包目录名（{@link #safeFilenameStem(String)}）；</li>
+ *   <li>从 1.x 扁平文件的二进制头里嗅探元信息，供 {@link DbPackage} 自动迁移使用
+ *       （{@link #readLegacyHeader(Path)}）。</li>
+ * </ul>
  */
 public final class DbFileUtil {
 
-    /** 文件魔数："CHNKSCAN"（little-endian uint64）。 */
+    /** 数据库文件魔数 "CHNKSCAN"（小端）。 */
     public static final long MAGIC = 0x4E4143534B4E4843L;
 
-    /** 最小头大小（magic(8) + version(4) + scanIdLen(2) = 14）。 */
+    /** 合法头部的最小字节数：magic(8) + version(4) + scanIdLen(2)。 */
     private static final int MIN_HEADER_SIZE = 14;
+
+    /** 包目录名前缀。 */
+    public static final String STEM_PREFIX = "chunkscanner_";
 
     private DbFileUtil() {}
 
-    // ==================== 元数据读取 ====================
+    // ==================== 文件名推导 ====================
 
     /**
-     * 从二进制文件中读取 scanId 和 analyzerId。
-     * 使用 RandomAccessFile 只读取头部数据，避免大文件全量加载到内存。
-     */
-    public static FileMeta readFileMeta(Path file) {
-        try {
-            long fileLen = Files.size(file);
-            if (fileLen < MIN_HEADER_SIZE) return FileMeta.EMPTY;
-            long lastModified = Files.getLastModifiedTime(file).toMillis();
-
-            // 只读取头部静态部分（最多 4096 字节，应覆盖所有合理的 scanId 和 analyzerId）
-            int readLen = (int) Math.min(fileLen, 4096);
-            byte[] headBytes = new byte[readLen];
-            try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(file.toFile(), "r")) {
-                raf.readFully(headBytes);
-            }
-
-            ByteBuffer buf = ByteBuffer.wrap(headBytes).order(ByteOrder.LITTLE_ENDIAN);
-            if (buf.getLong() != MAGIC) return FileMeta.EMPTY;
-
-            int version = buf.getInt();
-            if (version < 1) return FileMeta.EMPTY;
-
-            int scanIdLen = buf.getShort() & 0xFFFF;
-            if (scanIdLen <= 0 || scanIdLen > 1024 || buf.remaining() < scanIdLen)
-                return FileMeta.EMPTY;
-
-            byte[] scanIdBytes = new byte[scanIdLen];
-            buf.get(scanIdBytes);
-            String scanId = new String(scanIdBytes, StandardCharsets.UTF_8);
-
-            String analyzerRaw = "";
-            if (version >= 2) {
-                if (buf.remaining() < 2) return new FileMeta(scanId, ChunkScannerMod.ID_UNKNOWN, fileLen, lastModified, file);
-                int analyzerLen = buf.getShort() & 0xFFFF;
-                if (analyzerLen > 0 && analyzerLen <= 1024 && buf.remaining() >= analyzerLen) {
-                    byte[] analyzerBytes = new byte[analyzerLen];
-                    buf.get(analyzerBytes);
-                    analyzerRaw = new String(analyzerBytes, StandardCharsets.UTF_8);
-                }
-            }
-            // 兼容旧文件：无命名空间时回退为 chunkscanner:<原值>；含冒号则按完整标识符解析
-            // 空字符串（analyzerLen==0 或解析无内容）一律视作未定义哨兵
-            Identifier analyzerId;
-            if (analyzerRaw.isEmpty()) {
-                analyzerId = ChunkScannerMod.ID_UNKNOWN;
-            } else if (analyzerRaw.indexOf(':') >= 0) {
-                analyzerId = Identifier.tryParse(analyzerRaw);
-                if (analyzerId == null) analyzerId = ChunkScannerMod.ID_UNKNOWN;
-            } else {
-                analyzerId = ChunkScannerMod.id(analyzerRaw);
-            }
-
-            return new FileMeta(scanId, analyzerId, fileLen, lastModified, file);
-        } catch (IOException e) {
-            return FileMeta.EMPTY;
-        }
-    }
-
-    // ==================== 文件列表 ====================
-
-    /**
-     * 列出所有数据库文件的文件元数据（跨所有上下文递归搜索）。
-     * 不再局限于当前服务器/世界，确保断开重连后仍能看到之前的 DB 文件。
+     * 由 scanId 推导安全的包目录名：{@code chunkscanner_{hash}}。
      *
-     * <p>文件命名：chunkscanner_{hash}.{analyzerId}.{dbExt}
-     * 子数据库（含 .sub_ 的文件）会被过滤，不单独列出。</p>
-     */
-    public static List<FileMeta> listAllDbFiles() {
-        List<FileMeta> result = new ArrayList<>();
-        Path root = ChunkScannerMod.getDbRoot();
-        if (!Files.exists(root)) return result;
-
-        try (Stream<Path> files = Files.walk(root, 4)) {
-            files.filter(p -> {
-                String name = p.getFileName().toString();
-                // 匹配所有 chunkscanner_ 文件，排除子数据库 (.sub_)
-                return name.startsWith("chunkscanner_") && !name.contains(".sub_");
-            }).forEach(p -> {
-                FileMeta meta = readFileMeta(p);
-                if (!meta.isEmpty()) result.add(meta);
-            });
-        } catch (IOException e) {
-            ChunkScannerMod.LOGGER.warn("Failed to list DB files: {}", e.getMessage());
-        }
-
-        result.sort(Comparator.comparingLong(FileMeta::lastModified).reversed());
-        return result;
-    }
-
-    /**
-     * 列出所有数据库文件的 scanId（用于命令补全和聊天列表）。
-     */
-    public static List<String> listAllScanIds() {
-        List<FileMeta> files = listAllDbFiles();
-        List<String> ids = new ArrayList<>(files.size());
-        for (FileMeta m : files) ids.add(m.scanId());
-        return ids;
-    }
-
-    /**
-     * 根据 scanId 查找对应的文件路径（跨所有上下文搜索）。
-     * 用于删除、显示路径等操作。
-     */
-    public static Path resolveFilePath(String scanId) {
-        // 先在已缓存的列表中查找
-        for (FileMeta m : listAllDbFiles()) {
-            if (m.scanId().equals(scanId) && m.filePath() != null) {
-                return m.filePath();
-            }
-        }
-        // fallback：按命名约定 chunkscanner_{hash}.{analyzerId}.{dbExt} 在默认目录中匹配
-        String stem = safeFilenameStem(scanId);
-        Path dir = ChunkScannerMod.getDbDir();
-        try (java.nio.file.DirectoryStream<Path> stream =
-                     Files.newDirectoryStream(dir, stem + ".*")) {
-            for (Path p : stream) {
-                if (!p.getFileName().toString().contains(".sub_")) {
-                    return p;
-                }
-            }
-        } catch (IOException e) {
-            // 不能返回伪造路径（旧实现返回 "[ERROR - ...]"）：调用方会把它当成真实路径
-            // 去 Files.exists / 显示给玩家，且该名字在 Windows 上非法。
-            // 统一退回命名约定路径，由调用方的 exists() 检查处理不存在的情况。
-            ChunkScannerMod.LOGGER.warn("Failed to scan db dir {} for scanId {}: {}",
-                    dir, scanId, e.toString());
-        }
-        return dir.resolve(stem + ".bin");
-    }
-
-    /**
-     * 生成安全的文件名主干：chunkscanner_{hash}（不含扩展名）。
+     * <p>scanId 可能包含任意字符（含路径分隔符），因此统一取 SHA-256 前 8 字节
+     * 转 36 进制，保证跨平台文件名安全且对同一 scanId 稳定。</p>
      */
     public static String safeFilenameStem(String scanId) {
+        String raw = scanId == null ? "" : scanId;
         try {
-            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
-            byte[] digest = md.digest(scanId.getBytes(StandardCharsets.UTF_8));
-            long hash = ((long) (digest[0] & 0xFF) << 56)
-                      | ((long) (digest[1] & 0xFF) << 48)
-                      | ((long) (digest[2] & 0xFF) << 40)
-                      | ((long) (digest[3] & 0xFF) << 32)
-                      | ((long) (digest[4] & 0xFF) << 24)
-                      | ((long) (digest[5] & 0xFF) << 16)
-                      | ((long) (digest[6] & 0xFF) << 8)
-                      | (digest[7] & 0xFF);
-            return "chunkscanner_" + Long.toUnsignedString(hash & 0x7FFFFFFFFFFFFFFFL, 36);
-        } catch (java.security.NoSuchAlgorithmException e) {
-            throw new RuntimeException("SHA-256 not available", e);
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(raw.getBytes(StandardCharsets.UTF_8));
+            long hash = 0;
+            for (int i = 0; i < 8; i++) {
+                hash = (hash << 8) | (digest[i] & 0xFFL);
+            }
+            return STEM_PREFIX + Long.toUnsignedString(hash & 0x7FFFFFFFFFFFFFFFL, 36);
+        } catch (NoSuchAlgorithmException e) {
+            // SHA-256 是 JDK 强制实现的算法，不可能缺失；退化为 hashCode 仅为编译期完备性
+            return STEM_PREFIX + Integer.toUnsignedString(raw.hashCode(), 36);
         }
     }
 
-    // ==================== 文件操作 ====================
+    // ==================== 旧格式嗅探 ====================
 
     /**
-     * 将数据库文件（及所有子数据库文件）复制到新的 scanId。
-     * 文件名基于 {@code safeFilenameStem(dstScanId)} 重新生成，
-     * 保留原来的扩展名和 analyzerId 部分。
+     * 1.x 扁平数据库文件的二进制头信息。
      *
-     * @param srcScanId 源 scanId
-     * @param dstScanId 目标 scanId
-     * @return 目标主文件路径；源文件不存在返回 null
-     * @throws IOException 若目标已存在或复制失败
+     * @param scanId         扫描 ID
+     * @param analyzerId     分析器 ID
+     * @param taskConfigJson 任务配置 JSON（v4+ 才有，可能为 null）
+     * @param version        负载格式版本
      */
-    public static Path copyDbFile(String srcScanId, String dstScanId) throws IOException {
-        Path srcFile = resolveFilePath(srcScanId);
-        if (!Files.exists(srcFile)) return null;
+    public record LegacyHeader(String scanId, Identifier analyzerId, String taskConfigJson, int version) {
 
-        String srcFileName = srcFile.getFileName().toString();
-        String srcStem = safeFilenameStem(srcScanId);
-        String dstStem = safeFilenameStem(dstScanId);
+        /** 无法识别时的空值。 */
+        public static final LegacyHeader EMPTY =
+                new LegacyHeader("", ChunkScannerMod.ID_UNKNOWN, null, 0);
 
-        // 用 dst stem 替换 src stem 生成目标文件名（保留 analyzerId 等中间部分）
-        String dstFileName = srcFileName.replace(srcStem, dstStem);
-        Path dstFile = srcFile.getParent().resolve(dstFileName);
-        if (Files.exists(dstFile)) {
-            throw new IOException("Destination database already exists: " + dstScanId);
-        }
-
-        // 复制主文件
-        Files.copy(srcFile, dstFile);
-        ChunkScannerMod.LOGGER.info("Copied DB file: {} -> {}", srcFileName, dstFileName);
-
-        // 复制子数据库文件（使用与 deleteDbFile 一致的 glob 模式）
-        int extIdx = srcFileName.lastIndexOf('.');
-        if (extIdx > 0) {
-            String fullStem = srcFileName.substring(0, extIdx);
-            String ext = srcFileName.substring(extIdx + 1);
-            String glob = fullStem + ".sub_*." + ext;
-            Path parent = srcFile.getParent();
-            if (parent != null) {
-                try (java.nio.file.DirectoryStream<Path> stream =
-                             Files.newDirectoryStream(parent, glob)) {
-                    for (Path subFile : stream) {
-                        String subName = subFile.getFileName().toString();
-                        String newSubName = subName.replace(srcStem, dstStem);
-                        Path dstSubFile = parent.resolve(newSubName);
-                        Files.copy(subFile, dstSubFile);
-                        ChunkScannerMod.LOGGER.info("Copied sub-db file: {} -> {}", subName, newSubName);
-                    }
-                }
-            }
-        }
-
-        return dstFile;
-    }
-
-    /**
-     * 通过 scanId 删除数据库文件及其所有子数据库文件。
-     * @return true 表示至少删除了一个文件，false 表示无文件可删
-     */
-    public static boolean deleteDbFile(String scanId) throws IOException {
-        Path file = resolveFilePath(scanId);
-        boolean deleted = Files.deleteIfExists(file);
-
-        // 同时删除所有关联的子数据库文件
-        // 主文件命名：chunkscanner_{hash}.{analyzerId}.{dbExt}
-        // 子文件命名：chunkscanner_{hash}.{analyzerId}.sub_{subId}.{dbExt}
-        String fileName = file.getFileName().toString();
-        int extIdx = fileName.lastIndexOf('.');
-        if (extIdx > 0) {
-            String stem = fileName.substring(0, extIdx);
-            String ext = fileName.substring(extIdx + 1);
-            String glob = stem + ".sub_*." + ext;
-            Path parent = file.getParent();
-            if (parent != null) {
-                try (java.nio.file.DirectoryStream<Path> stream =
-                             Files.newDirectoryStream(parent, glob)) {
-                    for (Path subFile : stream) {
-                        if (Files.deleteIfExists(subFile)) {
-                            deleted = true;
-                            ChunkScannerMod.LOGGER.info("Deleted sub-db file: {}", subFile.getFileName());
-                        }
-                    }
-                }
-            }
-        }
-
-        return deleted;
-    }
-
-    // ==================== 辅助类型 ====================
-
-    /**
-     * 数据库文件的轻量元数据（scanId、analyzerId、大小、修改时间、文件路径）。
-     * 不加载 KV 数据，仅用于文件列表展示。
-     */
-    public record FileMeta(String scanId, Identifier analyzerId, long fileSize, long lastModified, Path filePath) {
-        public static final FileMeta EMPTY = new FileMeta("", ChunkScannerMod.ID_UNKNOWN, 0, 0, null);
-
+        /** 是否为无法识别的文件。 */
         public boolean isEmpty() {
             return scanId.isEmpty();
         }
+    }
+
+    /**
+     * 从旧版扁平数据库文件的头部嗅探元信息。
+     *
+     * <p>仅供 {@link DbPackage} 迁移旧数据使用；新格式的元信息一律来自
+     * 包内的 {@code metadata.json}。无法识别时返回 {@link LegacyHeader#EMPTY}。</p>
+     */
+    public static LegacyHeader readLegacyHeader(Path file) {
+        if (file == null || !Files.isRegularFile(file)) return LegacyHeader.EMPTY;
+
+        try (RandomAccessFile raf = new RandomAccessFile(file.toFile(), "r")) {
+            long total = raf.length();
+            if (total < MIN_HEADER_SIZE) return LegacyHeader.EMPTY;
+
+            if (readLongLE(raf) != MAGIC) return LegacyHeader.EMPTY;
+
+            int version = readIntLE(raf);
+            String scanId = readBlock(raf, total);
+            if (scanId == null || scanId.isEmpty()) return LegacyHeader.EMPTY;
+
+            Identifier analyzerId = ChunkScannerMod.ID_UNKNOWN;
+            if (version >= 2) {
+                String raw = readBlock(raf, total);
+                if (raw != null && !raw.isEmpty()) {
+                    Identifier parsed = raw.indexOf(':') >= 0
+                            ? Identifier.tryParse(raw)
+                            : ChunkScannerMod.id(raw);
+                    if (parsed != null) analyzerId = parsed;
+                }
+            }
+
+            String taskConfigJson = null;
+            if (version >= 4) {
+                String raw = readBlock(raf, total);
+                if (raw != null && !raw.isEmpty()) taskConfigJson = raw;
+            }
+
+            return new LegacyHeader(scanId, analyzerId, taskConfigJson, version);
+        } catch (IOException | RuntimeException e) {
+            return LegacyHeader.EMPTY;
+        }
+    }
+
+    /** 读取一段「u16 长度 + UTF-8 内容」；越界返回 null，长度为 0 返回空串。 */
+    private static String readBlock(RandomAccessFile raf, long total) throws IOException {
+        if (raf.getFilePointer() + 2 > total) return null;
+        int len = readShortLE(raf);
+        if (len < 0 || raf.getFilePointer() + len > total) return null;
+        if (len == 0) return "";
+        byte[] data = new byte[len];
+        raf.readFully(data);
+        return new String(data, StandardCharsets.UTF_8);
+    }
+
+    private static long readLongLE(RandomAccessFile raf) throws IOException {
+        byte[] b = new byte[8];
+        raf.readFully(b);
+        long v = 0;
+        for (int i = 7; i >= 0; i--) {
+            v = (v << 8) | (b[i] & 0xFFL);
+        }
+        return v;
+    }
+
+    private static int readIntLE(RandomAccessFile raf) throws IOException {
+        byte[] b = new byte[4];
+        raf.readFully(b);
+        return (b[0] & 0xFF) | ((b[1] & 0xFF) << 8) | ((b[2] & 0xFF) << 16) | ((b[3] & 0xFF) << 24);
+    }
+
+    private static int readShortLE(RandomAccessFile raf) throws IOException {
+        byte[] b = new byte[2];
+        raf.readFully(b);
+        return (b[0] & 0xFF) | ((b[1] & 0xFF) << 8);
     }
 }

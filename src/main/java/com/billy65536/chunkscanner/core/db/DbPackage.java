@@ -1,286 +1,822 @@
 package com.billy65536.chunkscanner.core.db;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
-import com.billy65536.chunkscanner.core.AnalyzerRegistry;
+import com.billy65536.chunkscanner.config.TaskConfig;
 import com.billy65536.chunkscanner.core.IChunkDb;
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 import net.minecraft.util.Identifier;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
 
+import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /**
- * 导出数据库包（.zip） API —— 供其他模组调用。
+ * 一个磁盘上的数据库包，是文件与元信息的<b>唯一</b>管理者。
  *
- * <h2>使用场景</h2>
- * <ul>
- *   <li>{@link #open(Path)} 解析包内 metadata，获取扫描信息（无需解压）；</li>
- *   <li>{@link #validate()} 验证包合法性（字段合法性 + 数据完整性 SHA256）；</li>
- *   <li>{@link #load(Path)} / {@link #load(Path, boolean)} 将包还原为 {@link IChunkDb}；</li>
- *   <li>{@link #load(Path, boolean)} 传入 false 可跳过校验直接加载（效率优先）。</li>
- * </ul>
+ * <p>目录布局：</p>
+ * <pre>
+ * chunkscanner_&lt;hash&gt;/
+ * ├── metadata.json   元信息：scanId / analyzerId / taskConfig / 主库与子库清单
+ * ├── main.bin        主数据库负载
+ * └── &lt;subId&gt;.bin     子数据库负载（subId 为字符串标识）
+ * </pre>
+ *
+ * <p>职责划分：本类负责目录、文件名、元数据、原子写与并发；
+ * {@link IChunkDb} 只负责把自己的负载读进内存 / 写出到通道，
+ * 通过 {@link DbStorage} 交互，全程不接触任何路径。</p>
+ *
+ * <p>写时安全：任何一次负载写入都走「写临时文件 → {@code force(true)} → 原子改名」，
+ * 元数据写入同理，保证崩溃时磁盘上的旧内容仍然完好。</p>
  */
-public final class DbPackage {
+public final class DbPackage implements AutoCloseable {
 
-    private static final String METADATA_ENTRY = "metadata.json";
-    private static final Gson GSON = new Gson();
+    /** 包内元数据文件名。 */
+    public static final String METADATA_FILE = "metadata.json";
 
-    private final Path zipPath;
-    private final Meta meta;
+    /** 主数据库的保留节点 ID。 */
+    public static final String MAIN_ID = "main";
 
-    private DbPackage(Path zipPath, Meta meta) {
-        this.zipPath = zipPath;
-        this.meta = meta;
+    /** 子数据库 ID 的合法字符集，同时也是文件名安全字符集。 */
+    private static final Pattern SUB_ID_PATTERN = Pattern.compile("[a-z0-9][a-z0-9_-]*");
+
+    /** {@code getDbRoot()} 下的扫描深度：root/type/context/package。 */
+    private static final int MAX_SCAN_DEPTH = 4;
+
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
+
+    private final Path dir;
+    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+    /** 节点清单：MAIN_ID + 各子库 ID → 文件记录。 */
+    private final Map<String, Node> nodes = new LinkedHashMap<>();
+    /** 已实例化的数据库缓存。 */
+    private final Map<String, IChunkDb> dbs = new LinkedHashMap<>();
+
+    private final String scanId;
+    private Identifier analyzerId;
+    private TaskConfig taskConfig;
+    private volatile boolean closed;
+
+    private DbPackage(Path dir, String scanId, Identifier analyzerId) {
+        this.dir = dir;
+        this.scanId = scanId;
+        this.analyzerId = analyzerId;
     }
 
-    /** 获取解析出的元数据（open 后可用）。 */
-    public Meta meta() {
-        return meta;
+    // ==================== 静态入口 ====================
+
+    /** 由 scanId 推导包目录。 */
+    public static Path dirFor(Path parentDir, String scanId) {
+        return parentDir.resolve(DbFileUtil.safeFilenameStem(scanId));
     }
 
-    // ==================== 打开 / 解析 ====================
+    /** 在当前游戏上下文目录下打开或创建包。 */
+    public static DbPackage openOrCreate(String scanId, Identifier analyzerId) throws IOException {
+        return openOrCreate(ChunkScannerMod.getDbDir(), scanId, analyzerId);
+    }
+
+    /** 在指定父目录下打开或创建包。 */
+    public static DbPackage openOrCreate(Path parentDir, String scanId, Identifier analyzerId) throws IOException {
+        Path target = dirFor(parentDir, scanId);
+        if (Files.isRegularFile(target.resolve(METADATA_FILE))) {
+            return open(target);
+        }
+        return create(parentDir, scanId, analyzerId);
+    }
 
     /**
-     * 打开导出包并解析 metadata（不校验、不解压）。
+     * 新建一个空包并落盘 metadata.json。
      *
-     * @param zipPath 导出 ZIP 路径
-     * @return DbPackage 实例（含解析后的元数据）
-     * @throws IOException            如果文件无法读取或 metadata 缺失/非法
-     * @throws IllegalArgumentException 如果 metadata 结构不合法
+     * @throws IOException 目标目录已存在同名包时
      */
-    public static DbPackage open(Path zipPath) throws IOException {
-        if (!Files.exists(zipPath)) {
-            throw new IOException("Export package not found: " + zipPath);
+    public static DbPackage create(Path parentDir, String scanId, Identifier analyzerId) throws IOException {
+        Objects.requireNonNull(parentDir, "parentDir");
+        if (scanId == null || scanId.isEmpty()) {
+            throw new IOException("scanId must not be empty");
         }
-        Meta meta;
-        try (ZipFile zf = new ZipFile(zipPath.toFile())) {
-            ZipEntry entry = zf.getEntry(METADATA_ENTRY);
-            if (entry == null) {
-                throw new IOException("metadata.json missing in package: " + zipPath);
-            }
-            try (InputStream in = zf.getInputStream(entry)) {
-                meta = Meta.parse(in);
-            }
+        Path target = dirFor(parentDir, scanId);
+        if (Files.isRegularFile(target.resolve(METADATA_FILE))) {
+            throw new IOException("Database package already exists: " + target);
         }
-        return new DbPackage(zipPath, meta);
+        Files.createDirectories(target);
+        DbPackage pkg = new DbPackage(target, scanId,
+                analyzerId != null ? analyzerId : ChunkScannerMod.ID_UNKNOWN);
+        pkg.saveMetadata();
+        return pkg;
     }
 
-    // ==================== 校验 ====================
-
-    /**
-     * 校验包的合法性：字段合法性（analyzerId / databaseType 是否注册）+ 数据完整性
-     * （mainFile 是否存在、各文件 SHA256 是否匹配）。
-     *
-     * @return 校验结果，{@link DbValidationResult#valid()} 为 true 表示可安全加载
-     */
-    public DbValidationResult validate() {
-        List<String> errors = new ArrayList<>();
-        List<String> warnings = new ArrayList<>();
-
-        // ---- 字段合法性 ----
-        if (meta.analyzerId() == null) {
-            errors.add("Field 'scannerId' (analyzerId) is missing or empty");
-        } else if (AnalyzerRegistry.get(meta.analyzerId()) == null) {
-            errors.add("Field 'scannerId' (analyzerId) is not a registered analyzer: " + meta.analyzerId());
+    /** 打开一个已存在的包目录。 */
+    public static DbPackage open(Path packageDir) throws IOException {
+        Objects.requireNonNull(packageDir, "packageDir");
+        Path metaFile = packageDir.resolve(METADATA_FILE);
+        if (!Files.isRegularFile(metaFile)) {
+            throw new NoSuchFileException(metaFile.toString());
+        }
+        JsonObject root;
+        try (BufferedReader reader = Files.newBufferedReader(metaFile, StandardCharsets.UTF_8)) {
+            JsonElement parsed = JsonParser.parseReader(reader);
+            if (!parsed.isJsonObject()) {
+                throw new IOException("Malformed metadata (not an object): " + metaFile);
+            }
+            root = parsed.getAsJsonObject();
+        } catch (RuntimeException e) {
+            throw new IOException("Malformed metadata: " + metaFile, e);
         }
 
-        if (meta.databaseType() == null) {
-            warnings.add("Field 'databaseType' is missing; will fall back to default factory");
-        } else if (IChunkDb.FactoryRegistry.get(meta.databaseType()) == null) {
-            errors.add("Field 'databaseType' refers to unknown factory: " + meta.databaseType());
+        String scanId = optString(root, "scanId");
+        if (scanId == null || scanId.isEmpty()) {
+            throw new IOException("Metadata has no scanId: " + metaFile);
         }
+        DbPackage pkg = new DbPackage(packageDir, scanId, parseId(optString(root, "analyzerId")));
+        String rawConfig = optString(root, "taskConfig");
+        pkg.taskConfig = rawConfig != null && !rawConfig.isBlank() ? TaskConfig.parse(rawConfig) : null;
 
-        if (meta.databaseName() == null || meta.databaseName().isEmpty()) {
-            warnings.add("Field 'databaseName' is missing or empty");
-        }
-
-        // ---- 数据完整性 ----
-        if (meta.mainFile() == null || meta.mainFile().isEmpty()) {
-            errors.add("Field 'mainFile' is missing or empty");
-        } else if (meta.files().stream().noneMatch(f -> f.name().equals(meta.mainFile()))) {
-            errors.add("Declared 'mainFile' is not present in package file list: " + meta.mainFile());
-        }
-
-        try (ZipFile zf = new ZipFile(zipPath.toFile())) {
-            for (FileEntry fe : meta.files()) {
-                ZipEntry ze = zf.getEntry(fe.name());
-                if (ze == null) {
-                    errors.add("Package file missing: " + fe.name());
-                    continue;
+        JsonObject dbNode = root.has("database") && root.get("database").isJsonObject()
+                ? root.getAsJsonObject("database") : null;
+        if (dbNode != null) {
+            pkg.nodes.put(MAIN_ID, Node.fromJson(dbNode, MAIN_ID));
+            if (dbNode.has("subsidiaries") && dbNode.get("subsidiaries").isJsonObject()) {
+                for (Map.Entry<String, JsonElement> e : dbNode.getAsJsonObject("subsidiaries").entrySet()) {
+                    if (!e.getValue().isJsonObject()) continue;
+                    pkg.nodes.put(e.getKey(), Node.fromJson(e.getValue().getAsJsonObject(), e.getKey()));
                 }
-                try (InputStream in = zf.getInputStream(ze)) {
-                    String actual = sha256Hex(in);
-                    if (!actual.equalsIgnoreCase(fe.sha256())) {
-                        errors.add("SHA-256 mismatch for file '" + fe.name()
-                                + "': expected " + fe.sha256() + " but got " + actual);
-                    }
-                }
             }
-            // 列出 ZIP 中存在但 metadata 未声明的文件（仅警告）
-            var names = meta.files().stream().map(FileEntry::name).toList();
-            zf.stream().forEach(ze -> {
-                if (!ze.getName().equals(METADATA_ENTRY) && !names.contains(ze.getName())) {
-                    warnings.add("Undeclared file present in package: " + ze.getName());
-                }
-            });
-        } catch (IOException | NoSuchAlgorithmException e) {
-            errors.add("Failed to read package for integrity check: " + e.getMessage());
         }
-
-        return new DbValidationResult(errors.isEmpty(), errors, warnings);
-    }
-
-    // ==================== 加载 ====================
-
-    /**
-     * 校验通过后，将包解压到目标目录并还原为 {@link IChunkDb}。
-     *
-     * <p>等价于 {@code load(targetDir, true)}。</p>
-     *
-     * @param targetDir 解压目标目录（会被创建）
-     * @return 还原后的数据库实例（已 open）
-     * @throws IOException            如果校验失败或解压/加载失败
-     * @throws IllegalStateException 如果校验未通过
-     */
-    public IChunkDb load(Path targetDir) throws IOException {
-        return load(targetDir, true);
+        return pkg;
     }
 
     /**
-     * 将包解压到目标目录并还原为 {@link IChunkDb}。
+     * 列出数据库根目录下所有包的摘要，按最后修改时间倒序。
      *
-     * @param targetDir  解压目标目录（会被创建）
-     * @param validateFirst 是否先执行 {@link #validate()}；false 时跳过校验直接加载（效率优先，
-     *                      例如调用方已自行确保包可信）
-     * @return 还原后的数据库实例（已 open）
-     * @throws IOException            如果校验失败（当 validateFirst=true）或解压/加载失败
-     * @throws IllegalStateException 如果校验未通过（当 validateFirst=true）
+     * <p>扫描前会顺带把遗留的 1.x 扁平文件迁移成新目录结构。</p>
      */
-    public IChunkDb load(Path targetDir, boolean validateFirst) throws IOException {
-        if (validateFirst) {
-            DbValidationResult result = validate();
-            if (!result.valid()) {
-                throw new IllegalStateException("Export package validation failed: " + result.errors());
-            }
+    public static List<Info> listAll() {
+        List<Info> out = new ArrayList<>();
+        for (Path packageDir : scanPackageDirs()) {
+            Info info = readInfo(packageDir);
+            if (!info.isEmpty()) out.add(info);
         }
-        extractTo(targetDir);
-        IChunkDb.IFactory factory =
-                (meta.databaseType() != null) ? IChunkDb.FactoryRegistry.get(meta.databaseType())
-                                              : IChunkDb.FactoryRegistry.getDefault();
+        out.sort(Comparator.comparingLong(Info::lastModified).reversed());
+        return out;
+    }
+
+    /** 列出数据库根目录下所有包的 scanId。 */
+    public static List<String> listAllScanIds() {
+        return listAll().stream().map(Info::scanId).toList();
+    }
+
+    /** 跨上下文定位包目录；找不到返回 {@code null}。 */
+    public static Path findDir(String scanId) {
+        if (scanId == null || scanId.isEmpty()) return null;
+        Path direct = dirFor(ChunkScannerMod.getDbDir(), scanId);
+        if (Files.isRegularFile(direct.resolve(METADATA_FILE))) return direct;
+
+        String stem = DbFileUtil.safeFilenameStem(scanId);
+        for (Path packageDir : scanPackageDirs()) {
+            if (packageDir.getFileName().toString().equals(stem)) return packageDir;
+        }
+        return null;
+    }
+
+    /** 跨上下文打开已存在的包；找不到返回 {@code null}。 */
+    public static DbPackage find(String scanId) throws IOException {
+        Path packageDir = findDir(scanId);
+        return packageDir == null ? null : open(packageDir);
+    }
+
+    /** 删除指定 scanId 对应的整个包目录。 */
+    public static boolean deletePackage(String scanId) throws IOException {
+        Path packageDir = findDir(scanId);
+        if (packageDir == null) return false;
+        deleteRecursively(packageDir);
+        return true;
+    }
+
+    // ==================== 元信息 ====================
+
+    /** 包目录。 */
+    public Path getDir() {
+        return dir;
+    }
+
+    /** 扫描任务 ID。 */
+    public String getScanId() {
+        return scanId;
+    }
+
+    /** 创建此包的分析器 ID。 */
+    public Identifier getAnalyzerId() {
+        return analyzerId;
+    }
+
+    /** 主数据库的实现类型（工厂 ID）；未知时返回 {@code null}。 */
+    public Identifier getDbType() {
+        Node main = nodes.get(MAIN_ID);
+        return main == null ? null : main.type;
+    }
+
+    /** 任务配置；未设置返回 {@code null}。 */
+    public TaskConfig getTaskConfig() {
+        return taskConfig;
+    }
+
+    /** 写入任务配置并立即持久化到 metadata.json。 */
+    public void setTaskConfig(TaskConfig config) {
+        lock.writeLock().lock();
+        try {
+            this.taskConfig = config;
+            saveMetadata();
+        } catch (IOException e) {
+            ChunkScannerMod.LOGGER.error("[scan:{}] Failed to persist task config: {}", scanId, e.toString());
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /** 已登记的子数据库 ID 集合。 */
+    public Set<String> getSubsidiaryIds() {
+        Set<String> ids = new LinkedHashSet<>(nodes.keySet());
+        ids.remove(MAIN_ID);
+        return ids;
+    }
+
+    /** 是否已登记指定子数据库。 */
+    public boolean hasSub(String subId) {
+        return nodes.containsKey(subId) && !MAIN_ID.equals(subId);
+    }
+
+    /** 包内所有文件的总字节数。 */
+    public long getStorageSize() {
+        long total = 0;
+        try (Stream<Path> stream = Files.list(dir)) {
+            total = stream.filter(Files::isRegularFile).mapToLong(DbPackage::sizeOf).sum();
+        } catch (IOException | RuntimeException e) {
+            ChunkScannerMod.LOGGER.debug("Failed to size package {}: {}", dir, e.toString());
+        }
+        return total;
+    }
+
+    /** 包内负载文件的最新修改时间戳；无负载时回退到 metadata.json。 */
+    public long getLastModifiedTime() {
+        long newest = 0;
+        try (Stream<Path> stream = Files.list(dir)) {
+            newest = stream.filter(Files::isRegularFile)
+                    .mapToLong(p -> p.toFile().lastModified())
+                    .max().orElse(0);
+        } catch (IOException | RuntimeException e) {
+            ChunkScannerMod.LOGGER.debug("Failed to stat package {}: {}", dir, e.toString());
+        }
+        return newest;
+    }
+
+    // ==================== 数据库访问 ====================
+
+    /** 获取主数据库（立即加载负载）。 */
+    public IChunkDb main() {
+        return obtain(MAIN_ID, null, true);
+    }
+
+    /**
+     * 获取主数据库但不加载负载，仅用于列表浏览。
+     * 需要读取内容时再调用 {@link IChunkDb#open()}。
+     */
+    public IChunkDb mainLazy() {
+        return obtain(MAIN_ID, null, false);
+    }
+
+    /**
+     * 获取或创建子数据库（立即加载负载）。
+     *
+     * <p>子库拥有独立的字符串池与 KV 存储，用于存放不应随主数据一起被清除的附加数据。
+     * 注意父子库的字符串 ID 不通用，{@code intern}/{@code lookup} 必须在同一实例内配对使用。</p>
+     *
+     * @param subId 子库标识，须匹配 {@code [a-z0-9][a-z0-9_-]*} 且不为 {@value #MAIN_ID}
+     */
+    public IChunkDb sub(String subId) {
+        return obtain(requireValidSubId(subId), null, true);
+    }
+
+    /**
+     * 获取或创建指定实现类型的子数据库。
+     *
+     * @param type 首次创建时使用的工厂 ID；已存在则以 metadata 中记录的类型为准
+     */
+    public IChunkDb sub(String subId, Identifier type) {
+        return obtain(requireValidSubId(subId), type, true);
+    }
+
+    private IChunkDb obtain(String nodeId, Identifier preferredType, boolean load) {
+        if (closed) throw new IllegalStateException("DbPackage already closed: " + dir);
+        synchronized (dbs) {
+            IChunkDb cached = dbs.get(nodeId);
+            if (cached != null) {
+                if (load && !cached.isOpen()) cached.open();
+                return cached;
+            }
+
+            Node node = nodes.get(nodeId);
+            IChunkDb.IFactory factory = resolveFactory(node, preferredType);
+            if (node == null) {
+                node = new Node(nodeId + "." + factory.getExt(), factory.getId(), 0);
+                nodes.put(nodeId, node);
+                saveMetadataQuietly();
+            }
+
+            DbStorage storage = new NodeStorage(nodeId);
+            IChunkDb db = load
+                    ? factory.create(scanId, analyzerId, storage)
+                    : factory.createMetadataOnly(scanId, analyzerId, storage);
+            dbs.put(nodeId, db);
+            return db;
+        }
+    }
+
+    private static IChunkDb.IFactory resolveFactory(Node node, Identifier preferredType) {
+        Identifier wanted = node != null ? node.type : preferredType;
+        IChunkDb.IFactory factory = wanted != null ? IChunkDb.FactoryRegistry.get(wanted) : null;
         if (factory == null) {
-            throw new IOException("No suitable database factory available for package");
+            factory = IChunkDb.FactoryRegistry.getDefault();
         }
-        IChunkDb db = factory.createMetadataOnly(meta.databaseName(), meta.analyzerId(), targetDir);
-        db.open();
-        return db;
+        if (factory == null) {
+            throw new IllegalStateException("No IChunkDb factory registered");
+        }
+        return factory;
+    }
+
+    // ==================== 生命周期 ====================
+
+    /** 刷写所有已实例化的数据库。 */
+    public void flush() {
+        List<IChunkDb> snapshot;
+        synchronized (dbs) {
+            snapshot = new ArrayList<>(dbs.values());
+        }
+        for (IChunkDb db : snapshot) {
+            db.flush();
+        }
+    }
+
+    /** 刷写并关闭所有数据库，之后本实例不可再用。 */
+    @Override
+    public void close() {
+        List<IChunkDb> snapshot;
+        synchronized (dbs) {
+            if (closed) return;
+            closed = true;
+            snapshot = new ArrayList<>(dbs.values());
+            dbs.clear();
+        }
+        for (IChunkDb db : snapshot) {
+            db.close();
+        }
+    }
+
+    // ==================== 复制与删除 ====================
+
+    /**
+     * 复制为一个新 scanId 的包。
+     *
+     * <p>不做字节层面的文件拷贝，而是逐个数据库「读入 → 以新身份写出」，
+     * 因此新包的负载、文件名与 metadata 中的 scanId 三者始终自洽——
+     * 这正是旧实现（文件名字符串替换）无法保证的。</p>
+     *
+     * @param parentDir  目标父目录
+     * @param newScanId  新的扫描 ID
+     * @return 新建的包（已持久化，调用方负责 {@link #close()}）
+     */
+    public DbPackage copyTo(Path parentDir, String newScanId) throws IOException {
+        if (newScanId == null || newScanId.isEmpty()) {
+            throw new IOException("Target scanId must not be empty");
+        }
+        if (newScanId.equals(scanId) && dirFor(parentDir, newScanId).equals(dir)) {
+            throw new IOException("Cannot copy a database onto itself: " + scanId);
+        }
+        flush();
+
+        DbPackage dst = create(parentDir, newScanId, analyzerId);
+        try {
+            dst.taskConfig = taskConfig != null ? taskConfig.copy() : null;
+            for (String nodeId : new ArrayList<>(nodes.keySet())) {
+                IChunkDb src = obtain(nodeId, null, true);
+                Node srcNode = nodes.get(nodeId);
+                Node dstNode = new Node(nodeId + "." + extensionOf(srcNode), srcNode.type, srcNode.version);
+                dst.nodes.put(nodeId, dstNode);
+                dst.new NodeStorage(nodeId).write(src::writeTo);
+                dstNode.version = src.getFormatVersion();
+            }
+            dst.saveMetadata();
+            return dst;
+        } catch (IOException | RuntimeException e) {
+            // 复制中途失败：清掉半成品，避免留下无法解释的残包
+            try {
+                dst.close();
+                deleteRecursively(dst.dir);
+            } catch (IOException | RuntimeException cleanupFailure) {
+                ChunkScannerMod.LOGGER.warn("Failed to clean up partial copy {}: {}",
+                        dst.dir, cleanupFailure.toString());
+            }
+            throw e;
+        }
+    }
+
+    /** 关闭并删除整个包目录。 */
+    public void delete() throws IOException {
+        close();
+        deleteRecursively(dir);
+    }
+
+    // ==================== 元数据持久化 ====================
+
+    private void saveMetadata() throws IOException {
+        JsonObject root = new JsonObject();
+        root.addProperty("scanId", scanId);
+        root.addProperty("analyzerId", (analyzerId != null ? analyzerId : ChunkScannerMod.ID_UNKNOWN).toString());
+        if (taskConfig != null && !taskConfig.isAllNull()) {
+            root.addProperty("taskConfig", taskConfig.toDisplayString());
+        }
+
+        Node main = nodes.get(MAIN_ID);
+        if (main != null) {
+            JsonObject dbJson = main.toJson();
+            JsonObject subs = new JsonObject();
+            for (Map.Entry<String, Node> e : nodes.entrySet()) {
+                if (MAIN_ID.equals(e.getKey())) continue;
+                subs.add(e.getKey(), e.getValue().toJson());
+            }
+            if (subs.size() > 0) dbJson.add("subsidiaries", subs);
+            root.add("database", dbJson);
+        }
+
+        Files.createDirectories(dir);
+        byte[] payload = (GSON.toJson(root) + System.lineSeparator()).getBytes(StandardCharsets.UTF_8);
+        Path tmp = dir.resolve(METADATA_FILE + ".tmp");
+        Files.write(tmp, payload, StandardOpenOption.CREATE,
+                StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
+        moveAtomically(tmp, dir.resolve(METADATA_FILE));
+    }
+
+    private void saveMetadataQuietly() {
+        try {
+            saveMetadata();
+        } catch (IOException e) {
+            ChunkScannerMod.LOGGER.error("[scan:{}] Failed to write {}: {}", scanId, METADATA_FILE, e.toString());
+        }
+    }
+
+    /** 负载写入成功后同步 metadata 中记录的格式版本。 */
+    private void onNodeWritten(String nodeId) {
+        IChunkDb db;
+        synchronized (dbs) {
+            db = dbs.get(nodeId);
+        }
+        Node node = nodes.get(nodeId);
+        if (db == null || node == null) return;
+        int version = db.getFormatVersion();
+        if (node.version != version) {
+            node.version = version;
+            saveMetadataQuietly();
+        }
+    }
+
+    // ==================== DbStorage 实现 ====================
+
+    /** 把一个节点的负载文件包装成 {@link DbStorage}，对外只暴露 FileChannel。 */
+    private final class NodeStorage implements DbStorage {
+
+        private final String nodeId;
+
+        NodeStorage(String nodeId) {
+            this.nodeId = nodeId;
+        }
+
+        @Override
+        public boolean read(ChannelTask task) throws IOException {
+            Path file = fileOf(nodeId);
+            lock.readLock().lock();
+            try {
+                if (!Files.isRegularFile(file) || Files.size(file) == 0) return false;
+                try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ)) {
+                    task.accept(channel);
+                }
+                return true;
+            } finally {
+                lock.readLock().unlock();
+            }
+        }
+
+        @Override
+        public void write(ChannelTask task) throws IOException {
+            Path file = fileOf(nodeId);
+            Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+            lock.writeLock().lock();
+            try {
+                Files.createDirectories(dir);
+                try (FileChannel channel = FileChannel.open(tmp, StandardOpenOption.CREATE,
+                        StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
+                    task.accept(channel);
+                    channel.force(true);
+                }
+                moveAtomically(tmp, file);
+                onNodeWritten(nodeId);
+            } catch (IOException | RuntimeException e) {
+                try {
+                    Files.deleteIfExists(tmp);
+                } catch (IOException ignored) {
+                    // 残留 .tmp 不影响正确性，下次写入会 TRUNCATE_EXISTING 覆盖
+                }
+                throw e;
+            } finally {
+                lock.writeLock().unlock();
+            }
+        }
+
+        @Override
+        public long size() {
+            return sizeOf(fileOf(nodeId));
+        }
+
+        @Override
+        public long lastModified() {
+            Path file = fileOf(nodeId);
+            return Files.isRegularFile(file) ? file.toFile().lastModified() : 0;
+        }
+    }
+
+    private Path fileOf(String nodeId) {
+        Node node = nodes.get(nodeId);
+        String fileName = node != null ? node.file : nodeId;
+        return dir.resolve(fileName);
+    }
+
+    // ==================== 遗留格式自动迁移 ====================
+
+    /**
+     * 把上下文目录下 1.x 的扁平文件迁移成新的包目录结构。
+     *
+     * <p>旧命名：{@code chunkscanner_<hash>.<analyzer>.<ext>}，
+     * 子库为 {@code chunkscanner_<hash>.<analyzer>.sub_<n>.<ext>}。
+     * 迁移后主库变为 {@code chunkscanner_<hash>/main.<ext>}，
+     * 子库编号 1 映射为 {@code enhancement}，其余映射为 {@code sub_<n>}。</p>
+     *
+     * <p>迁移失败只记录日志，不阻塞列表读取。</p>
+     */
+    private static void migrateLegacyTree(Path root) {
+        List<Path> contextDirs = new ArrayList<>();
+        try (Stream<Path> stream = Files.walk(root, MAX_SCAN_DEPTH - 1)) {
+            stream.filter(Files::isDirectory).forEach(contextDirs::add);
+        } catch (IOException e) {
+            ChunkScannerMod.LOGGER.warn("Failed to scan for legacy databases under {}: {}", root, e.toString());
+            return;
+        }
+        for (Path contextDir : contextDirs) {
+            migrateLegacyDir(contextDir);
+        }
+    }
+
+    private static void migrateLegacyDir(Path contextDir) {
+        List<Path> legacyMains = new ArrayList<>();
+        try (Stream<Path> stream = Files.list(contextDir)) {
+            stream.filter(Files::isRegularFile)
+                    .filter(p -> {
+                        String name = p.getFileName().toString();
+                        return name.startsWith(DbFileUtil.STEM_PREFIX)
+                                && !name.contains(".sub_")
+                                && !name.endsWith(".tmp");
+                    })
+                    .forEach(legacyMains::add);
+        } catch (IOException e) {
+            ChunkScannerMod.LOGGER.warn("Failed to list {}: {}", contextDir, e.toString());
+            return;
+        }
+
+        for (Path mainFile : legacyMains) {
+            try {
+                migrateLegacyPackage(contextDir, mainFile);
+            } catch (IOException | RuntimeException e) {
+                ChunkScannerMod.LOGGER.error("Failed to migrate legacy database {}: {}", mainFile, e.toString());
+            }
+        }
+    }
+
+    private static void migrateLegacyPackage(Path contextDir, Path mainFile) throws IOException {
+        DbFileUtil.LegacyHeader header = DbFileUtil.readLegacyHeader(mainFile);
+        if (header.isEmpty()) return;
+
+        String fileName = mainFile.getFileName().toString();
+        int extDot = fileName.lastIndexOf('.');
+        String ext = extDot >= 0 ? fileName.substring(extDot + 1) : "bin";
+        // 旧文件名形如 chunkscanner_<hash>.<analyzer>.<ext>，去掉扩展名后即子库文件的公共前缀
+        String legacyPrefix = extDot >= 0 ? fileName.substring(0, extDot) : fileName;
+
+        Path packageDir = dirFor(contextDir, header.scanId());
+        if (Files.exists(packageDir)) {
+            ChunkScannerMod.LOGGER.warn("Skipped legacy migration, target already exists: {}", packageDir);
+            return;
+        }
+        Files.createDirectories(packageDir);
+
+        DbPackage pkg = new DbPackage(packageDir, header.scanId(), header.analyzerId());
+        pkg.taskConfig = TaskConfig.fromJson(header.taskConfigJson());
+
+        Identifier type = defaultFactoryId();
+        Files.move(mainFile, packageDir.resolve(MAIN_ID + "." + ext));
+        pkg.nodes.put(MAIN_ID, new Node(MAIN_ID + "." + ext, type, header.version()));
+
+        for (Map.Entry<String, Path> sub : findLegacySubs(contextDir, legacyPrefix, ext).entrySet()) {
+            String subId = sub.getKey();
+            Files.move(sub.getValue(), packageDir.resolve(subId + "." + ext));
+            pkg.nodes.put(subId, new Node(subId + "." + ext, type, header.version()));
+        }
+
+        pkg.saveMetadata();
+        pkg.close();
+        ChunkScannerMod.LOGGER.info("Migrated legacy database {} → {}", fileName, packageDir.getFileName());
+    }
+
+    /** 找出属于同一个旧包的子库文件，返回「新 StringId → 旧文件」。 */
+    private static Map<String, Path> findLegacySubs(Path contextDir, String legacyPrefix, String ext) {
+        Map<String, Path> found = new LinkedHashMap<>();
+        String prefix = legacyPrefix + ".sub_";
+        String suffix = "." + ext;
+        try (Stream<Path> stream = Files.list(contextDir)) {
+            stream.filter(Files::isRegularFile).forEach(p -> {
+                String name = p.getFileName().toString();
+                if (!name.startsWith(prefix) || !name.endsWith(suffix)) return;
+                String num = name.substring(prefix.length(), name.length() - suffix.length());
+                found.put(legacySubId(num), p);
+            });
+        } catch (IOException e) {
+            ChunkScannerMod.LOGGER.warn("Failed to list legacy sub-databases in {}: {}", contextDir, e.toString());
+        }
+        return found;
+    }
+
+    /** 旧的数字子库编号 → 新的 StringId。1 号历来用于聊天增强数据。 */
+    private static String legacySubId(String legacyNumber) {
+        return "1".equals(legacyNumber) ? "enhancement" : "sub_" + legacyNumber;
+    }
+
+    private static Identifier defaultFactoryId() {
+        IChunkDb.IFactory factory = IChunkDb.FactoryRegistry.getDefault();
+        return factory != null ? factory.getId() : ChunkScannerMod.ID_UNKNOWN;
     }
 
     // ==================== 内部工具 ====================
 
-    /** 将包内所有 entry 解压到目标目录（覆盖已存在文件）。 */
-    private void extractTo(Path targetDir) throws IOException {
-        Files.createDirectories(targetDir);
-        try (ZipFile zf = new ZipFile(zipPath.toFile())) {
-            zf.stream().forEach(ze -> {
-                try {
-                    Path out = targetDir.resolve(ze.getName()).normalize();
-                    if (!out.startsWith(targetDir.normalize())) {
-                        throw new IOException("Illegal entry path escapes target dir: " + ze.getName());
-                    }
-                    if (ze.isDirectory()) {
-                        Files.createDirectories(out);
-                    } else {
-                        Files.createDirectories(out.getParent());
-                        try (InputStream in = zf.getInputStream(ze)) {
-                            Files.copy(in, out, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                        }
-                    }
-                } catch (IOException e) {
-                    throw new java.io.UncheckedIOException(e);
-                }
-            });
+    private static List<Path> scanPackageDirs() {
+        Path root = ChunkScannerMod.getDbRoot();
+        if (!Files.isDirectory(root)) return List.of();
+        migrateLegacyTree(root);
+
+        List<Path> dirs = new ArrayList<>();
+        try (Stream<Path> stream = Files.walk(root, MAX_SCAN_DEPTH)) {
+            stream.filter(Files::isDirectory)
+                    .filter(p -> p.getFileName().toString().startsWith(DbFileUtil.STEM_PREFIX))
+                    .filter(p -> Files.isRegularFile(p.resolve(METADATA_FILE)))
+                    .forEach(dirs::add);
+        } catch (IOException | UncheckedIOException e) {
+            ChunkScannerMod.LOGGER.warn("Failed to scan database root {}: {}", root, e.toString());
+        }
+        return dirs;
+    }
+
+    private static Info readInfo(Path packageDir) {
+        try {
+            DbPackage pkg = open(packageDir);
+            return new Info(pkg.scanId, pkg.analyzerId, pkg.getDbType(),
+                    pkg.getStorageSize(), pkg.getLastModifiedTime(), packageDir);
+        } catch (IOException | RuntimeException e) {
+            ChunkScannerMod.LOGGER.warn("Skipped unreadable database package {}: {}", packageDir, e.toString());
+            return Info.EMPTY;
         }
     }
 
-    /** 计算输入流的 SHA-256 十六进制串。 */
-    private static String sha256Hex(InputStream in) throws IOException, NoSuchAlgorithmException {
-        MessageDigest md = MessageDigest.getInstance("SHA-256");
-        byte[] buf = new byte[8192];
-        int len;
-        while ((len = in.read(buf)) > 0) {
-            md.update(buf, 0, len);
+    private static String requireValidSubId(String subId) {
+        if (subId == null || MAIN_ID.equals(subId) || !SUB_ID_PATTERN.matcher(subId).matches()) {
+            throw new IllegalArgumentException("Illegal subsidiary database id: " + subId);
         }
-        return java.util.HexFormat.of().formatHex(md.digest());
+        return subId;
     }
 
-    // ==================== 元数据模型 ====================
+    private static String extensionOf(Node node) {
+        int dot = node.file.lastIndexOf('.');
+        return dot >= 0 ? node.file.substring(dot + 1) : "bin";
+    }
+
+    private static void moveAtomically(Path from, Path to) throws IOException {
+        try {
+            Files.move(from, to, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            // 部分文件系统（如某些网络盘）不支持原子改名，退化为普通替换
+            Files.move(from, to, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private static void deleteRecursively(Path target) throws IOException {
+        if (!Files.exists(target)) return;
+        try (Stream<Path> stream = Files.walk(target)) {
+            for (Path p : stream.sorted(Comparator.reverseOrder()).toList()) {
+                Files.deleteIfExists(p);
+            }
+        }
+    }
+
+    private static long sizeOf(Path file) {
+        try {
+            return Files.isRegularFile(file) ? Files.size(file) : 0;
+        } catch (IOException e) {
+            return 0;
+        }
+    }
+
+    private static String optString(JsonObject obj, String key) {
+        JsonElement e = obj.get(key);
+        return e != null && e.isJsonPrimitive() ? e.getAsString() : null;
+    }
+
+    private static Identifier parseId(String raw) {
+        if (raw == null || raw.isEmpty()) return ChunkScannerMod.ID_UNKNOWN;
+        Identifier parsed = raw.indexOf(':') >= 0
+                ? Identifier.tryParse(raw)
+                : ChunkScannerMod.id(raw.toLowerCase(Locale.ROOT));
+        return parsed != null ? parsed : ChunkScannerMod.ID_UNKNOWN;
+    }
+
+    // ==================== 辅助类型 ====================
+
+    /** metadata 中的一条数据库记录。 */
+    private static final class Node {
+        private final String file;
+        private final Identifier type;
+        private int version;
+
+        Node(String file, Identifier type, int version) {
+            this.file = file;
+            this.type = type;
+            this.version = version;
+        }
+
+        static Node fromJson(JsonObject json, String fallbackId) {
+            String file = optString(json, "file");
+            Identifier type = parseId(optString(json, "type"));
+            JsonElement versionEl = json.get("version");
+            int version = versionEl != null && versionEl.isJsonPrimitive() ? versionEl.getAsInt() : 0;
+            return new Node(file != null ? file : fallbackId + ".bin", type, version);
+        }
+
+        JsonObject toJson() {
+            JsonObject json = new JsonObject();
+            json.addProperty("file", file);
+            json.addProperty("type", type != null ? type.toString() : ChunkScannerMod.ID_UNKNOWN.toString());
+            json.addProperty("version", version);
+            return json;
+        }
+    }
 
     /**
-     * 导出包元数据（对应 metadata.json）。
+     * 包的轻量摘要，用于列表展示，不持有任何打开的资源。
      *
-     * @param exportTime   导出时间（ISO-8601）
-     * @param databaseName 扫描 ID
-     * @param analyzerId   分析器 ID（metadata 中的 {@code scannerId}）
-     * @param databaseType 数据库工厂 ID（可为 null）
-     * @param mainFile     主数据文件相对名（可为 null）
-     * @param files        各文件声明（name + sha256）
+     * @param scanId       扫描 ID
+     * @param analyzerId   分析器 ID
+     * @param dbType       主库实现类型
+     * @param size         包内文件总字节数
+     * @param lastModified 最新修改时间戳
+     * @param dir          包目录
      */
-    public record Meta(String exportTime, String databaseName, Identifier analyzerId,
-                       Identifier databaseType, String mainFile, List<FileEntry> files) {
+    public record Info(String scanId, Identifier analyzerId, Identifier dbType,
+                       long size, long lastModified, Path dir) {
 
-        /** 从输入流解析 metadata.json。 */
-        public static Meta parse(InputStream in) throws IOException {
-            JsonObject obj = GSON.fromJson(
-                    new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8),
-                    JsonObject.class);
-            if (obj == null) {
-                throw new IOException("metadata.json is empty or not valid JSON");
-            }
-            String exportTime = optString(obj, "exportTime");
-            String databaseName = optString(obj, "databaseName");
-            String analyzerRaw = optString(obj, "scannerId");
-            String databaseRaw = optString(obj, "databaseType");
-            String mainFile = optString(obj, "mainFile");
+        /** 无法识别时的空值。 */
+        public static final Info EMPTY = new Info("", ChunkScannerMod.ID_UNKNOWN,
+                ChunkScannerMod.ID_UNKNOWN, 0, 0, null);
 
-            // 兼容旧包：无命名空间时回退为 chunkscanner:<原值>
-            Identifier analyzerId = (analyzerRaw != null) ? parseIdentifier(analyzerRaw) : null;
-            Identifier databaseType = (databaseRaw != null) ? parseIdentifier(databaseRaw) : null;
-
-            List<FileEntry> files = new ArrayList<>();
-            if (obj.has("files") && obj.get("files").isJsonArray()) {
-                JsonArray arr = obj.getAsJsonArray("files");
-                for (int i = 0; i < arr.size(); i++) {
-                    JsonObject fo = arr.get(i).getAsJsonObject();
-                    files.add(new FileEntry(optString(fo, "name"), optString(fo, "sha256")));
-                }
-            }
-            return new Meta(exportTime, databaseName, analyzerId, databaseType, mainFile, files);
+        /** 是否为无效摘要。 */
+        public boolean isEmpty() {
+            return scanId.isEmpty();
         }
-
-        /** 解析标识符，兼容旧格式（无命名空间）。空字符串视作未定义哨兵。 */
-        private static Identifier parseIdentifier(String raw) {
-            if (raw == null || raw.isEmpty()) return ChunkScannerMod.ID_UNKNOWN;
-            Identifier parsed = (raw.indexOf(':') >= 0) ? Identifier.tryParse(raw) : ChunkScannerMod.id(raw);
-            return (parsed != null) ? parsed : ChunkScannerMod.ID_UNKNOWN;
-        }
-
-        private static String optString(JsonObject obj, String key) {
-            return obj.has(key) && !obj.get(key).isJsonNull() ? obj.get(key).getAsString() : null;
-        }
-    }
-
-    /** 包内单文件声明。 */
-    public record FileEntry(String name, String sha256) {
     }
 }

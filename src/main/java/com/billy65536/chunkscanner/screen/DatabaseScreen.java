@@ -26,7 +26,7 @@ import net.minecraft.util.Identifier;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.db.DbExportUtil;
-import com.billy65536.chunkscanner.core.db.DbFileUtil;
+import com.billy65536.chunkscanner.core.db.DbPackage;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.TaskConfig;
 import com.billy65536.chunkscanner.core.AnalyzerRegistry;
@@ -64,7 +64,7 @@ public class DatabaseScreen extends Screen {
 
     // ==================== 文件列表页 ====================
 
-    private List<DbFileUtil.FileMeta> dbFiles;
+    private List<DbPackage.Info> dbFiles;
     private final ScrollableListPanel fileListPanel = new ScrollableListPanel(ITEM_HEIGHT);
     /** 文件列表中被悬停的行索引（渲染时填充，用于 tooltip）。 */
     private int hoveredFileIdx = -1;
@@ -72,6 +72,8 @@ public class DatabaseScreen extends Screen {
     // ==================== KV 视图页 ====================
 
     private IDbViewProvider openedDb;
+    /** 当前打开的数据库包，负责其内所有 {@link IChunkDb} 的生命周期。 */
+    private DbPackage openedPackage;
     private IChunkDb rawChunkDb;
     private IDbViewProvider currentView;
     private boolean showingKvView = false;
@@ -120,8 +122,7 @@ public class DatabaseScreen extends Screen {
         }
 
         showingKvView = false;
-        openedDb = null;
-        rawChunkDb = null;
+        closeOpenedDb();
         currentView = null;
         layout = null;
         fileListPanel.endDrag();
@@ -135,7 +136,7 @@ public class DatabaseScreen extends Screen {
 
         // 自动打开指定数据库
         if (initialScanId != null && !initialScanId.isEmpty()) {
-            for (DbFileUtil.FileMeta m : dbFiles) {
+            for (DbPackage.Info m : dbFiles) {
                 if (m.scanId().equals(initialScanId)) {
                     openDatabase(m);
                     return;
@@ -149,33 +150,35 @@ public class DatabaseScreen extends Screen {
     // ==================== 文件列表扫描 ====================
 
     private void scanDbFiles() {
-        dbFiles = DbFileUtil.listAllDbFiles();
+        dbFiles = DbPackage.listAll();
     }
 
     // ==================== 打开/关闭数据库 ====================
 
-    private void openDatabase(DbFileUtil.FileMeta meta) {
-        if (rawChunkDb != null) {
-            rawChunkDb.close();
-        }
+    private void openDatabase(DbPackage.Info meta) {
+        closeOpenedDb();
         ChunkScannerMod.LOGGER.debug("Opening database: scanId={} analyzer={}", meta.scanId(), meta.analyzerId());
-        Path fileDir = meta.filePath() != null ? meta.filePath().getParent() : null;
-        IChunkDb.IFactory dbFactory = IChunkDb.FactoryRegistry.getDefault();
-        IChunkDb db = dbFactory.createMetadataOnly(meta.scanId(), meta.analyzerId(), fileDir);
+        DbPackage pkg;
+        try {
+            pkg = DbPackage.open(meta.dir());
+        } catch (IOException e) {
+            ChunkScannerMod.LOGGER.warn("Failed to open database package: {}", e.getMessage());
+            return;
+        }
+        openedPackage = pkg;
+        IChunkDb db = pkg.mainLazy();
         rawChunkDb = db;
-        openedDb = createDefaultViewProvider(db, meta.analyzerId());
+        openedDb = createDefaultViewProvider(pkg, meta.analyzerId());
         try {
             db.open();
         } catch (Exception e) {
             ChunkScannerMod.LOGGER.warn("Failed to open database: {}", e.getMessage());
-            openedDb = null;
-            rawChunkDb = null;
-            cachedTaskConfig = null;
+            closeOpenedDb();
             return;
         }
 
-        // 读取 DB 中存储的任务配置，用于路径点命名等
-        cachedTaskConfig = db.getTaskConfig();
+        // 读取包内存储的任务配置，用于路径点命名等
+        cachedTaskConfig = pkg.getTaskConfig();
         if (cachedTaskConfig != null) {
             ChunkScannerMod.LOGGER.debug("Loaded TaskConfig from DB for '{}': {}", meta.scanId(), cachedTaskConfig.toDisplayString());
         }
@@ -188,9 +191,12 @@ public class DatabaseScreen extends Screen {
     }
 
     private void closeOpenedDb() {
-        if (rawChunkDb != null) {
+        if (openedPackage != null) {
+            openedPackage.close();
+        } else if (rawChunkDb != null) {
             rawChunkDb.close();
         }
+        openedPackage = null;
         openedDb = null;
         rawChunkDb = null;
         currentView = null;
@@ -202,19 +208,19 @@ public class DatabaseScreen extends Screen {
      * 经 DbViewProviderRegistry 获取，不直接依赖任何具体的 view_provider 实现（避免 screen→components 耦合）。
      * 若默认视图不可用，回退到 "raw" 视图。
      */
-    private static IDbViewProvider createDefaultViewProvider(IChunkDb db, Identifier analyzerId) {
+    private static IDbViewProvider createDefaultViewProvider(DbPackage pkg, Identifier analyzerId) {
         Identifier viewId = AnalyzerRegistry.getDefaultViewProvider(analyzerId);
-        IDbViewProvider provider = createView(viewId, db);
+        IDbViewProvider provider = createView(viewId, pkg);
         if (provider == null) {
-            provider = createView(ChunkScannerMod.id("raw"), db);
+            provider = createView(ChunkScannerMod.id("raw"), pkg);
         }
         return provider;
     }
 
-    private static IDbViewProvider createView(Identifier viewId, IChunkDb db) {
+    private static IDbViewProvider createView(Identifier viewId, DbPackage pkg) {
         DbViewProviderRegistry.ITypeDescriptor desc = DbViewProviderRegistry.get(viewId);
         if (desc == null) return null;
-        return desc.create(db);
+        return desc.create(pkg);
     }
 
     // ==================== 视图提供者 ====================
@@ -237,7 +243,7 @@ public class DatabaseScreen extends Screen {
             DbViewProviderRegistry.ITypeDescriptor selectedType = viewTypes.get(selectedViewTypeIdx);
             if (forceRecreate || currentView == null) {
                 try {
-                    currentView = selectedType.create(rawChunkDb);
+                    currentView = selectedType.create(openedPackage);
                 } catch (Exception e) {
                     ChunkScannerMod.LOGGER.warn("Failed to create view provider '{}': {}", selectedType.getId(), e.getMessage());
                     currentView = null;
@@ -442,13 +448,8 @@ public class DatabaseScreen extends Screen {
     }
 
     private void exportDatabase() {
-        if (rawChunkDb == null) return;
-        final IChunkDb db = rawChunkDb;
-        Path mainFile = db.getFilePath();
-        if (mainFile == null || !Files.exists(mainFile)) {
-            ChunkScannerMod.LOGGER.warn("Cannot export: database file not found.");
-            return;
-        }
+        if (openedPackage == null) return;
+        final DbPackage pkg = openedPackage;
 
         // JFileChooser 选择保存路径
         new Thread(() -> {
@@ -456,7 +457,7 @@ public class DatabaseScreen extends Screen {
                 final JFileChooser chooser = new JFileChooser();
                 chooser.setDialogTitle(Text.translatable("chunkscanner.gui.database.export_db").getString());
                 chooser.setSelectedFile(new File(DbExportUtil.buildDefaultFileName(
-                        db.getAnalyzerId(), db.getScanId(), "zip")));
+                        pkg.getAnalyzerId(), pkg.getScanId(), "zip")));
                 chooser.setFileFilter(new FileNameExtensionFilter("ZIP Archives (*.zip)", "zip"));
 
                 Path exportDir = DbExportUtil.getExportDir();
@@ -474,9 +475,8 @@ public class DatabaseScreen extends Screen {
                         outPath = outPath.resolveSibling(outPath.getFileName() + ".zip");
                     }
                     try {
-                        db.flush();
                         Files.createDirectories(outPath.getParent());
-                        DbExportUtil.exportRawZip(db, outPath);
+                        DbExportUtil.exportRawZip(pkg, outPath);
                         ChunkScannerMod.LOGGER.info("Database exported to: {}", outPath);
                     } catch (Exception e) {
                         ChunkScannerMod.LOGGER.warn("Failed to export database: {}", e.getMessage());
@@ -545,10 +545,10 @@ public class DatabaseScreen extends Screen {
 
         // 文件列表悬停 — 显示数据库路径
         if (!showingKvView && hoveredFileIdx >= 0 && hoveredFileIdx < dbFiles.size()) {
-            DbFileUtil.FileMeta meta = dbFiles.get(hoveredFileIdx);
-            Path filePath = meta.filePath();
+            DbPackage.Info meta = dbFiles.get(hoveredFileIdx);
+            Path dir = meta.dir();
             context.drawTooltip(textRenderer,
-                    Text.literal(filePath != null ? filePath.toAbsolutePath().toString() : meta.scanId()).formatted(Formatting.GRAY),
+                    Text.literal(dir != null ? dir.toAbsolutePath().toString() : meta.scanId()).formatted(Formatting.GRAY),
                     mouseX, mouseY);
         }
 
@@ -625,7 +625,7 @@ public class DatabaseScreen extends Screen {
         for (int i = 0; i < maxVisible; i++) {
             int idx = fileListPanel.getOffset() + i;
             if (idx >= dbFiles.size()) break;
-            DbFileUtil.FileMeta meta = dbFiles.get(idx);
+            DbPackage.Info meta = dbFiles.get(idx);
             int rowY = listTop + i * ITEM_HEIGHT;
 
             // 行悬停检测（排除右侧按钮区域）
@@ -646,7 +646,7 @@ public class DatabaseScreen extends Screen {
             }
             context.drawTextWithShadow(textRenderer, label, x, rowY, color);
             context.drawTextWithShadow(textRenderer,
-                    Text.literal(GuiUtil.formatSize(meta.fileSize())).formatted(Formatting.GRAY),
+                    Text.literal(GuiUtil.formatSize(meta.size())).formatted(Formatting.GRAY),
                     x + 160, rowY, color);
 
             // 右侧按钮区域（横向布局：恢复在左，删除在右，同 ChunkScannerScreen）
@@ -809,7 +809,7 @@ public class DatabaseScreen extends Screen {
         for (int i = 0; i < maxVisible; i++) {
             int idx = fileListPanel.getOffset() + i;
             if (idx >= dbFiles.size()) break;
-            DbFileUtil.FileMeta meta = dbFiles.get(idx);
+            DbPackage.Info meta = dbFiles.get(idx);
             int rowY = listTop + i * ITEM_HEIGHT;
 
             int btnRight = x + WIDTH - 8;
@@ -990,7 +990,7 @@ public class DatabaseScreen extends Screen {
 
     // ==================== 操作 ====================
 
-    private void confirmDeleteDbFile(DbFileUtil.FileMeta meta) {
+    private void confirmDeleteDbFile(DbPackage.Info meta) {
         MinecraftClient client = MinecraftClient.getInstance();
         client.setScreen(new ConfirmScreen(
                 confirmed -> {
@@ -1002,7 +1002,7 @@ public class DatabaseScreen extends Screen {
         ));
     }
 
-    private void doRebootScan(DbFileUtil.FileMeta meta) {
+    private void doRebootScan(DbPackage.Info meta) {
         MinecraftClient client = MinecraftClient.getInstance();
         ChunkScanner scanner = ChunkScannerMod.getScanner();
         if (scanner == null || client.player == null || client.world == null) return;
@@ -1010,20 +1010,27 @@ public class DatabaseScreen extends Screen {
         IChunkAnalyzer analyzer = AnalyzerRegistry.get(meta.analyzerId());
         if (analyzer == null) return;
 
-        Path fileDir = meta.filePath() != null ? meta.filePath().getParent() : null;
-        IChunkDb.IFactory dbFactory = IChunkDb.FactoryRegistry.getDefault();
-        IChunkDb existingDb = dbFactory.create(meta.scanId(), meta.analyzerId(), fileDir);
-        TaskConfig storedConfig = existingDb.getTaskConfig();
+        // 恢复扫描需要独占数据库包，先关闭浏览器中打开的实例
+        closeOpenedDb();
+
+        DbPackage pkg;
+        try {
+            pkg = DbPackage.open(meta.dir());
+        } catch (IOException e) {
+            ChunkScannerMod.LOGGER.warn("Failed to open database package: {}", e.getMessage());
+            return;
+        }
+        TaskConfig storedConfig = pkg.getTaskConfig();
         if (storedConfig != null) {
             ChunkScannerMod.LOGGER.info("Restored TaskConfig from DB for '{}': {}", meta.scanId(), storedConfig.toDisplayString());
         }
-        scanner.startWithDb(client, meta.scanId(), meta.analyzerId(), storedConfig, existingDb);
+        scanner.startWithDb(client, meta.scanId(), meta.analyzerId(), storedConfig, pkg);
     }
 
-    private void deleteDbFile(DbFileUtil.FileMeta meta) {
+    private void deleteDbFile(DbPackage.Info meta) {
         try {
-            DbFileUtil.deleteDbFile(meta.scanId());
             closeOpenedDb();
+            DbPackage.deletePackage(meta.scanId());
             showingKvView = false;
             layout = null;
             scanDbFiles();

@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.AnalyzeResult;
 import com.billy65536.chunkscanner.core.IChunkAnalyzer;
-import com.billy65536.chunkscanner.core.IChunkDb;
+import com.billy65536.chunkscanner.core.db.DbPackage;
 
 /**
  * QShop 商店分析器：扫描贴在容器上的特化告示牌，识别 QShop 格式商店。
@@ -127,16 +127,16 @@ public class QShopAnalyzer implements IChunkAnalyzer {
     }
 
     @Override
-    public AnalyzeResult analyze(WorldChunk chunk, int cx, int cz, String dimId, IChunkDb db, long now) {
-        return analyze(chunk, cx, cz, dimId, db, now, null);
+    public AnalyzeResult analyze(WorldChunk chunk, int cx, int cz, String dimId, DbPackage pkg, long now) {
+        return analyze(chunk, cx, cz, dimId, pkg, now, null);
     }
 
     @Override
-    public AnalyzeResult analyze(WorldChunk chunk, int cx, int cz, String dimId, IChunkDb db, long now, World world) {
+    public AnalyzeResult analyze(WorldChunk chunk, int cx, int cz, String dimId, DbPackage pkg, long now, World world) {
         // 从全局配置读取 QShop 正则模式（缓存编译结果）
         LocalePatterns patterns = getPatterns();
 
-        QShopDbAdapter adapter = new QShopDbAdapter(db);
+        QShopDbAdapter adapter = new QShopDbAdapter(pkg);
         adapter.deleteChunk(dimId, cx, cz);
 
         int count = 0;

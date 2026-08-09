@@ -4,6 +4,7 @@ import java.util.Map;
 import java.util.Set;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
+import com.billy65536.chunkscanner.core.db.DbPackage;
 
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
@@ -37,7 +38,7 @@ public final class DbViewProviderRegistry {
      * <p>
      * 注册到 {@link DbViewProviderRegistry} 中，用于在 DB 界面选择不同的视图提供者。
      * 每个类型具有 id、name、description（可本地化），以及适用的分析器 id 集合。
-     * 实际的数据访问实例由类型描述符根据底层 ChunkDb 创建。
+     * 实际的数据访问实例由类型描述符根据底层数据库包创建。
      * </p>
      */
     public interface ITypeDescriptor {
@@ -54,10 +55,12 @@ public final class DbViewProviderRegistry {
         Set<Identifier> applicableAnalyzers();
 
         /**
-         * 根据底层 ChunkDb 创建此类型的 DbViewProvider 实例。
+         * 根据底层数据库包创建此类型的 DbViewProvider 实例。
          * 如果此类型不适用于该数据库，返回 null。
+         *
+         * <p>实现方不得关闭 {@code pkg}，其生命周期由调用方持有。</p>
          */
-        IDbViewProvider create(IChunkDb db);
+        IDbViewProvider create(DbPackage pkg);
     }
 
 }

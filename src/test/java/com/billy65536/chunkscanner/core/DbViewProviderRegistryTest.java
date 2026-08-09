@@ -8,6 +8,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
+import com.billy65536.chunkscanner.core.db.DbPackage;
 
 import java.util.Collection;
 import java.util.Set;
@@ -29,7 +30,7 @@ class DbViewProviderRegistryTest {
             @Override public Text getName() { return Text.literal(name); }
             @Override public Text getDescription() { return Text.literal("desc: " + name); }
             @Override public Set<Identifier> applicableAnalyzers() { return Set.of(); }
-            @Override public IDbViewProvider create(IChunkDb db) { return null; }
+            @Override public IDbViewProvider create(DbPackage pkg) { return null; }
         };
     }
 

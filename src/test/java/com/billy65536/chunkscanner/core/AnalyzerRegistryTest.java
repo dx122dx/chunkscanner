@@ -8,6 +8,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
+import com.billy65536.chunkscanner.core.db.DbPackage;
 
 import java.util.Collection;
 
@@ -28,7 +29,7 @@ class AnalyzerRegistryTest {
             @Override public Text getDescription() { return Text.literal("desc: " + name); }
             @Override
             public AnalyzeResult analyze(net.minecraft.world.chunk.WorldChunk chunk,
-                                          int cx, int cz, String dimId, IChunkDb db, long now) {
+                                          int cx, int cz, String dimId, DbPackage pkg, long now) {
                 return AnalyzeResult.skipped();
             }
         };

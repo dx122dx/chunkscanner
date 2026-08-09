@@ -16,6 +16,7 @@ import java.util.concurrent.*;
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.TaskConfig;
+import com.billy65536.chunkscanner.core.db.DbPackage;
 
 /**
  * 异步渐进式区块扫描引擎 —— 支持同时运行多个独立扫描任务。
@@ -288,32 +289,36 @@ public class ChunkScanner {
     }
 
     /**
-     * 从已有数据库文件恢复扫描任务（使用全局默认配置）。
+     * 从已有数据库包恢复扫描任务（使用全局默认配置）。
      * 适用于 /cs db reboot 命令。
      */
-    public void startWithDb(MinecraftClient client, String scanId, Identifier analyzerId, IChunkDb existingDb) {
-        startWithDb(client, scanId, analyzerId, null, existingDb);
+    public void startWithDb(MinecraftClient client, String scanId, Identifier analyzerId, DbPackage existingPkg) {
+        startWithDb(client, scanId, analyzerId, null, existingPkg);
     }
 
     /**
-     * 从已有数据库文件恢复扫描任务。
-     * 与 start() 的区别：不创建新的数据库实例，而是复用已有的数据库实例。
-     * 这会保留之前扫描的所有数据，继续在已有基础上扫描。
+     * 从已有数据库包恢复扫描任务。
+     * 与 start() 的区别：不新建数据库包，而是接管调用方已打开的包（保留之前扫描的所有数据）。
+     *
+     * <p>调用成功后 {@code existingPkg} 的生命周期由会话接管；若启动失败则由本方法关闭。</p>
      */
-    public void startWithDb(MinecraftClient client, String scanId, Identifier analyzerId, TaskConfig taskConfig, IChunkDb existingDb) {
+    public void startWithDb(MinecraftClient client, String scanId, Identifier analyzerId, TaskConfig taskConfig, DbPackage existingPkg) {
         if (client.player == null || client.world == null) {
             CoreUtil.sendMsg(client, Text.translatable(KEY_NOT_IN_WORLD).formatted(Formatting.RED));
+            existingPkg.close();
             return;
         }
         IChunkAnalyzer analyzer = AnalyzerRegistry.get(analyzerId);
         if (analyzer == null) {
             CoreUtil.sendMsg(client, Text.translatable(KEY_UNKNOWN_ANALYZER, analyzerId).formatted(Formatting.RED));
+            existingPkg.close();
             return;
         }
-        ScanSession session = new ScanSession(this, scanId, analyzer, taskConfig, existingDb);
+        ScanSession session = new ScanSession(this, scanId, analyzer, taskConfig, existingPkg);
         ScanSession existing = sessions.putIfAbsent(scanId, session);
         if (existing != null) {
             CoreUtil.sendMsg(client, Text.translatable(KEY_SCAN_EXISTS, scanId, scanId).formatted(Formatting.YELLOW));
+            existingPkg.close();
             return;
         }
         session.start(client);

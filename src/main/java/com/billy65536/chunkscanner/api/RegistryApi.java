@@ -1,6 +1,5 @@
 package com.billy65536.chunkscanner.api;
 
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -209,61 +208,13 @@ public final class RegistryApi {
     /**
      * 获取默认数据库工厂（注册表中的第一个）。
      *
+     * <p>数据库实例不在此创建：文件与元信息由
+     * {@link com.billy65536.chunkscanner.core.db.DbPackage} 统一管理，
+     * 请改用 {@link DatabaseApi#createDatabase} / {@link DatabaseApi#openPackage(String)}。</p>
+     *
      * @return 默认工厂；注册表为空时返回 {@code null}
      */
     public static IChunkDb.IFactory defaultDbFactory() {
         return IChunkDb.FactoryRegistry.getDefault();
-    }
-
-    /**
-     * 使用默认工厂创建数据库实例（完整模式，构造时立即加载数据）。
-     *
-     * <p>推荐所有外部调用方通过本方法创建数据库，而非直接 new 具体实现，
-     * 以便存储引擎替换时无需改动调用代码。</p>
-     *
-     * @param scanId     扫描任务 id
-     * @param analyzerId 分析器 id
-     * @param dbDir      数据库文件目录
-     * @return 数据库实例；无可用工厂时返回 {@code null}
-     */
-    public static IChunkDb createDb(String scanId, Identifier analyzerId, Path dbDir) {
-        IChunkDb.IFactory factory = IChunkDb.FactoryRegistry.getDefault();
-        if (factory == null) {
-            ChunkScannerMod.LOGGER.warn("No db factory registered, cannot create db for scanId={}", scanId);
-            return null;
-        }
-        return factory.create(scanId, analyzerId, dbDir);
-    }
-
-    /**
-     * 使用指定工厂创建数据库实例（完整模式）。
-     *
-     * @param factoryId 工厂 id
-     * @return 数据库实例；工厂未注册时返回 {@code null}
-     */
-    public static IChunkDb createDb(Identifier factoryId, String scanId, Identifier analyzerId, Path dbDir) {
-        IChunkDb.IFactory factory = IChunkDb.FactoryRegistry.get(factoryId);
-        if (factory == null) {
-            ChunkScannerMod.LOGGER.warn("Db factory '{}' not registered, cannot create db", factoryId);
-            return null;
-        }
-        return factory.create(scanId, analyzerId, dbDir);
-    }
-
-    /**
-     * 使用默认工厂创建数据库实例（元数据模式，延迟加载）。
-     *
-     * <p>返回的实例未加载 KV 数据，需调用 {@link IChunkDb#open()} 后才能读取内容。
-     * 适合只需读取文件大小、修改时间等元信息的场景。</p>
-     *
-     * @return 数据库实例；无可用工厂时返回 {@code null}
-     */
-    public static IChunkDb createDbMetadataOnly(String scanId, Identifier analyzerId, Path dbDir) {
-        IChunkDb.IFactory factory = IChunkDb.FactoryRegistry.getDefault();
-        if (factory == null) {
-            ChunkScannerMod.LOGGER.warn("No db factory registered, cannot create db for scanId={}", scanId);
-            return null;
-        }
-        return factory.createMetadataOnly(scanId, analyzerId, dbDir);
     }
 }

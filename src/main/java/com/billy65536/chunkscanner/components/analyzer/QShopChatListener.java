@@ -18,7 +18,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
-import com.billy65536.chunkscanner.core.IChunkDb;
 
 /**
  * 监听客户端聊天消息和按键事件，捕获 QuickShop 商店 Item 行中的增强物品数据。
@@ -550,10 +549,9 @@ public final class QShopChatListener {
         for (var session : scanner.getActiveSessions()) {
             if (!ChunkScannerMod.id("qshop").equals(session.analyzer.getId())) continue;
 
-            IChunkDb db = session.db;
-            if (db == null) continue;
+            if (session.pkg == null) continue;
 
-            QShopDbAdapter adapter = new QShopDbAdapter(db);
+            QShopDbAdapter adapter = new QShopDbAdapter(session.pkg);
             int cx = click.x() >> 4;
             int cz = click.z() >> 4;
 
@@ -623,10 +621,9 @@ public final class QShopChatListener {
         for (var session : scanner.getActiveSessions()) {
             if (!ChunkScannerMod.id("qshop").equals(session.analyzer.getId())) continue;
 
-            IChunkDb db = session.db;
-            if (db == null) continue;
+            if (session.pkg == null) continue;
 
-            QShopDbAdapter adapter = new QShopDbAdapter(db);
+            QShopDbAdapter adapter = new QShopDbAdapter(session.pkg);
             int cx = targetPos.getX() >> 4;
             int cz = targetPos.getZ() >> 4;
 
@@ -691,10 +688,9 @@ public final class QShopChatListener {
         for (var session : scanner.getActiveSessions()) {
             if (!ChunkScannerMod.id("qshop").equals(session.analyzer.getId())) continue;
 
-            IChunkDb db = session.db;
-            if (db == null) continue;
+            if (session.pkg == null) continue;
 
-            QShopDbAdapter adapter = new QShopDbAdapter(db);
+            QShopDbAdapter adapter = new QShopDbAdapter(session.pkg);
             int cx = targetPos.getX() >> 4;
             int cz = targetPos.getZ() >> 4;
 

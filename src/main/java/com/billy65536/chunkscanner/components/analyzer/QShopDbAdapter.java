@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 
 import com.billy65536.chunkscanner.components.view_provider.QShopFilter;
 import com.billy65536.chunkscanner.core.IChunkDb;
+import com.billy65536.chunkscanner.core.db.DbPackage;
 
 /**
  * QShop 数据库适配器 —— 所有 QShop 二进制格式定义和数据库读写的唯一权威。
@@ -45,12 +46,19 @@ public final class QShopDbAdapter {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("chunkscanner.components.qshop.adapter");
 
+    /** 增强数据附属库在 {@link DbPackage} 中的 StringId。 */
+    public static final String SUB_ENHANCEMENT = "enhancement";
+
     private final IChunkDb db;
     private final IChunkDb subDb;
 
-    public QShopDbAdapter(IChunkDb db) {
-        this.db = db;
-        this.subDb = db.getSubDb(1);
+    /**
+     * 基于数据库包构造：主库取 {@link DbPackage#main()}，
+     * 增强数据取附属库 {@value #SUB_ENHANCEMENT}（不存在则自动创建）。
+     */
+    public QShopDbAdapter(DbPackage pkg) {
+        this.db = pkg.main();
+        this.subDb = pkg.sub(SUB_ENHANCEMENT);
     }
 
     // ==================== 公开记录类型 ====================
@@ -324,12 +332,12 @@ public final class QShopDbAdapter {
         return true;
     }
 
-    /** @return 底层主数据库实例（id=0） */
+    /** @return 底层主数据库实例 */
     public IChunkDb getMainDb() {
         return db;
     }
 
-    /** @return 底层子数据库实例（id=1，存储增强数据） */
+    /** @return 增强数据附属库实例（StringId 为 {@value #SUB_ENHANCEMENT}） */
     public IChunkDb getSubDb() {
         return subDb;
     }

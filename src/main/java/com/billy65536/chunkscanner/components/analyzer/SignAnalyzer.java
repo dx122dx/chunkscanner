@@ -18,6 +18,7 @@ import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.AnalyzeResult;
 import com.billy65536.chunkscanner.core.IChunkAnalyzer;
 import com.billy65536.chunkscanner.core.IChunkDb;
+import com.billy65536.chunkscanner.core.db.DbPackage;
 
 /**
  * 默认告示牌分析器：扫描区块内所有告示牌并存入 ChunkDb。
@@ -43,7 +44,8 @@ public class SignAnalyzer implements IChunkAnalyzer {
     private static final byte SIDE_BACK = 1;
 
     @Override
-    public AnalyzeResult analyze(WorldChunk chunk, int cx, int cz, String dimId, IChunkDb db, long now) {
+    public AnalyzeResult analyze(WorldChunk chunk, int cx, int cz, String dimId, DbPackage pkg, long now) {
+        IChunkDb db = pkg.main();
         int dimPoolId = db.intern(dimId);
 
         List<byte[]> records = new ArrayList<>();

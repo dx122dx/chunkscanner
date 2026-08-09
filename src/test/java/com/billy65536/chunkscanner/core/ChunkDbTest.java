@@ -161,8 +161,6 @@ class ChunkDbTest {
         private final IChunkDb stubDb = new IChunkDb() {
             @Override public String getScanId() { return "test"; }
             @Override public Identifier getAnalyzerId() { return ChunkScannerMod.ID_UNKNOWN; }
-            @Override public long getStorageSize() { return 0; }
-            @Override public long getLastModifiedTime() { return 0; }
             @Override public int intern(String s) { return 0; }
             @Override public String lookup(int id) { return null; }
             @Override public void put(byte[] key, byte[] value) {}
@@ -177,7 +175,8 @@ class ChunkDbTest {
             @Override public void open() {}
             @Override public void flush() {}
             @Override public void close() {}
-            @Override public Path getFilePath() { return null; }
+            @Override public void readFrom(java.nio.channels.FileChannel channel) throws java.io.IOException {}
+            @Override public void writeTo(java.nio.channels.FileChannel channel) throws java.io.IOException {}
         };
 
         @Test

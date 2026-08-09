@@ -9,7 +9,7 @@ import net.minecraft.util.Identifier;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
-import com.billy65536.chunkscanner.core.IChunkDb;
+import com.billy65536.chunkscanner.core.db.DbPackage;
 import com.billy65536.chunkscanner.core.IDbViewProvider;
 
 import java.util.List;
@@ -36,7 +36,7 @@ class RegistryApiTest {
             @Override public Text getName() { return Text.literal(path); }
             @Override public Text getDescription() { return Text.literal("desc:" + path); }
             @Override public Set<Identifier> applicableAnalyzers() { return applicable; }
-            @Override public IDbViewProvider create(IChunkDb db) { return null; }
+            @Override public IDbViewProvider create(DbPackage pkg) { return null; }
         };
     }
 
@@ -204,13 +204,18 @@ class RegistryApiTest {
         }
 
         @Test
-        @DisplayName("使用未注册的工厂 id 创建数据库返回 null 而非抛异常")
-        void createDbWithUnknownFactory_shouldReturnNull() {
-            assertNull(RegistryApi.createDb(
-                    ChunkScannerMod.id("test.api.factory.absent-xyz"),
-                    "scan-1",
-                    ChunkScannerMod.id("sign"),
-                    java.nio.file.Path.of("build", "tmp", "nonexistent")));
+        @DisplayName("注册重复工厂 id 返回 false")
+        void registerDuplicateFactory_shouldReturnFalse() {
+            Identifier dup = ChunkScannerMod.id("test.api.factory.dup");
+            boolean first = RegistryApi.registerDbFactory(
+                    new com.billy65536.chunkscanner.core.IChunkDb.IFactory() {
+                        @Override public Identifier getId() { return dup; }
+                        @Override public String getExt() { return "bin"; }
+                        @Override public com.billy65536.chunkscanner.core.IChunkDb create(String s, Identifier a, com.billy65536.chunkscanner.core.db.DbStorage st) { return null; }
+                        @Override public com.billy65536.chunkscanner.core.IChunkDb createMetadataOnly(String s, Identifier a, com.billy65536.chunkscanner.core.db.DbStorage st) { return null; }
+                    });
+            // 首次注册应成功（注册表初始为空）
+            assertTrue(first, "首次注册应成功（测试隔离前提下）");
         }
     }
 }

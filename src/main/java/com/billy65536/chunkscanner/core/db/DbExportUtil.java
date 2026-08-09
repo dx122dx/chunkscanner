@@ -3,21 +3,26 @@ package com.billy65536.chunkscanner.core.db;
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.IChunkDb;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 import net.minecraft.util.Identifier;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
 
-import java.io.*;
+import java.io.BufferedWriter;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -27,12 +32,14 @@ import java.util.zip.ZipOutputStream;
  *
  * <p>支持两种导出模式：</p>
  * <ul>
- *   <li><b>raw</b> — ZIP 归档，包含所有相关数据库文件和 metadata.json</li>
- *   <li><b>tsv</b> — TSV 文本文件，每行为十六进制 key + tab + 十六进制 value</li>
+ *   <li><b>raw</b> —— 把整个 {@link DbPackage} 目录原样打成 ZIP，
+ *       包内 {@code metadata.json} 在原元数据基础上追加 {@code export} 段
+ *       （导出时间与各文件 SHA-256），可由 {@link DbImage} 完整还原；</li>
+ *   <li><b>tsv</b> —— 单个数据库的 KV 文本转储，每行为十六进制 key + tab + 十六进制 value。</li>
  * </ul>
  *
- * <p>导出的文件默认存储在 {@code chunkscanner/export/} 目录下，
- * 文件名格式为 {@code chunkscanner-{analyzerId}-{scanId}-{YYMMDDhhmmss}.{ext}}。</p>
+ * <p>导出文件默认存放于 {@code chunkscanner/export/}，
+ * 命名为 {@code chunkscanner-{analyzerId}-{scanId}-{yyMMddHHmmss}.{ext}}。</p>
  */
 public final class DbExportUtil {
 
@@ -76,53 +83,33 @@ public final class DbExportUtil {
     // ==================== 导出入口 ====================
 
     /**
-     * 导出数据库原始文件为 ZIP 归档（包含 metadata.json）。
+     * 将整个数据库包导出为 ZIP 归档。
      *
-     * @param db      已打开的数据库实例
+     * @param pkg     待导出的包（导出前会先刷写）
      * @param outFile 输出文件路径，为 {@code null} 时自动生成到 export 目录
      * @return 实际写入的文件路径
-     * @throws IOException 如果导出失败
+     * @throws IOException 如果包内无负载或写入失败
      */
-    public static Path exportRawZip(IChunkDb db, Path outFile) throws IOException {
-        String scanId = db.getScanId();
-        Identifier analyzerId = db.getAnalyzerId();
-        Path mainFile = db.getFilePath();
-        if (mainFile == null || !Files.exists(mainFile)) {
-            throw new IOException("Database file not found for database " + scanId);
-        }
+    public static Path exportRawZip(DbPackage pkg, Path outFile) throws IOException {
+        pkg.flush();
 
-        // 计算文件 basename 以查找相关文件
-        String fileName = mainFile.getFileName().toString();
-        int lastDot = fileName.lastIndexOf('.');
-        String prefix = lastDot > 0 ? fileName.substring(0, lastDot) : fileName;
-        Path parent = mainFile.getParent();
-        if (parent == null) {
-            parent = ChunkScannerMod.getDbDir();
-        }
-
-        List<Path> relatedFiles;
-        try (Stream<Path> s = Files.list(parent)) {
-            relatedFiles = s.filter(p -> {
-                String name = p.getFileName().toString();
-                return name.startsWith(prefix);
-            }).sorted().collect(Collectors.toList());
-        }
-
-        if (relatedFiles.isEmpty()) {
-            throw new IOException("No files found for database " + scanId);
+        List<Path> payloads = listPayloads(pkg.getDir());
+        if (payloads.isEmpty()) {
+            throw new IOException("No database payload to export for " + pkg.getScanId());
         }
 
         Path outPath = (outFile != null)
                 ? outFile
-                : ensureExportDir().resolve(buildDefaultFileName(analyzerId, scanId, "zip"));
-        Identifier databaseType = db.getFactoryId();
-        String mainFileName = parent.relativize(mainFile).toString();
-        zipFiles(relatedFiles, parent, outPath, scanId, analyzerId, databaseType, mainFileName);
+                : ensureExportDir().resolve(buildDefaultFileName(pkg.getAnalyzerId(), pkg.getScanId(), "zip"));
+        Path parent = outPath.getParent();
+        if (parent != null) Files.createDirectories(parent);
+
+        zipPackage(pkg, payloads, outPath);
         return outPath;
     }
 
     /**
-     * 导出数据库全部条目为 TSV 文件（hex key + tab + hex value）。
+     * 导出单个数据库的全部条目为 TSV 文件（hex key + tab + hex value）。
      *
      * @param db      已打开的数据库实例
      * @param outFile 输出文件路径，为 {@code null} 时自动生成到 export 目录
@@ -130,11 +117,9 @@ public final class DbExportUtil {
      * @throws IOException 如果导出失败
      */
     public static Path exportTsv(IChunkDb db, Path outFile) throws IOException {
-        String scanId = db.getScanId();
-        Identifier analyzerId = db.getAnalyzerId();
         Path outPath = (outFile != null)
                 ? outFile
-                : ensureExportDir().resolve(buildDefaultFileName(analyzerId, scanId, "tsv"));
+                : ensureExportDir().resolve(buildDefaultFileName(db.getAnalyzerId(), db.getScanId(), "tsv"));
 
         List<IChunkDb.Entry> entries = db.getAllEntries();
         try (BufferedWriter writer = Files.newBufferedWriter(outPath, StandardCharsets.UTF_8)) {
@@ -150,22 +135,33 @@ public final class DbExportUtil {
 
     // ==================== ZIP 实现 ====================
 
-    /** 将文件列表打包为 ZIP，保留相对路径，并添加 metadata.json。 */
-    private static void zipFiles(List<Path> files, Path baseDir, Path zipPath,
-                                  String scanId, Identifier analyzerId,
-                                  Identifier databaseType, String mainFileName) throws IOException {
+    /** 列出包内待打包的负载文件（排除 metadata.json 与临时文件）。 */
+    private static List<Path> listPayloads(Path packageDir) throws IOException {
+        try (Stream<Path> stream = Files.list(packageDir)) {
+            return stream.filter(Files::isRegularFile)
+                    .filter(p -> {
+                        String name = p.getFileName().toString();
+                        return !name.equals(DbPackage.METADATA_FILE) && !name.endsWith(".tmp");
+                    })
+                    .sorted()
+                    .toList();
+        }
+    }
+
+    /** 打包负载文件，并写入追加了 {@code export} 段的 metadata.json。 */
+    private static void zipPackage(DbPackage pkg, List<Path> payloads, Path zipPath) throws IOException {
+        MessageDigest sha256;
+        try {
+            sha256 = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new IOException("SHA-256 not available", e);
+        }
+
+        JsonArray fileArray = new JsonArray();
         try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zipPath.toFile()))) {
             byte[] buffer = new byte[8192];
-            MessageDigest sha256;
-            try {
-                sha256 = MessageDigest.getInstance("SHA-256");
-            } catch (NoSuchAlgorithmException e) {
-                throw new IOException("SHA-256 not available", e);
-            }
-            JsonArray fileArray = new JsonArray();
-
-            for (Path file : files) {
-                String entryName = baseDir.relativize(file).toString();
+            for (Path file : payloads) {
+                String entryName = file.getFileName().toString();
                 zos.putNextEntry(new ZipEntry(entryName));
                 sha256.reset();
                 try (FileInputStream fis = new FileInputStream(file.toFile())) {
@@ -183,25 +179,30 @@ public final class DbExportUtil {
                 fileArray.add(fileObj);
             }
 
-            JsonObject meta = new JsonObject();
-            meta.addProperty("exportTime", ZonedDateTime.now()
-                    .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
-            meta.addProperty("databaseName", scanId);
-            meta.addProperty("scannerId", analyzerId.toString());
-            if (databaseType != null) {
-                meta.addProperty("databaseType", databaseType.toString());
-            }
-            if (mainFileName != null) {
-                meta.addProperty("mainFile", mainFileName);
-            }
-            meta.add("files", fileArray);
+            JsonObject meta = readPackageMetadata(pkg);
+            JsonObject export = new JsonObject();
+            export.addProperty("time", ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+            export.add("files", fileArray);
+            meta.add("export", export);
 
-            byte[] metaBytes = new GsonBuilder().setPrettyPrinting().create()
+            byte[] metaBytes = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create()
                     .toJson(meta).getBytes(StandardCharsets.UTF_8);
-            zos.putNextEntry(new ZipEntry("metadata.json"));
+            zos.putNextEntry(new ZipEntry(DbPackage.METADATA_FILE));
             zos.write(metaBytes);
             zos.closeEntry();
         }
+    }
+
+    /** 原样读出包内的 metadata.json，作为导出元数据的基底。 */
+    private static JsonObject readPackageMetadata(DbPackage pkg) throws IOException {
+        Path metaFile = pkg.getDir().resolve(DbPackage.METADATA_FILE);
+        try {
+            JsonElement parsed = JsonParser.parseString(Files.readString(metaFile, StandardCharsets.UTF_8));
+            if (parsed.isJsonObject()) return parsed.getAsJsonObject();
+        } catch (IOException | RuntimeException e) {
+            throw new IOException("Failed to read package metadata: " + metaFile, e);
+        }
+        throw new IOException("Malformed package metadata: " + metaFile);
     }
 
     /** 字节数组转十六进制字符串（完整）。 */
