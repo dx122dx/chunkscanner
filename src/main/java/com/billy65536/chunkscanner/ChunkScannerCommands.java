@@ -4,6 +4,7 @@ import com.billy65536.chunkscanner.api.DatabaseApi;
 import com.billy65536.chunkscanner.components.analyzer.QShopChatListener;
 import com.billy65536.chunkscanner.components.analyzer.QShopDbAdapter;
 import com.billy65536.chunkscanner.components.view_provider.QShopFilter;
+import com.billy65536.chunkscanner.components.view_provider.QShopFilterConfig;
 import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.ConfigLoader;
 import com.billy65536.chunkscanner.config.TaskConfig;
@@ -21,6 +22,7 @@ import com.billy65536.chunkscanner.screen.ChunkScannerScreen;
 import com.billy65536.chunkscanner.screen.DatabaseScreen;
 
 import com.billy65536.infrastructure.core.cli.CliCompletion;
+import com.billy65536.infrastructure.core.reflect.FlatConfigs;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
@@ -104,14 +106,10 @@ public class ChunkScannerCommands {
      * 配合 {@link TaskConfig#KNOWN_KEYS} 提供键名候选，从源头杜绝 {@code rivist} 之类的拼写错误。
      */
     private static final SuggestionProvider<FabricClientCommandSource> TASK_CONFIG_SUGGESTIONS =
-            CliCompletion.builder()
-                    .separators("")            // 配置键为扁平键（无 . : / 层级）
-                    .assignment(true)          // key=value 形式，选中键后补 '=' 并提示取值
-                    .multiple(true)            // 多个 key=value 以空格分隔
-                    .keySource(ctx -> TaskConfig.KNOWN_KEYS)
-                    .valueProvider((ctx, key) -> taskConfigDefaultValues(key))
-                    .build();
+            CliCompletion.forFlatConfig(TaskConfig.class, (ctx, key) -> taskConfigDefaultValues(key));
 
+    private static final SuggestionProvider<FabricClientCommandSource> QSHOP_FILTER_SUGGESTIONS =
+            CliCompletion.forFlatConfig(QShopFilterConfig.class);
     // ==================== 命令构建 ====================
 
     public com.mojang.brigadier.builder.LiteralArgumentBuilder<FabricClientCommandSource> buildCommands(String name) {
@@ -277,6 +275,7 @@ public class ChunkScannerCommands {
                         .suggests(DB_FILE_ID_SUGGESTIONS)
                         .then(ClientCommandManager.argument("dst", StringArgumentType.string())
                                 .then(ClientCommandManager.argument("filter", StringArgumentType.greedyString())
+                                        .suggests(QSHOP_FILTER_SUGGESTIONS)
                                         .executes(ctx -> {
                                             filterCopyDb(ctx.getSource().getClient(),
                                                     StringArgumentType.getString(ctx, "src"),
@@ -485,7 +484,7 @@ public class ChunkScannerCommands {
     /** 复制数据库 → 打开副本 → 按过滤条件原地删除不匹配记录 → 关闭。 */
     private void filterCopyDb(MinecraftClient client, String srcScanId,
                               String dstScanId, String filterArgs) {
-        QShopFilter filter = parseFilterArgs(filterArgs);
+        QShopFilter filter = new QShopFilter(FlatConfigs.createFrom(filterArgs, QShopFilterConfig.class));
         if (filter == null) {
             sendMsg(client, Text.translatable("chunkscanner.msg.db_filtercopy_bad_filter",
                     filterArgs).formatted(Formatting.RED));
@@ -514,59 +513,6 @@ public class ChunkScannerCommands {
             sendMsg(client, Text.translatable("chunkscanner.msg.db_copy_failed",
                     e.getMessage()).formatted(Formatting.RED));
         }
-    }
-
-    /**
-     * 将 {@code key=value} 格式的过滤参数字符串解析为 {@link QShopFilter}。
-     * 支持的键：mode(sell/buy/all)、name、owner、minPrice、maxPrice、minQty、maxQty。
-     * 任一参数非法或出现未知键时返回 null。
-     */
-    private static QShopFilter parseFilterArgs(String filterArgs) {
-        if (filterArgs == null || filterArgs.isBlank()) return null;
-        QShopFilter filter = new QShopFilter();
-        String[] parts = filterArgs.split(" ");
-        for (String part : parts) {
-            int eq = part.indexOf('=');
-            if (eq <= 0 || eq >= part.length() - 1) return null;
-            String key = part.substring(0, eq).trim();
-            String value = part.substring(eq + 1).trim();
-            try {
-                switch (key) {
-                    case "mode":
-                        switch (value.toLowerCase()) {
-                            case "sell" -> filter.setModeFilter(1);
-                            case "buy"  -> filter.setModeFilter(2);
-                            case "all"  -> filter.setModeFilter(0);
-                            default -> { return null; }
-                        }
-                        break;
-                    case "name":
-                        filter.setItemFilter(value);
-                        break;
-                    case "owner":
-                        filter.setOwnerFilter(value);
-                        break;
-                    case "minPrice":
-                        filter.setPriceMinFilter(Integer.valueOf(value));
-                        break;
-                    case "maxPrice":
-                        filter.setPriceMaxFilter(Integer.valueOf(value));
-                        break;
-                    case "minQty":
-                        filter.setQtyMinFilter(Integer.valueOf(value));
-                        break;
-                    case "maxQty":
-                        filter.setQtyMaxFilter(Integer.valueOf(value));
-                        break;
-                    default:
-                        return null;
-                }
-            } catch (NumberFormatException e) {
-                return null;
-            }
-        }
-        filter.invalidateCache();
-        return filter;
     }
 
     /**

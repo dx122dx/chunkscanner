@@ -38,7 +38,7 @@ public final class QShopFilter {
     // ==================== 筛选状态 ====================
 
     /** 底层扁平筛选配置（每个维度为 FilterValue）。 */
-    private final QShopFilterConfig cfg = new QShopFilterConfig();
+    private final QShopFilterConfig cfg;
 
     private int cacheVersion = 0;
 
@@ -47,6 +47,14 @@ public final class QShopFilter {
     private Pattern compiledOwnerPattern = null;
     private Pattern compiledItemPattern = null;
     private Pattern compiledItemIdPattern = null;
+
+    // ==================== 构造函数 ====================
+
+    public QShopFilter() { this(null); }
+
+    public QShopFilter (QShopFilterConfig cfg) {
+        this.cfg = cfg == null? new QShopFilterConfig() : cfg;
+    }
 
     // ==================== 筛选字段存取（桥接 cfg） ====================
 
