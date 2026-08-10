@@ -485,11 +485,6 @@ public class ChunkScannerCommands {
     private void filterCopyDb(MinecraftClient client, String srcScanId,
                               String dstScanId, String filterArgs) {
         QShopFilter filter = new QShopFilter(FlatConfigs.createFrom(filterArgs, QShopFilterConfig.class));
-        if (filter == null) {
-            sendMsg(client, Text.translatable("chunkscanner.msg.db_filtercopy_bad_filter",
-                    filterArgs).formatted(Formatting.RED));
-            return;
-        }
 
         try {
             // Step 1: 全量复制

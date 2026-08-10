@@ -5,6 +5,8 @@ import com.billy65536.chunkscanner.config.TaskConfig;
 import com.billy65536.chunkscanner.core.IChunkDb;
 import com.billy65536.chunkscanner.core.IDbAdaptor;
 import com.billy65536.chunkscanner.core.AnalyzerRegistry;
+import com.billy65536.infrastructure.core.archive.ArchiveIO;
+import com.billy65536.infrastructure.core.io.AtomicFiles;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
@@ -17,11 +19,9 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -486,10 +486,7 @@ public final class DbPackage implements AutoCloseable {
 
         Files.createDirectories(dir);
         byte[] payload = (GSON.toJson(root) + System.lineSeparator()).getBytes(StandardCharsets.UTF_8);
-        Path tmp = dir.resolve(METADATA_FILE + ".tmp");
-        Files.write(tmp, payload, StandardOpenOption.CREATE,
-                StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
-        moveAtomically(tmp, dir.resolve(METADATA_FILE));
+        AtomicFiles.writeBytes(dir.resolve(METADATA_FILE), payload);
     }
 
     private void saveMetadataQuietly() {
@@ -600,21 +597,11 @@ public final class DbPackage implements AutoCloseable {
     }
 
     private static void moveAtomically(Path from, Path to) throws IOException {
-        try {
-            Files.move(from, to, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException e) {
-            // 部分文件系统（如某些网络盘）不支持原子改名，退化为普通替换
-            Files.move(from, to, StandardCopyOption.REPLACE_EXISTING);
-        }
+        AtomicFiles.moveAtomically(from, to);
     }
 
     static void deleteRecursively(Path target) throws IOException {
-        if (!Files.exists(target)) return;
-        try (var stream = Files.walk(target)) {
-            for (Path p : stream.sorted(java.util.Comparator.reverseOrder()).toList()) {
-                Files.deleteIfExists(p);
-            }
-        }
+        ArchiveIO.deleteRecursively(target);
     }
 
     private static long sizeOf(Path file) {

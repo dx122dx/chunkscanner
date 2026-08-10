@@ -16,7 +16,7 @@ import com.billy65536.chunkscanner.core.db.DbExportUtil;
 import com.billy65536.chunkscanner.core.db.DbImage;
 import com.billy65536.chunkscanner.core.db.DbManager;
 import com.billy65536.chunkscanner.core.db.DbPackage;
-import com.billy65536.chunkscanner.core.db.DbValidationResult;
+import com.billy65536.infrastructure.core.archive.ValidationResult;
 import com.billy65536.chunkscanner.screen.DatabaseScreen;
 
 /**
@@ -252,10 +252,10 @@ public final class DatabaseApi {
      * <p>检查 analyzerId / database.type 是否已注册、主文件是否存在、
      * 各文件 SHA-256 是否匹配。</p>
      *
-     * @return 校验结果；{@link DbValidationResult#valid()} 为 true 表示可安全加载
+     * @return 校验结果；{@link ValidationResult#valid()} 为 true 表示可安全加载
      * @throws IOException 如果镜像无法打开
      */
-    public static DbValidationResult validateImage(Path zipPath) throws IOException {
+    public static ValidationResult validateImage(Path zipPath) throws IOException {
         return DbImage.open(zipPath).validate();
     }
 

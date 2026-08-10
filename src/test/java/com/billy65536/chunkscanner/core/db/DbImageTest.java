@@ -3,6 +3,7 @@ package com.billy65536.chunkscanner.core.db;
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 import com.billy65536.chunkscanner.core.IChunkDb;
+import com.billy65536.infrastructure.core.archive.ValidationResult;
 import net.minecraft.util.Identifier;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -15,6 +16,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -25,9 +27,10 @@ import static org.junit.jupiter.api.Assertions.*;
  * 并提供 {@code validate()} / {@code load()}。本测试：</p>
  * <ul>
  *   <li>{@code Meta.parseIdentifier} 兼容命名空间解析（契约点）；</li>
- *   <li>{@code Meta.parse} 解析新 metadata schema（scanId/analyzerId/database.type/file/export.files）；</li>
+ *   <li>{@code Meta.parse} 解析 metadata schema（scanId/analyzerId/database.type/file/export.files）；</li>
  *   <li>{@code open} 缺失 metadata 的 ZIP 应抛 IOException；</li>
- *   <li>{@code validate} 对合法导出包应通过（依赖已注册的 sign 分析器）。</li>
+ *   <li>{@code open} 的双模探测：新格式读独立框架元数据，旧格式回落到内嵌 export 段；</li>
+ *   <li>{@code validate} 对新旧两种合法导出包均应通过（依赖已注册的 sign 分析器）。</li>
  * </ul>
  */
 @DisplayName("DbImage")
@@ -182,11 +185,60 @@ class DbImageTest {
             assertEquals("scan-1", image.meta().scanId());
             assertEquals(new Identifier("chunkscanner", "sign"), image.meta().analyzerId());
 
+            // 新格式：归档时间与文件摘要来自框架元数据，而非包内 metadata.json
+            assertNotNull(image.meta().exportTime(), "新格式应从框架元数据取得归档时间");
+            assertTrue(image.meta().files().stream().anyMatch(f -> f.name().equals("main.bin")),
+                    "框架元数据应声明主负载文件");
+            assertEquals(List.of(), integrityErrors(image.validate()),
+                    "新格式导出包不应有归档完整性错误");
+
             // load 应还原一个可读取的 DbPackage
             DbPackage loaded = image.load(dir.resolve("loaded"), false);
             assertNotNull(loaded);
             assertEquals("scan-1", loaded.getScanId());
             loaded.close();
+        }
+
+        @Test
+        @DisplayName("旧格式包（无 ZIP 注释、export 段内嵌）可回落解析并通过校验")
+        void legacyImage_shouldFallBackToEmbeddedExport(@TempDir Path dir) throws Exception {
+            byte[] payload = "legacy payload".getBytes(StandardCharsets.UTF_8);
+            String payloadSha = java.util.HexFormat.of().formatHex(
+                    java.security.MessageDigest.getInstance("SHA-256").digest(payload));
+
+            // 历史导出包：无 ZIP 注释、无独立框架元数据，摘要清单内嵌于 metadata.json 的 export 段，
+            // 且该清单不含 metadata.json 自身
+            String meta = "{"
+                    + "\"scanId\":\"legacy-1\","
+                    + "\"analyzerId\":\"chunkscanner:sign\","
+                    + "\"database\":{\"type\":\"chunkscanner:binary\",\"file\":\"main.bin\"},"
+                    + "\"export\":{\"time\":\"2026-08-09T12:00:00Z\","
+                    + "\"files\":[{\"name\":\"main.bin\",\"sha256\":\"" + payloadSha + "\"}]}"
+                    + "}";
+
+            Path zip = dir.resolve("legacy.zip");
+            try (java.util.zip.ZipOutputStream zos =
+                         new java.util.zip.ZipOutputStream(Files.newOutputStream(zip))) {
+                zos.putNextEntry(new java.util.zip.ZipEntry("metadata.json"));
+                zos.write(meta.getBytes(StandardCharsets.UTF_8));
+                zos.closeEntry();
+                zos.putNextEntry(new java.util.zip.ZipEntry("main.bin"));
+                zos.write(payload);
+                zos.closeEntry();
+            }
+
+            DbImage image = DbImage.open(zip);
+            assertEquals("legacy-1", image.meta().scanId());
+            assertEquals("2026-08-09T12:00:00Z", image.meta().exportTime(),
+                    "旧格式的归档时间应回落自 export.time");
+            assertEquals(1, image.meta().files().size());
+            assertEquals(payloadSha, image.meta().files().get(0).sha256());
+
+            ValidationResult result = image.validate();
+            assertEquals(List.of(), integrityErrors(result),
+                    "旧格式包不应有归档完整性错误");
+            assertTrue(result.warnings().stream().anyMatch(w -> w.contains("metadata.json")),
+                    "旧清单未声明 metadata.json，应告警而非报错: " + result.warnings());
         }
     }
 
@@ -194,5 +246,17 @@ class DbImageTest {
 
     private static InputStream stringInputStream(String s) {
         return new java.io.ByteArrayInputStream(s.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * 只保留归档完整性错误。
+     *
+     * <p>单元测试不装配 {@code ChunkScannerMod}，分析器注册表为空，
+     * 业务字段校验必然报 {@code Field '...'} 类错误，与归档层无关，故滤除。</p>
+     */
+    private static List<String> integrityErrors(ValidationResult result) {
+        return result.errors().stream()
+                .filter(e -> !e.startsWith("Field '"))
+                .toList();
     }
 }
