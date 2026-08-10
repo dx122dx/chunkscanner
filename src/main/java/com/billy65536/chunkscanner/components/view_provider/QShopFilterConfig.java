@@ -1,6 +1,6 @@
 package com.billy65536.chunkscanner.components.view_provider;
 
-import com.billy65536.infrastructure.core.reflect.FlatConfigs;
+import com.billy65536.infrastructure.util.reflect.FlatConfigs;
 
 import java.util.List;
 

@@ -1,6 +1,6 @@
 package com.billy65536.chunkscanner.components.view_provider;
 
-import com.billy65536.infrastructure.core.reflect.FlatConfigs;
+import com.billy65536.infrastructure.util.reflect.FlatConfigs;
 
 /**
  * 统一筛选值包装：持有一个筛选文本值与其匹配模式（type）。

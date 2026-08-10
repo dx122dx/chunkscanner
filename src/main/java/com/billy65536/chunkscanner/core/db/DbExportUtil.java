@@ -2,7 +2,7 @@ package com.billy65536.chunkscanner.core.db;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.IChunkDb;
-import com.billy65536.infrastructure.core.archive.ArchiveWriter;
+import com.billy65536.infrastructure.util.archive.ArchiveWriter;
 import com.google.gson.JsonObject;
 
 import net.minecraft.util.Identifier;

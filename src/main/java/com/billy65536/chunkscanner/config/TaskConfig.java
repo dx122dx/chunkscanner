@@ -1,7 +1,7 @@
 package com.billy65536.chunkscanner.config;
 
 import com.billy65536.chunkscanner.ChunkScannerMod;
-import com.billy65536.infrastructure.core.reflect.FlatConfigs;
+import com.billy65536.infrastructure.util.reflect.FlatConfigs;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;

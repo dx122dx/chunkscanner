@@ -21,8 +21,8 @@ import com.billy65536.chunkscanner.gui.GuiUtil;
 import com.billy65536.chunkscanner.screen.ChunkScannerScreen;
 import com.billy65536.chunkscanner.screen.DatabaseScreen;
 
-import com.billy65536.infrastructure.core.cli.CliCompletion;
-import com.billy65536.infrastructure.core.reflect.FlatConfigs;
+import com.billy65536.infrastructure.util.cli.CliCompletion;
+import com.billy65536.infrastructure.util.reflect.FlatConfigs;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;

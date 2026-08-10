@@ -3,7 +3,7 @@ package com.billy65536.chunkscanner.core.db;
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.components.db.BinaryChunkDb;
 import com.billy65536.chunkscanner.core.IChunkDb;
-import com.billy65536.infrastructure.core.archive.ValidationResult;
+import com.billy65536.infrastructure.util.archive.ValidationResult;
 import net.minecraft.util.Identifier;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;

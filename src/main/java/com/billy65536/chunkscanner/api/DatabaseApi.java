@@ -16,7 +16,7 @@ import com.billy65536.chunkscanner.core.db.DbExportUtil;
 import com.billy65536.chunkscanner.core.db.DbImage;
 import com.billy65536.chunkscanner.core.db.DbManager;
 import com.billy65536.chunkscanner.core.db.DbPackage;
-import com.billy65536.infrastructure.core.archive.ValidationResult;
+import com.billy65536.infrastructure.util.archive.ValidationResult;
 import com.billy65536.chunkscanner.screen.DatabaseScreen;
 
 /**
