@@ -512,8 +512,16 @@ public class ChunkScannerCommands {
 
     /**
      * 通用数据库导出流程：验证 → 刷写 → 打开数据库包 → 执行导出 → 反馈。
+     *
+     * <p>用户自定义文件名统一经 {@link DbExportUtil#sanitizeExportFileName}
+     * 净化（剥离目录成分阻断路径穿越、过滤非法字符、大小写不敏感补全
+     * {@code ext} 后缀）后再解析到 export 目录；净化不可用时回退默认文件名。</p>
+     *
+     * @param scanId         扫描 ID
+     * @param customFileName 用户自定义文件名，可为 {@code null}/空白
+     * @param ext            期望扩展名（不含点号），raw→"zip"、tsv→"tsv"
      */
-    private void exportDb(String scanId, String customFileName,
+    private void exportDb(String scanId, String customFileName, String ext,
                           MinecraftClient client,
                           ExportAction action,
                           String successKey, String logLabel) {
@@ -538,7 +546,10 @@ public class ChunkScannerCommands {
         try (DbPackage pkg = DbPackage.open(dir)) {
             Path outFile = null;
             if (customFileName != null && !customFileName.isBlank()) {
-                outFile = DbExportUtil.getExportDir().resolve(customFileName);
+                String cleaned = DbExportUtil.sanitizeExportFileName(customFileName, ext);
+                if (cleaned != null) {
+                    outFile = DbExportUtil.ensureExportDir().resolve(cleaned);
+                }
             }
             Path exported = action.export(pkg, outFile);
             sendMsg(client, Text.translatable(successKey,
@@ -553,7 +564,7 @@ public class ChunkScannerCommands {
     /** 导出数据库为 ZIP（raw）格式，包含负载文件与 metadata.json。 */
     private void exportDbRaw(String scanId, String customFileName,
                              MinecraftClient client) {
-        exportDb(scanId, customFileName, client,
+        exportDb(scanId, customFileName, "zip", client,
                 DbExportUtil::exportRawZip,
                 "chunkscanner.msg.db_export_raw_success", "raw");
     }
@@ -561,7 +572,7 @@ public class ChunkScannerCommands {
     /** 导出数据库为 TSV 格式（hex key + tab + hex value）。 */
     private void exportDbTsv(String scanId, String customFileName,
                              MinecraftClient client) {
-        exportDb(scanId, customFileName, client,
+        exportDb(scanId, customFileName, "tsv", client,
                 (pkg, outFile) -> DbExportUtil.exportTsv(pkg, outFile),
                 "chunkscanner.msg.db_export_tsv_success", "tsv");
     }

@@ -401,31 +401,25 @@ public class DatabaseScreen extends Screen {
     private void exportAsTsv() {
         if (openedPackage == null) return;
         final DbPackage pkg = openedPackage;
-        Path dir = ChunkScannerMod.getDbRoot();
 
         // 在后台线程通过 EDT 调度 JFileChooser，避免 AWT 模态对话框阻塞 GL 渲染线程
         new Thread(() -> {
             try {
                 final JFileChooser chooser = new JFileChooser();
                 chooser.setDialogTitle(Text.translatable("chunkscanner.gui.database.export_tsv").getString());
-                chooser.setSelectedFile(new File(pkg.getScanId() + "_export.tsv"));
+                chooser.setSelectedFile(new File(DbExportUtil.buildDefaultFileName(
+                        pkg.getAnalyzerId(), pkg.getScanId(), "tsv")));
                 chooser.setFileFilter(new FileNameExtensionFilter("TSV Files (*.tsv)", "tsv"));
 
-                // 设置默认目录
-                if (Files.exists(dir)) {
-                    chooser.setCurrentDirectory(dir.toFile());
-                }
+                // 设置默认目录：与 ZIP 导出统一为 export 目录，并确保其存在，避免首次回落主目录
+                chooser.setCurrentDirectory(DbExportUtil.ensureExportDir().toFile());
 
                 final int[] returnVal = new int[1];
                 javax.swing.SwingUtilities.invokeAndWait(() -> {
                     returnVal[0] = chooser.showSaveDialog(null);
                 });
                 if (returnVal[0] == JFileChooser.APPROVE_OPTION) {
-                    Path outPath = chooser.getSelectedFile().toPath();
-                    // 确保扩展名为 .tsv
-                    if (!outPath.getFileName().toString().contains(".")) {
-                        outPath = outPath.resolveSibling(outPath.getFileName() + ".tsv");
-                    }
+                    Path outPath = resolveSavePath(chooser.getSelectedFile().toPath(), "tsv");
                     try {
                         pkg.flush(); // 确保数据最新
                         Files.createDirectories(outPath.getParent());
@@ -453,20 +447,15 @@ public class DatabaseScreen extends Screen {
                         pkg.getAnalyzerId(), pkg.getScanId(), "zip")));
                 chooser.setFileFilter(new FileNameExtensionFilter("ZIP Archives (*.zip)", "zip"));
 
-                Path exportDir = DbExportUtil.getExportDir();
-                if (Files.exists(exportDir)) {
-                    chooser.setCurrentDirectory(exportDir.toFile());
-                }
+                // 设置默认目录：确保 export 目录存在，避免首次使用回落系统主目录
+                chooser.setCurrentDirectory(DbExportUtil.ensureExportDir().toFile());
 
                 final int[] returnVal = new int[1];
                 javax.swing.SwingUtilities.invokeAndWait(() -> {
                     returnVal[0] = chooser.showSaveDialog(null);
                 });
                 if (returnVal[0] == JFileChooser.APPROVE_OPTION) {
-                    Path outPath = chooser.getSelectedFile().toPath();
-                    if (!outPath.getFileName().toString().contains(".")) {
-                        outPath = outPath.resolveSibling(outPath.getFileName() + ".zip");
-                    }
+                    Path outPath = resolveSavePath(chooser.getSelectedFile().toPath(), "zip");
                     try {
                         Files.createDirectories(outPath.getParent());
                         DbExportUtil.exportRawZip(pkg, outPath);
@@ -479,6 +468,28 @@ public class DatabaseScreen extends Screen {
                 ChunkScannerMod.LOGGER.warn("Export dialog failed: {}", e.getMessage());
             }
         }, "ChunkScanner-FileSave").start();
+    }
+
+    /**
+     * 对用户在保存对话框中选定的路径做文件名净化与后缀补充。
+     *
+     * <p>GUI 保存对话框允许用户导航到任意目录，故此处仅清洗文件名段：经
+     * {@link DbExportUtil#sanitizeExportFileName} 剥离目录成分、过滤非法字符并
+     * 补充扩展名后，用 {@link Path#resolveSibling} 保留用户所选父目录。</p>
+     *
+     * @param selected 用户在对话框中选定的完整路径
+     * @param ext      期望扩展名（不含点号）
+     * @return 净化后的保存路径（父目录不变，文件名已清洗并补全后缀）
+     */
+    private Path resolveSavePath(Path selected, String ext) {
+        Path fileName = selected.getFileName();
+        String cleaned = DbExportUtil.sanitizeExportFileName(
+                fileName == null ? null : fileName.toString(), ext);
+        if (cleaned == null) {
+            // 理论不可达（JFileChooser 已保证非空文件名），兜底避免空路径
+            cleaned = "export." + ext;
+        }
+        return selected.resolveSibling(cleaned);
     }
 
     private void exportToFile(Path path) throws IOException {
