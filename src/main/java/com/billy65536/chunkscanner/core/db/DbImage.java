@@ -46,6 +46,9 @@ public final class DbImage extends ArchiveImage {
 
     private static final Gson GSON = new Gson();
 
+    /** 归档业务类型标识（写入归档元数据 business.type，见 {@link DbExportUtil}）。 */
+    public static final String ARCHIVE_TYPE = "chunkscanner:db";
+
     private final Meta meta;
 
     private DbImage(Path zipPath, ArchiveMetadata archiveMeta, Meta meta) {
@@ -125,10 +128,18 @@ public final class DbImage extends ArchiveImage {
                 }
             }
         }
-        return new ArchiveMetadata(ArchiveMetadata.FORMAT_VERSION, time, files, null);
+        // 旧包无框架 business 段，回落视图补写归档类型，使框架级 type 校验通过
+        JsonObject legacyBusiness = new JsonObject();
+        legacyBusiness.addProperty(ArchiveMetadata.BUSINESS_TYPE_KEY, ARCHIVE_TYPE);
+        return new ArchiveMetadata(ArchiveMetadata.FORMAT_VERSION, time, files, legacyBusiness);
     }
 
     // ==================== 校验钩子 ====================
+
+    @Override
+    protected String expectedArchiveType() {
+        return ARCHIVE_TYPE;
+    }
 
     @Override
     protected void validateBusinessFields(List<String> errors, List<String> warnings) {

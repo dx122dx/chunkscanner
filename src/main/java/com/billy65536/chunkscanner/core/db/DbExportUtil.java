@@ -224,12 +224,23 @@ public final class DbExportUtil {
         }
     }
 
-    /** 用归档框架打包负载，并写入独立元数据（含归档时间与各文件 SHA-256）。 */
+    /**
+     * 用归档框架打包负载，并写入独立元数据（含归档时间与各文件 SHA-256）。
+     *
+     * <p>business 段统一使用小写驼峰字段（{@code scanId}/{@code analyzerId}/
+     * {@code adaptorId}/{@code databaseType}/{@code databaseFile}），
+     * 归档类型 {@code chunkscanner:db} 由 {@link ArchiveWriter#finish(String, JsonObject)}
+     * 强制写入。</p>
+     */
     private static void zipPackage(DbPackage pkg, List<Path> payloads, Path zipPath) throws IOException {
         JsonObject business = new JsonObject();
-        business.addProperty("type", "chunkscanner:db-image");
         business.addProperty("scanId", pkg.getScanId());
         business.addProperty("analyzerId", pkg.getAnalyzerId().toString());
+        business.addProperty("adaptorId", pkg.getAdaptorId().toString());
+        if (pkg.getDbType() != null) {
+            business.addProperty("databaseType", pkg.getDbType().toString());
+        }
+        business.addProperty("databaseFile", DbPackage.MAIN_ID + ".bin");
 
         try (ArchiveWriter writer = new ArchiveWriter(zipPath)) {
             for (Path file : payloads) {
@@ -241,7 +252,7 @@ public final class DbExportUtil {
                     writer.addFile(entryName, file);
                 }
             }
-            writer.finish(business);
+            writer.finish(DbImage.ARCHIVE_TYPE, business);
         }
     }
 
