@@ -1,8 +1,9 @@
 name: Publish
 
 # 推送 git tag（形如 v1.1.0 / v1.1.0-rc.1 / v1.1.0-beta.1）时自动构建并发布到
-# GitHub Release 与 Modrinth。版本号以 tag 为唯一真相源，CI 在发布时自动将 tag
-# （去掉 v 前缀）注入 gradle.properties 的 mod_version 后再构建。
+# GitHub Release 与 Modrinth。版本号以 tag 为唯一真相源，CI 在
+# 发布时自动将 tag（去掉 v 前缀）注入 gradle.properties 的 mod_version 后再构建。
+# 依赖的 infrastructure 已从 Maven Central SNAPSHOT 解析（与 build.yml 一致），无需本地构建。
 on:
   push:
     tags:
@@ -50,23 +51,7 @@ jobs:
       - name: Apply version to gradle.properties
         run: sed -i "s/^mod_version=.*/mod_version=${{ steps.meta.outputs.version }}/" gradle.properties
 
-      # billy-inf 为本地强依赖（未发布到 Maven）。先 checkout 并构建，供 chunkscanner 解析。
-      - name: Checkout mod-infrastructure
-        uses: actions/checkout@v4
-        with:
-          repository: dx122dx/mod-infrastructure
-          path: mod-infrastructure
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build billy-inf
-        working-directory: mod-infrastructure
-        run: |
-          chmod +x ./gradlew
-          ./gradlew build --no-daemon
-
       - name: Build with Gradle
-        env:
-          BILLY_INF_DIR: mod-infrastructure
         run: ./gradlew build --no-daemon
 
       - name: Publish to Modrinth & GitHub Release
