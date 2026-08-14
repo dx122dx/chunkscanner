@@ -2,6 +2,7 @@ package com.billy65536.chunkscanner;
 
 import com.billy65536.chunkscanner.api.DatabaseApi;
 import com.billy65536.chunkscanner.components.analyzer.QShopChatListener;
+import com.billy65536.chunkscanner.components.analyzer.QShopContract;
 import com.billy65536.chunkscanner.components.analyzer.QShopDbAdapter;
 import com.billy65536.chunkscanner.components.view_provider.QShopFilter;
 import com.billy65536.chunkscanner.components.view_provider.QShopFilterConfig;
@@ -29,6 +30,7 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.command.argument.IdentifierArgumentType;
+import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
@@ -481,6 +483,33 @@ public class ChunkScannerCommands {
         }
     }
 
+    /**
+     * 生成 QShop 数据库健康度统计文本（出售/收购分布 + itemId 完整性）。
+     *
+     * <p>qab 的 plan 仅接受「出售模式且带物品注册 ID」的记录；此统计用于快速定位
+     * 副本 plan 全失败类问题（如过滤/重扫后出售记录缺失 itemId）。非 QShop 库返回 null。</p>
+     */
+    private static MutableText qshopStatsText(DbPackage pkg) {
+        try {
+            QShopDbAdapter ad = pkg.getAdaptor(QShopDbAdapter.class);
+            int sell = 0, sellWithId = 0, buy = 0, buyWithId = 0;
+            for (QShopDbAdapter.Record r : ad.getAllRecords()) {
+                boolean hasId = r.itemId() != null && !r.itemId().isEmpty();
+                if (r.mode() == QShopContract.MODE_SELL) {
+                    sell++;
+                    if (hasId) sellWithId++;
+                } else {
+                    buy++;
+                    if (hasId) buyWithId++;
+                }
+            }
+            return Text.translatable("chunkscanner.msg.db_stats_qshop",
+                    sell, sellWithId, buy, buyWithId);
+        } catch (Exception e) {
+            return null; // 非 QShop 库（raw/tsv 等），静默跳过
+        }
+    }
+
     /** 复制数据库 → 打开副本 → 按过滤条件原地删除不匹配记录 → 关闭。 */
     private void filterCopyDb(MinecraftClient client, String srcScanId,
                               String dstScanId, String filterArgs) {
@@ -499,11 +528,13 @@ public class ChunkScannerCommands {
             }
             int removed;
             try (DbPackage pkg = dstPkg) {
-                removed = pkg.getAdaptor(QShopDbAdapter.class).filterInPlace(filter);
+                QShopDbAdapter ad = pkg.getAdaptor(QShopDbAdapter.class);
+                removed = ad.filterInPlace(filter);
+                sendMsg(client, Text.translatable("chunkscanner.msg.db_filtercopy_success",
+                        srcScanId, dstScanId, removed).formatted(Formatting.GREEN));
+                MutableText stats = qshopStatsText(pkg);
+                if (stats != null) sendMsg(client, stats.formatted(Formatting.GRAY));
             }
-
-            sendMsg(client, Text.translatable("chunkscanner.msg.db_filtercopy_success",
-                    srcScanId, dstScanId, removed).formatted(Formatting.GREEN));
         } catch (Exception e) {
             sendMsg(client, Text.translatable("chunkscanner.msg.db_copy_failed",
                     e.getMessage()).formatted(Formatting.RED));
@@ -554,6 +585,9 @@ public class ChunkScannerCommands {
             Path exported = action.export(pkg, outFile);
             sendMsg(client, Text.translatable(successKey,
                     exported.getFileName().toString()).formatted(Formatting.GREEN));
+            // QShop 健康度统计（反映导出内容，与 qab 实际加载的数据一致）
+            MutableText stats = qshopStatsText(pkg);
+            if (stats != null) sendMsg(client, stats.formatted(Formatting.GRAY));
         } catch (Exception e) {
             ChunkScannerMod.LOGGER.warn("Failed to export {} database: {}", logLabel, e.getMessage());
             sendMsg(client, Text.translatable("chunkscanner.msg.db_export_failed",

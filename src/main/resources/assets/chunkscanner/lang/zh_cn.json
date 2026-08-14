@@ -251,5 +251,6 @@
     "chunkscanner.msg.db_copied": "数据库已复制：%s → %s",
     "chunkscanner.msg.db_copy_failed": "数据库复制失败：%s",
     "chunkscanner.msg.db_filtercopy_bad_filter": "过滤参数无效：%s",
-    "chunkscanner.msg.db_filtercopy_success": "数据库过滤复制完成：%s → %s，已移除 %d 条记录"
+    "chunkscanner.msg.db_filtercopy_success": "数据库过滤复制完成：%s → %s，已移除 %d 条记录",
+    "chunkscanner.msg.db_stats_qshop": "QShop 统计：出售 %d（含物品ID %d）/ 收购 %d（含物品ID %d）"
 }

@@ -54,6 +54,9 @@ public final class QShopFilter {
 
     public QShopFilter (QShopFilterConfig cfg) {
         this.cfg = cfg == null? new QShopFilterConfig() : cfg;
+        // 预编译正则 Pattern：否则 PATTERN_REGEX 匹配恒为 false，
+        // 命令行 /cs filtercopy name=@xxx 等正则条件会误删全部记录。
+        invalidateCache();
     }
 
     // ==================== 筛选字段存取（桥接 cfg） ====================

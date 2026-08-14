@@ -250,5 +250,6 @@
     "chunkscanner.msg.db_copied": "Database copied: %s -> %s",
     "chunkscanner.msg.db_copy_failed": "Database copy failed: %s",
     "chunkscanner.msg.db_filtercopy_bad_filter": "Invalid filter arguments: %s",
-    "chunkscanner.msg.db_filtercopy_success": "Database filter-copied: %s -> %s, removed %d records"
+    "chunkscanner.msg.db_filtercopy_success": "Database filter-copied: %s -> %s, removed %d records",
+    "chunkscanner.msg.db_stats_qshop": "QShop stats: sell %d (with item ID %d) / buy %d (with item ID %d)"
 }
