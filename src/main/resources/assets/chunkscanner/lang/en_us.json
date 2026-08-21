@@ -75,7 +75,7 @@
     "chunkscanner.gui.database.export_db": "Export DB",
     "chunkscanner.gui.database.no_files": "No database files found.",
     "chunkscanner.gui.database.kv_title": "Database: %s",
-    "chunkscanner.gui.database.records": "KV: %d  |  Chunk Meta: %d  |  Analyzer: %s  |  View: %s",
+    "chunkscanner.gui.database.records": "KV: %d  |  Analyzer: %s  |  View: %s",
     "chunkscanner.gui.database.no_kv": "No KV records.",
     "chunkscanner.gui.filter.tooltip": "Open filter",
     "chunkscanner.filter.qshop.title": "QShop Filter",

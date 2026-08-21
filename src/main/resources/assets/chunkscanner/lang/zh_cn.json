@@ -75,7 +75,7 @@
     "chunkscanner.gui.database.export_db": "导出数据库",
     "chunkscanner.gui.database.no_files": "未找到数据库文件。",
     "chunkscanner.gui.database.kv_title": "数据库：%s",
-    "chunkscanner.gui.database.records": "KV：%d  |  Chunk 元数据：%d  |  分析器：%s  |  视图：%s",
+    "chunkscanner.gui.database.records": "KV：%d  |  分析器：%s  |  视图：%s",
     "chunkscanner.gui.database.no_kv": "没有 KV 记录。",
     "chunkscanner.gui.filter.tooltip": "打开筛选条件",
     "chunkscanner.filter.qshop.title": "QShop 筛选",

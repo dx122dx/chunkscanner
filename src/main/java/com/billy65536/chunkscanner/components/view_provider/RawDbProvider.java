@@ -14,8 +14,10 @@ import com.billy65536.chunkscanner.core.db.DbPackage;
 import com.billy65536.chunkscanner.core.IDbViewProvider;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.gui.GuiUtil;
-import com.billy65536.chunkscanner.gui.layout.TableLayoutBuilder;
-import com.billy65536.chunkscanner.gui.layout.ILayout;
+import com.billy65536.infrastructure.core.gui.layout.ILayout;
+import com.billy65536.infrastructure.core.gui.layout.TableLayout;
+import com.billy65536.infrastructure.core.gui.layout.TableLayoutBuilder;
+import com.billy65536.infrastructure.core.gui.layout.TextCell;
 
 /**
  * 原始（Raw）数据库视图提供者。
@@ -37,23 +39,26 @@ public class RawDbProvider implements IDbViewProvider {
     @Override
     public ILayout getLayout(TextRenderer textRenderer) {
         List<IChunkDb.Entry> entries;
-        int metaCount;
         try {
             entries = ad.getAllEntries();
-            metaCount = ad.getAllChunkMetas().size();
         } catch (Exception e) {
             entries = List.of();
-            metaCount = 0;
         }
 
-        TableLayoutBuilder lb = new TableLayoutBuilder(textRenderer, metaCount, HEADERS);
+        TableLayout.ColumnSpec[] specs = {
+                TableLayout.ColumnSpec.ofWeight(1, TableLayout.ColumnSpec.Align.LEFT).elastic().floorWidth(80),
+                TableLayout.ColumnSpec.ofWeight(2, TableLayout.ColumnSpec.Align.LEFT).elastic().floorWidth(120),
+        };
+        TableLayoutBuilder lb = new TableLayoutBuilder(textRenderer, HEADERS, specs);
 
         for (IChunkDb.Entry e : entries) {
             String hexKey = GuiUtil.bytesToFullHex(e.key());
             String hexVal = GuiUtil.bytesToFullHex(e.value());
 
             lb.addRow()
-                .text(hexKey).withColor(KEY_COLOR).text(hexVal).done();
+                .cell(TextCell.of(hexKey).withColor(KEY_COLOR))
+                .text(hexVal)
+                .done();
         }
         return lb.build();
     }

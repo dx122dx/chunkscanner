@@ -13,12 +13,19 @@ import java.util.Set;
 import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.components.analyzer.QShopContract;
 import com.billy65536.chunkscanner.components.analyzer.QShopDbAdapter;
+import com.billy65536.chunkscanner.config.ChunkScannerConfig;
+import com.billy65536.chunkscanner.config.TaskConfig;
+import com.billy65536.chunkscanner.core.CoreUtil;
 import com.billy65536.chunkscanner.core.IDbViewProvider;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
 import com.billy65536.chunkscanner.core.LocatedPosition;
 import com.billy65536.chunkscanner.core.db.DbPackage;
-import com.billy65536.chunkscanner.gui.layout.TableLayoutBuilder;
-import com.billy65536.chunkscanner.gui.layout.ILayout;
+import com.billy65536.chunkscanner.core.navigation.ChunkScannerNavigation;
+import com.billy65536.chunkscanner.integration.XaeroWaypointHelper;
+import com.billy65536.infrastructure.core.gui.layout.ILayout;
+import com.billy65536.infrastructure.core.gui.layout.TableLayout;
+import com.billy65536.infrastructure.core.gui.layout.TableLayoutBuilder;
+import com.billy65536.infrastructure.core.gui.layout.TextCell;
 
 /**
  * QShop 分析器特化的 DbViewProvider。
@@ -31,6 +38,7 @@ public class QShopDbViewProvider implements IDbViewProvider {
 
     private final DbPackage pkg;
     private final QShopDbAdapter ad;
+    private final TaskConfig taskConfig;
 
     /** 缓存筛选并排序后的记录。仅渲染线程访问，无需同步。 */
     private List<QShopDbAdapter.Record> cachedFilteredSorted;
@@ -42,6 +50,7 @@ public class QShopDbViewProvider implements IDbViewProvider {
     public QShopDbViewProvider(DbPackage pkg) {
         this.pkg = pkg;
         this.ad = pkg.getAdaptor(QShopDbAdapter.class);
+        this.taskConfig = pkg.getTaskConfig();
     }
 
     // ==================== 筛选接口 ====================
@@ -71,14 +80,20 @@ public class QShopDbViewProvider implements IDbViewProvider {
     @Override
     public ILayout getLayout(TextRenderer textRenderer) {
         List<QShopDbAdapter.Record> matched = getFilteredSortedRecords();
-        int metaCount;
-        try {
-            metaCount = ad.getScannedChunkCount();
-        } catch (Exception e) {
-            metaCount = 0;
-        }
 
-        TableLayoutBuilder b = new TableLayoutBuilder(textRenderer, metaCount, HEADERS);
+        TableLayout.ColumnSpec[] specs = {
+                TableLayout.ColumnSpec.ofWeight(1, TableLayout.ColumnSpec.Align.LEFT).floorWidth(90),
+                TableLayout.ColumnSpec.ofWeight(1, TableLayout.ColumnSpec.Align.LEFT).floorWidth(60),
+                TableLayout.ColumnSpec.ofWeight(1, TableLayout.ColumnSpec.Align.LEFT).floorWidth(50),
+                TableLayout.ColumnSpec.ofWeight(1, TableLayout.ColumnSpec.Align.LEFT).floorWidth(40),
+                TableLayout.ColumnSpec.ofWeight(2, TableLayout.ColumnSpec.Align.LEFT).floorWidth(80),
+                TableLayout.ColumnSpec.ofWeight(1, TableLayout.ColumnSpec.Align.LEFT).floorWidth(50),
+                TableLayout.ColumnSpec.ofWeight(1, TableLayout.ColumnSpec.Align.LEFT).floorWidth(50),
+                TableLayout.ColumnSpec.ofFixed(24, TableLayout.ColumnSpec.Align.LEFT),
+                TableLayout.ColumnSpec.ofWeight(1, TableLayout.ColumnSpec.Align.LEFT).floorWidth(50),
+                TableLayout.ColumnSpec.ofWeight(1, TableLayout.ColumnSpec.Align.LEFT).floorWidth(80),
+        };
+        TableLayoutBuilder b = new TableLayoutBuilder(textRenderer, HEADERS, specs);
         for (QShopDbAdapter.Record r : matched) {
             boolean shulker = (r.flags() & QShopContract.FLAG_SHULKER_EXPANDED) != 0;
             Text modeText;
@@ -105,60 +120,97 @@ public class QShopDbViewProvider implements IDbViewProvider {
                 }
             }
 
+            String priceStr = QShopDisplayUtil.formatPrice(r.price());
+            String flagsStr = QShopDisplayUtil.formatFlagsShort(r.flags());
+            String updateTime = QShopDisplayUtil.formatTimestamp(r.timestamp());
+            ItemStack icon = QShopDisplayUtil.parseDetailItemStack(r);
+            List<Text> detailTips = QShopDisplayUtil.buildDetailTooltip(r);
+
             LocatedPosition pos = new LocatedPosition(r.dimId(), r.x(), r.y(), r.z());
+            String[] rowText = {
+                    pos.toString(),
+                    r.owner(),
+                    modeText.getString(),
+                    quantityText.getString(),
+                    QShopDisplayUtil.getEffectiveItemName(r).getString(),
+                    priceStr,
+                    r.itemId(),
+                    icon != null ? icon.getName().getString() : "",
+                    flagsStr,
+                    updateTime,
+            };
 
             TableLayoutBuilder.RowBuilder row = b.addRow()
-                    .position(pos)
+                    .position(pos.toString(),
+                            () -> createWaypoint(pos, rowText),
+                            () -> enqueueNavigation(pos))
                     .text(r.owner())
                     .text(modeText)
                     .text(quantityText)
-                    .text(QShopDisplayUtil.getEffectiveItemName(r))
-                    .text(QShopDisplayUtil.formatPrice(r.price()));
+                    .text(QShopDisplayUtil.getEffectiveItemName(r));
 
+            // Price 列：潜影盒条目显示紫色并附带单价 tooltip
             if (shulker) {
                 List<Text> unitPriceTip = QShopDisplayUtil.buildShulkerUnitPriceTooltip(r);
                 if (unitPriceTip != null) {
-                    row.withColor(0xFFFF55FF); // 紫色
-                    row.withTooltip(unitPriceTip);
+                    row.cell(TextCell.of(priceStr).withColor(0xFFFF55FF)
+                            .withTooltip(unitPriceTip.toArray(new Text[0])));
+                } else {
+                    row.text(priceStr);
                 }
+            } else {
+                row.text(priceStr);
             }
 
             row.text(r.itemId());
 
-            // Detail 列物品图标和 tooltip
-            ItemStack icon = QShopDisplayUtil.parseDetailItemStack(r);
+            // Preview 列：物品图标（悬停显示原版物品 tooltip），无图标时挂 detail tooltip
             if (icon != null) {
                 row.item(icon);
+            } else if (detailTips != null) {
+                row.cell(TextCell.of("").withTooltip(detailTips.toArray(new Text[0])));
             } else {
                 row.blank();
             }
-            List<Text> detailTips = QShopDisplayUtil.buildDetailTooltip(r);
-            if (detailTips != null) {
-                row.withTooltip(detailTips);
-            }
 
             // Flags 列
-            String flagsStr = QShopDisplayUtil.formatFlagsShort(r.flags());
             List<Text> flagTips = QShopDisplayUtil.formatFlagsTooltip(r.flags());
-            row.text(flagsStr);
-            if (flagTips != null) {
-                row.withTooltip(flagTips);
-            }
+            row.cell(TextCell.of(flagsStr)
+                    .withTooltip(flagTips != null ? flagTips.toArray(new Text[0]) : null));
 
-            // Update Time 列
-            String updateTime = QShopDisplayUtil.formatTimestamp(r.timestamp());
-            row.text(updateTime);
-
+            // Update Time 列：增强更新时间显示青色并附带 tooltip
             if (r.enhancementTimestamp() > 0) {
-                row.withColor(0xFF55FFFF) // Aqua
-                   .withTooltip(List.of(
-                    Text.translatable("chunkscanner.qshop.enhancement_update_time", QShopDisplayUtil.formatTimestamp(r.enhancementTimestamp()))
-                ));
+                row.cell(TextCell.of(updateTime).withColor(0xFF55FFFF)
+                        .withTooltip(new Text[]{Text.translatable("chunkscanner.qshop.enhancement_update_time",
+                                QShopDisplayUtil.formatTimestamp(r.enhancementTimestamp()))}));
+            } else {
+                row.text(updateTime);
             }
 
             row.done();
         }
         return b.build();
+    }
+
+    /** 位置列左键：合并任务配置后以占位符替换生成 Xaero 路径点。 */
+    private void createWaypoint(LocatedPosition pos, String[] rowText) {
+        ChunkScannerConfig cfg = taskConfig != null
+                ? taskConfig.applyTo(ChunkScannerMod.getConfig())
+                : ChunkScannerMod.getConfig();
+        String wpName = CoreUtil.replacePlaceholders(cfg.integration.xaero.name, HEADERS, rowText);
+        String wpInit = CoreUtil.replacePlaceholders(cfg.integration.xaero.initials, HEADERS, rowText);
+        String wpGroup = CoreUtil.replacePlaceholders(cfg.integration.xaero.group, HEADERS, rowText);
+        XaeroWaypointHelper.tryCreateWaypoint(pos, wpName, wpInit, wpGroup);
+        ChunkScannerMod.LOGGER.info("Waypoint created: name template='{}' -> '{}', initials='{}', group='{}'",
+                cfg.integration.xaero.name, wpName, wpInit, wpGroup);
+    }
+
+    /** 位置列右键：将坐标加入全局导航队列。 */
+    private void enqueueNavigation(LocatedPosition pos) {
+        ChunkScannerNavigation nav = ChunkScannerNavigation.get();
+        nav.enqueue(pos.x(), pos.y(), pos.z(), pos.dimensionId());
+        ChunkScannerMod.LOGGER.info("Nav enqueue: ({}, {}, {}) dim={} queue size={}",
+                pos.x(), pos.y(), pos.z(), pos.dimensionId(), nav.size());
     }
 
     /** 获取筛选并排序后的记录列表。 */

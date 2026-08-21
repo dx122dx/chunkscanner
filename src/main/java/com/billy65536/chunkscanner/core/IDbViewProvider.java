@@ -1,6 +1,6 @@
 package com.billy65536.chunkscanner.core;
 
-import com.billy65536.chunkscanner.gui.layout.ILayout;
+import com.billy65536.infrastructure.core.gui.layout.ILayout;
 
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.screen.Screen;

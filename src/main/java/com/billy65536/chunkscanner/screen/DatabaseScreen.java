@@ -28,23 +28,20 @@ import com.billy65536.chunkscanner.ChunkScannerMod;
 import com.billy65536.chunkscanner.core.db.DbExportUtil;
 import com.billy65536.chunkscanner.core.db.DbManager;
 import com.billy65536.chunkscanner.core.db.DbPackage;
-import com.billy65536.chunkscanner.config.ChunkScannerConfig;
 import com.billy65536.chunkscanner.config.TaskConfig;
 import com.billy65536.chunkscanner.core.AnalyzerRegistry;
 import com.billy65536.chunkscanner.core.IChunkAnalyzer;
 import com.billy65536.chunkscanner.core.ChunkScanner;
-import com.billy65536.chunkscanner.core.CoreUtil;
 import com.billy65536.chunkscanner.core.IDbViewProvider;
 import com.billy65536.chunkscanner.core.DbViewProviderRegistry;
-import com.billy65536.chunkscanner.core.LocatedPosition;
 import com.billy65536.chunkscanner.core.navigation.ChunkScannerNavigation;
 import com.billy65536.chunkscanner.core.navigation.NavigationEntry;
 import com.billy65536.chunkscanner.gui.GuiUtil;
-import com.billy65536.chunkscanner.gui.ScrollManager;
-import com.billy65536.chunkscanner.gui.ScrollableListPanel;
-import com.billy65536.chunkscanner.gui.layout.ErrorDisplayLayout;
-import com.billy65536.chunkscanner.gui.layout.ILayout;
 import com.billy65536.chunkscanner.integration.XaeroWaypointHelper;
+import com.billy65536.infrastructure.core.gui.ScreenContainer;
+import com.billy65536.infrastructure.core.gui.layout.ILayout;
+import com.billy65536.infrastructure.core.gui.layout.TableLayout;
+import com.billy65536.infrastructure.core.gui.layout.TableLayoutBuilder;
 
 /**
  * 数据库浏览器 GUI。
@@ -52,22 +49,28 @@ import com.billy65536.chunkscanner.integration.XaeroWaypointHelper;
  * 两个页面：
  *   1. 文件列表 — 浏览所有已保存的扫描数据库
  *   2. KV 视图  — 查看数据库内容（原始字节或特化视图）
+ *
+ * 基于 infrastructure 新框架（{@link ScreenContainer} + {@link TableLayout}）：
+ * 表格的虚拟滚动 / 双滚动条 / 表头 / 点击分派均由 TableLayout 内置处理。
  */
-public class DatabaseScreen extends Screen {
+public class DatabaseScreen extends ScreenContainer {
 
+    /** 内容区宽度（与旧版 DatabaseScreen 保持一致）。 */
     private static final int WIDTH = 340;
-    private static final int ITEM_HEIGHT = 20;
-    private static final int SCROLLBAR_X_OFFSET = WIDTH - 6; // relative to left margin
-    private static final int SCROLLBAR_RESERVE = 8; // 为交叉滚动条预留的空间
+    /** 标题区高度（2x 标题 + 金色分隔线之下），与 qab 样板一致。 */
+    private static final int HEADER_Y = 28;
+    /** 底部操作按钮区预留高度。 */
+    private static final int FOOTER_H = 30;
+    /** 文件列表操作按钮列宽。 */
+    private static final int FILE_ACTION_COL_W = 36;
+    /** 底部区域纵向起始（按钮区）。 */
+    private static final int BUTTON_Y_OFFSET = FOOTER_H + 4;
 
     private final String initialScanId;
 
     // ==================== 文件列表页 ====================
 
     private List<DbPackage.Info> dbFiles;
-    private final ScrollableListPanel fileListPanel = new ScrollableListPanel(ITEM_HEIGHT);
-    /** 文件列表中被悬停的行索引（渲染时填充，用于 tooltip）。 */
-    private int hoveredFileIdx = -1;
 
     // ==================== KV 视图页 ====================
 
@@ -77,17 +80,8 @@ public class DatabaseScreen extends Screen {
     private IDbViewProvider currentView;
     private boolean showingKvView = false;
 
-    private final ScrollableListPanel kvPanel = new ScrollableListPanel(ITEM_HEIGHT);
-    private final ScrollManager kvHScroll = new ScrollManager();
-
     /** 当前页面渲染器（封装原始 KV 视图或特化视图的渲染逻辑与数据）。 */
     private ILayout layout;
-
-    /** 悬停行索引（渲染时填充，用于 tooltip）。 */
-    private int hoveredKvIdx = -1;
-
-    /** 悬停列索引（特化视图下渲染时填充，用于位置点击）。 */
-    private int hoveredKvCol = -1;
 
     // ==================== 视图类型选择 ====================
 
@@ -111,11 +105,10 @@ public class DatabaseScreen extends Screen {
 
     @Override
     protected void init() {
-        super.init();
-
         // 从筛选界面返回时，Minecraft 会重新调用 init()，必须保留现有状态
         if (pendingRebuild && openedDb != null) {
-            // 重建按钮以恢复 UI（providerButton、filterButton 等已被清除）
+            super.init();
+            applyLayoutBounds();
             rebuildKvButtons();
             return;
         }
@@ -124,9 +117,6 @@ public class DatabaseScreen extends Screen {
         closeOpenedDb();
         currentView = null;
         layout = null;
-        fileListPanel.endDrag();
-        kvPanel.endDrag();
-        kvHScroll.endDrag();
 
         // 视图列表在打开具体数据库包后按其 adaptorId 过滤得出
         viewTypes = new ArrayList<>();
@@ -139,12 +129,17 @@ public class DatabaseScreen extends Screen {
             for (DbPackage.Info m : dbFiles) {
                 if (m.scanId().equals(initialScanId)) {
                     openDatabase(m);
+                    super.init();
+                    applyLayoutBounds();
                     return;
                 }
             }
         }
 
         rebuildFileListButtons();
+        setLayout(buildFileListLayout());
+        super.init();
+        applyLayoutBounds();
     }
 
     // ==================== 文件列表扫描 ====================
@@ -190,8 +185,6 @@ public class DatabaseScreen extends Screen {
 
         rebuildPageRenderer(true);
         showingKvView = true;
-        kvPanel.setOffset(0);
-        kvHScroll.setOffset(0);
         rebuildKvButtons();
     }
 
@@ -255,7 +248,26 @@ public class DatabaseScreen extends Screen {
             layout = currentView.getLayout(textRenderer);
         } catch (Exception e) {
             ChunkScannerMod.LOGGER.warn("Failed to get layout from view provider '{}': {}", currentView.getClass().getSimpleName(), e.getMessage());
-            layout = new ErrorDisplayLayout(textRenderer, e);
+            layout = null;
+        }
+        // 注入容器根节点；provider 异常时 layout 为 null，setLayout(null) 使页面退化为空背景
+        setLayout(layout);
+        applyLayoutBounds();
+    }
+
+    /** 按当前页面重排布局：给 layout 设置相对容器坐标并触发列宽 reflow（或通用 layout）。 */
+    private void applyLayoutBounds() {
+        applyLayoutBounds(layout);
+    }
+
+    /** 对目标布局设置内容区 bounds；{@link TableLayout} 需显式 reflow 计算列宽（其 layout() 为空实现）。 */
+    private void applyLayoutBounds(ILayout target) {
+        if (target == null) return;
+        target.setBounds(0, HEADER_Y, this.width, this.height - HEADER_Y - FOOTER_H);
+        if (target instanceof TableLayout table) {
+            table.reflow(this.width);
+        } else {
+            target.layout();
         }
     }
 
@@ -264,8 +276,6 @@ public class DatabaseScreen extends Screen {
         selectedViewTypeIdx = (selectedViewTypeIdx + 1) % viewTypes.size();
         ChunkScannerMod.LOGGER.debug("Cycled to view type: {}", viewTypes.get(selectedViewTypeIdx).getId());
         rebuildPageRenderer(true);
-        kvPanel.setOffset(0);
-        kvHScroll.setOffset(0);
         rebuildKvButtons();
     }
 
@@ -306,7 +316,7 @@ public class DatabaseScreen extends Screen {
                 btn -> backToMainGui())
                 .dimensions(leftX + 4, 8, 56, 16).build());
 
-        int bottomY = this.height - 30;
+        int bottomY = this.height - BUTTON_Y_OFFSET;
         addDrawableChild(ButtonWidget.builder(
                 Text.translatable("chunkscanner.gui.database.open_folder"),
                 btn -> openFolder())
@@ -353,7 +363,7 @@ public class DatabaseScreen extends Screen {
             addDrawableChild(providerButton);
         }
 
-        int bottomY = this.height - 30;
+        int bottomY = this.height - BUTTON_Y_OFFSET;
         int btnWidth = (WIDTH - 12) / 2;
         addDrawableChild(ButtonWidget.builder(
                 Text.translatable("chunkscanner.gui.database.export_tsv"),
@@ -365,19 +375,63 @@ public class DatabaseScreen extends Screen {
                 .dimensions(leftX + 4 + btnWidth + 4, bottomY, btnWidth, 20).build());
     }
 
+    // ==================== 布局构建 ====================
+
+    /** 构建当前页面布局并注入容器（文件列表页 / KV 视图页二选一）。 */
+    private void buildLayout() {
+        ILayout newLayout = showingKvView ? buildKvLayout() : buildFileListLayout();
+        setLayout(newLayout);
+        applyLayoutBounds(newLayout);
+    }
+
+    /** 文件列表页：scanId / 大小 / [↺] / [✕]。 */
+    private ILayout buildFileListLayout() {
+        if (dbFiles == null) return null;
+        TableLayout.ColumnSpec[] specs = {
+                TableLayout.ColumnSpec.ofWeight(1, TableLayout.ColumnSpec.Align.LEFT).elastic().floorWidth(80),
+                TableLayout.ColumnSpec.ofFixed(70, TableLayout.ColumnSpec.Align.RIGHT),
+                TableLayout.ColumnSpec.ofFixed(FILE_ACTION_COL_W, TableLayout.ColumnSpec.Align.CENTER),
+                TableLayout.ColumnSpec.ofFixed(FILE_ACTION_COL_W, TableLayout.ColumnSpec.Align.CENTER),
+        };
+        String[] headers = {
+                Text.translatable("chunkscanner.gui.database.file").getString(),
+                Text.translatable("chunkscanner.gui.database.size").getString(),
+                "", "",
+        };
+        TableLayoutBuilder lb = new TableLayoutBuilder(textRenderer, headers, specs);
+
+        for (DbPackage.Info meta : dbFiles) {
+            MutableText label = Text.literal(meta.scanId());
+            Identifier analyzerId = meta.analyzerId();
+            if (analyzerId != null && !ChunkScannerMod.ID_UNKNOWN.equals(analyzerId)) {
+                label = label.append(" [").append(GuiUtil.getAnalyzerDisplayName(analyzerId)).append("]").formatted(Formatting.YELLOW);
+            }
+            lb.addRow()
+                    .button(label, () -> openDatabase(meta))
+                    .text(Text.literal(GuiUtil.formatSize(meta.size())).formatted(Formatting.GRAY))
+                    .button("[↺]", () -> doRebootScan(meta))
+                    .button(Text.literal("[✕]"), 0xFFFF5555, 0xFFFF8888, () -> confirmDeleteDbFile(meta))
+                    .done();
+        }
+        return lb.build();
+    }
+
+    /** KV 视图页：直接使用 provider 返回的布局。 */
+    private ILayout buildKvLayout() {
+        return layout;
+    }
+
     // ==================== 导航 ====================
 
     private void backToList() {
         closeOpenedDb();
         showingKvView = false;
         layout = null;
-        fileListPanel.endDrag();
-        kvPanel.endDrag();
-        kvHScroll.endDrag();
         viewTypes = new ArrayList<>(DbViewProviderRegistry.getAll());
         selectedViewTypeIdx = 0;
         clearChildren();
         rebuildFileListButtons();
+        buildLayout();
     }
 
     private void backToMainGui() {
@@ -494,8 +548,8 @@ public class DatabaseScreen extends Screen {
 
     private void exportToFile(Path path) throws IOException {
         StringBuilder sb = new StringBuilder();
-        if (layout != null) {
-            layout.export(sb);
+        if (layout instanceof TableLayout table) {
+            table.export(sb);
         }
         Files.writeString(path, sb.toString(), StandardCharsets.UTF_8);
     }
@@ -511,257 +565,79 @@ public class DatabaseScreen extends Screen {
             pendingRebuild = false;
         }
 
-        renderBackground(context);
-        int centerX = this.width / 2;
-
-        // 重置悬停状态
-        hoveredFileIdx = -1;
-        hoveredKvIdx = -1;
-        hoveredKvCol = -1;
-
-        if (showingKvView) {
-            renderKvView(context, mouseX, mouseY, centerX);
-        } else {
-            renderFileList(context, mouseX, mouseY, centerX);
-        }
-
         super.render(context, mouseX, mouseY, delta);
-
-        // drawTooltip 必须在 super.render() 之后调用（在按钮之上渲染）
-
-        // provider 按钮 tooltip
-        if (showingKvView && providerButton != null && providerButton.isMouseOver(mouseX, mouseY)
-                && !viewTypes.isEmpty()) {
-            DbViewProviderRegistry.ITypeDescriptor vt = viewTypes.get(selectedViewTypeIdx);
-            context.drawTooltip(textRenderer,
-                    vt.getDescription().copy().formatted(getProviderColor()),
-                    mouseX, mouseY);
-        }
-
-        // 筛选按钮 tooltip
-        if (showingKvView && filterButton != null && filterButton.isMouseOver(mouseX, mouseY)) {
-            Formatting color = currentView != null && currentView.isFilterActive()
-                    ? Formatting.GREEN : Formatting.GRAY;
-            context.drawTooltip(textRenderer,
-                    Text.translatable("chunkscanner.gui.filter.tooltip").formatted(color),
-                    mouseX, mouseY);
-        }
-
-        // 文件列表悬停 — 显示数据库路径
-        if (!showingKvView && hoveredFileIdx >= 0 && hoveredFileIdx < dbFiles.size()) {
-            DbPackage.Info meta = dbFiles.get(hoveredFileIdx);
-            Path dir = meta.dir();
-            context.drawTooltip(textRenderer,
-                    Text.literal(dir != null ? dir.toAbsolutePath().toString() : meta.scanId()).formatted(Formatting.GRAY),
-                    mouseX, mouseY);
-        }
-
-        // KV 视图悬停 — JEI 风格物品图标 tooltip（优先于文字 tooltip）
-        if (showingKvView && layout != null) {
-            ItemStack hoveredStack = layout.getHoveredItemStack();
-            if (hoveredStack != null && !hoveredStack.isEmpty()) {
-                MinecraftClient client = MinecraftClient.getInstance();
-                if (client.player != null) {
-                    List<Text> itemTooltip = Screen.getTooltipFromItem(client, hoveredStack);
-                    context.drawTooltip(textRenderer, itemTooltip,
-                            hoveredStack.getTooltipData(), mouseX, mouseY);
-                }
-            }
-        }
-
-        // KV 视图悬停 — 位置列 tooltip / 单元格 tooltip
-        if (showingKvView && hoveredKvIdx >= 0 && hoveredKvCol >= 0
-                && layout != null) {
-            if (layout.isPositionColumn(hoveredKvCol)) {
-                String key = XaeroWaypointHelper.isAvailable()
-                        ? "chunkscanner.tooltip.create_waypoint"
-                        : "chunkscanner.tooltip.print_coords";
-                context.drawTooltip(textRenderer,
-                        Text.translatable(key).formatted(Formatting.AQUA),
-                        mouseX, mouseY);
-            } else {
-                // 非位置列的单元格 tooltip（仅当没有物品图标悬停时显示）
-                ItemStack hoveredStack = layout.getHoveredItemStack();
-                if (hoveredStack == null || hoveredStack.isEmpty()) {
-                    List<Text> cellTooltip = layout.getCellTooltip(hoveredKvIdx, hoveredKvCol);
-                    if (cellTooltip != null && !cellTooltip.isEmpty()) {
-                        context.drawTooltip(textRenderer, cellTooltip, mouseX, mouseY);
-                    }
-                }
-            }
-        }
-    }
-
-    // ==================== 文件列表渲染 ====================
-
-    private void renderFileList(DrawContext context, int mouseX, int mouseY, int centerX) {
-        int leftX = centerX - WIDTH / 2;
-        int x = leftX + 4;
-
-        context.drawCenteredTextWithShadow(textRenderer,
-                Text.translatable("chunkscanner.gui.database.title")
-                        .formatted(Formatting.GOLD, Formatting.BOLD),
-                centerX, 12, 0xFFFFFF);
-
-        int headerY = 30;
-        context.drawTextWithShadow(textRenderer,
-                Text.translatable("chunkscanner.gui.database.file").formatted(Formatting.GRAY),
-                x, headerY, 0xFFFFFF);
-        context.drawTextWithShadow(textRenderer,
-                Text.translatable("chunkscanner.gui.database.size").formatted(Formatting.GRAY),
-                x + 170, headerY, 0xFFFFFF);
-
-        context.drawHorizontalLine(x, x + WIDTH - 8, headerY + 12, 0xFF555555);
-
-        int listTop = headerY + 16;
-        int listBottom = this.height - 30;
-        int sbX = leftX + SCROLLBAR_X_OFFSET;
-        fileListPanel.setBounds(listTop, listBottom, sbX);
-        int maxVisible = fileListPanel.clamp(dbFiles.size());
-
-        if (dbFiles.isEmpty()) {
-            context.drawCenteredTextWithShadow(textRenderer,
-                    Text.translatable("chunkscanner.gui.database.no_files").formatted(Formatting.GRAY),
-                    centerX, listTop + 20, 0xFFFFFF);
+        if (isErrorState()) {
             return;
         }
 
-        for (int i = 0; i < maxVisible; i++) {
-            int idx = fileListPanel.getOffset() + i;
-            if (idx >= dbFiles.size()) break;
-            DbPackage.Info meta = dbFiles.get(idx);
-            int rowY = listTop + i * ITEM_HEIGHT;
+        renderTitleHeader(context);
+        renderWidgets(context, mouseX, mouseY, delta);
 
-            // 行悬停检测（排除右侧按钮区域）
-            boolean hovered = GuiUtil.isInRect(mouseX, mouseY, x, rowY, WIDTH - 52, ITEM_HEIGHT);
+        int centerX = this.width / 2;
 
-            // 悬停背景高亮
-            if (hovered) {
-                hoveredFileIdx = idx;
-                context.fill(x, rowY, x + WIDTH - 52, rowY + ITEM_HEIGHT, 0x33FFFFAA);
-            }
-
-            int color = hovered ? 0xFFFF55 : 0xFFFFFF;
-
-            MutableText label = Text.literal(meta.scanId());
-            Identifier analyzerId = meta.analyzerId();
-            if (analyzerId != null && !ChunkScannerMod.ID_UNKNOWN.equals(analyzerId)) {
-                label = label.append(" [").append(GuiUtil.getAnalyzerDisplayName(analyzerId)).append("]").formatted(Formatting.YELLOW);
-            }
-            context.drawTextWithShadow(textRenderer, label, x, rowY, color);
-            context.drawTextWithShadow(textRenderer,
-                    Text.literal(GuiUtil.formatSize(meta.size())).formatted(Formatting.GRAY),
-                    x + 160, rowY, color);
-
-            // 右侧按钮区域（横向布局：恢复在左，删除在右，同 ChunkScannerScreen）
-            int btnRight = x + WIDTH - 8;
-            int rebootBtnRight = btnRight - 20;
-            int rebootBtnLeft = btnRight - 38;
-            int delBtnLeft = btnRight - 18;
-            int delBtnRight = btnRight;
-
-            // 恢复扫描按钮 [↺]（左）
-            boolean rebootHover = mouseX >= rebootBtnLeft && mouseX <= rebootBtnRight
-                    && mouseY >= rowY && mouseY < rowY + ITEM_HEIGHT;
-            context.drawTextWithShadow(textRenderer,
-                    Text.literal("[↺]").formatted(rebootHover ? Formatting.AQUA : Formatting.DARK_AQUA),
-                    rebootBtnLeft + 2, rowY, 0xFFFFFF);
-
-            // 删除按钮 [✕]（右）
-            boolean delHover = mouseX >= delBtnLeft && mouseX <= delBtnRight
-                    && mouseY >= rowY && mouseY < rowY + ITEM_HEIGHT;
-            context.drawTextWithShadow(textRenderer,
-                    Text.literal("[✕]").formatted(delHover ? Formatting.RED : Formatting.DARK_RED),
-                    delBtnLeft + 2, rowY, 0xFFFFFF);
+        if (showingKvView) {
+            renderKvOverlays(context, mouseX, mouseY, centerX);
+        } else {
+            renderFileListOverlay(context, mouseX, mouseY, centerX);
         }
-
-        // 垂直滚动条
-        fileListPanel.drawScrollbar(context, dbFiles.size());
     }
 
-    // ==================== KV 视图渲染 ====================
+    /** 标题（2x）+ 金色分隔线。 */
+    private void renderTitleHeader(DrawContext ctx) {
+        var matrices = ctx.getMatrices();
+        matrices.push();
+        matrices.scale(2f, 2f, 1f);
+        ctx.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 4, 2, 0xFFFFFFFF);
+        matrices.pop();
+        ctx.fill(0, 24, this.width, 25, 0xFFFFAA00);
+    }
 
-    private void renderKvView(DrawContext context, int mouseX, int mouseY, int centerX) {
-        int leftX = centerX - WIDTH / 2;
+    // ==================== 页面覆层渲染 ====================
 
-        context.drawCenteredTextWithShadow(textRenderer,
-                Text.translatable("chunkscanner.gui.database.kv_title",
-                        openedPackage != null ? openedPackage.getScanId() : "?")
-                        .formatted(Formatting.GOLD, Formatting.BOLD),
-                centerX, 12, 0xFFFFFF);
+    /** 文件列表页的辅助信息：空列表提示 + 悬停路径 tooltip。 */
+    private void renderFileListOverlay(DrawContext context, int mouseX, int mouseY, int centerX) {
+        if (dbFiles == null || dbFiles.isEmpty()) {
+            context.drawCenteredTextWithShadow(textRenderer,
+                    Text.translatable("chunkscanner.gui.database.no_files").formatted(Formatting.GRAY),
+                    centerX, HEADER_Y + 40, 0xFFFFFF);
+            return;
+        }
 
+        // 悬停行：显示数据库路径（仅当不在操作按钮列上时）
+        if (layout instanceof TableLayout table) {
+            int row = table.getHoveredRow();
+            int col = table.getHoveredCol();
+            if (row >= 0 && row < dbFiles.size() && (col == 0 || col == 1)) {
+                DbPackage.Info meta = dbFiles.get(row);
+                Path dir = meta.dir();
+                context.drawTooltip(textRenderer,
+                        Text.literal(dir != null ? dir.toAbsolutePath().toString() : meta.scanId()).formatted(Formatting.GRAY),
+                        mouseX, mouseY);
+            }
+        }
+    }
+
+    /** KV 视图页覆层：records 行 + 导航队列指示器 + tooltip。 */
+    private void renderKvOverlays(DrawContext context, int mouseX, int mouseY, int centerX) {
         int margin = 4;
-        int infoY = 28;
+        int infoY = HEADER_Y - 6;
 
-        int kvSize = layout != null ? layout.getItemCount() : 0;
-        int metaSize = layout != null ? layout.getMetaCount() : 0;
+        int kvSize = layout instanceof TableLayout table ? table.getRowCount() : 0;
         Text aName = openedPackage != null ? GuiUtil.getAnalyzerDisplayName(openedPackage.getAnalyzerId()) : Text.empty();
         Text vName = viewTypes.isEmpty() ? Text.empty() : viewTypes.get(selectedViewTypeIdx).getName();
 
         context.drawTextWithShadow(textRenderer,
-                Text.translatable("chunkscanner.gui.database.records", kvSize, metaSize, aName, vName)
+                Text.translatable("chunkscanner.gui.database.records", kvSize, aName, vName)
                         .formatted(Formatting.GRAY),
                 margin, infoY, 0xFFFFFF);
-
-        context.drawHorizontalLine(leftX, leftX + WIDTH, infoY + 12, 0xFF555555);
-
-        int listTop = infoY + 16;
-        int listBottomV = this.height - 34 - SCROLLBAR_RESERVE;
-
-        // 渲染表头（表格模式），数据区域下移
-        if (layout != null) {
-            int headerH = layout.renderHeader(context, listTop, margin, kvHScroll.getOffset());
-            listTop += headerH;
-        }
-
-        // 设置面板边界并 clamp
-        kvPanel.setBounds(listTop, listBottomV, this.width - 6);
-        int maxVisible = kvPanel.clamp(kvSize);
-
-        if (kvSize == 0) {
-            context.drawCenteredTextWithShadow(textRenderer,
-                    Text.translatable("chunkscanner.gui.database.no_kv").formatted(Formatting.GRAY),
-                    centerX, listTop + 10, 0xFFFFFF);
-            return;
-        }
-
-        // 每帧渲染前重置表格视图的悬停状态（避免上一帧状态残留）
-        if (layout != null) {
-            layout.beginFrame();
-        }
-
-        // 委托渲染器逐行渲染
-        for (int i = 0; i < maxVisible; i++) {
-            int idx = kvPanel.getOffset() + i;
-            if (idx >= kvSize) break;
-            int rowY = listTop + i * ITEM_HEIGHT;
-            int hov = layout.renderRow(context, idx, rowY, margin,
-                    kvHScroll.getOffset(), mouseX, mouseY);
-            if (hov >= 0) hoveredKvIdx = hov;
-        }
-
-        // 捕获表格视图的列级悬停
-        if (layout != null) {
-            hoveredKvCol = layout.getHoveredCol();
-        }
-
-        // 垂直滚动条
-        kvPanel.drawScrollbar(context, kvSize);
-
-        // 水平滚动条（铺满全屏，留右侧给垂直滚动条）
-        int hLeft = 4;
-        int hRight = this.width - 6;
-        int visibleW = this.width - 10;
-        int totalW = Math.max(computeContentWidth(), visibleW + 1);
-        kvHScroll.drawHorizontal(context, this.height - 38, hLeft, hRight, totalW);
 
         // 导航队列指示器（底部一行显示前 3 个目标）
         ChunkScannerNavigation navFacade = ChunkScannerNavigation.get();
         if (!navFacade.list().isEmpty()) {
-            int navY = this.height - 50;
-            java.util.List<NavigationEntry> entries = navFacade.list();
+            int navY = this.height - FOOTER_H - 4;
+            List<NavigationEntry> entries = navFacade.list();
             int showCount = Math.min(3, entries.size());
-            java.lang.StringBuilder sb = new java.lang.StringBuilder();
+            StringBuilder sb = new StringBuilder();
             sb.append("[Nav: ").append(entries.size()).append("]");
             for (int i = 0; i < showCount; i++) {
                 NavigationEntry e = entries.get(i);
@@ -773,223 +649,58 @@ public class DatabaseScreen extends Screen {
                     Text.literal(sb.toString()).formatted(Formatting.GRAY),
                     margin, navY, 0xFFFFFF);
         }
-    }
 
-    /** 计算当前视图内容的总宽度（像素），用于水平滚动条。 */
-    private int computeContentWidth() {
-        return layout != null ? layout.computeContentWidth() : 0;
-    }
-
-    /** 水平内容可见宽度（屏幕像素）。留出左右各约 5px 的边距。 */
-    private int horizVisibleWidth() {
-        return this.width - 10;
-    }
-
-    // ==================== 鼠标交互（点击） ====================
-
-    @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (button != 0 && button != 1) return super.mouseClicked(mouseX, mouseY, button);
-
-        int centerX = this.width / 2;
-        int leftX = centerX - WIDTH / 2;
-
-        if (showingKvView) {
-            return handleKvClick(mouseX, mouseY, button);
+        // provider 按钮 tooltip
+        if (providerButton != null && providerButton.isMouseOver(mouseX, mouseY)
+                && !viewTypes.isEmpty()) {
+            DbViewProviderRegistry.ITypeDescriptor vt = viewTypes.get(selectedViewTypeIdx);
+            context.drawTooltip(textRenderer,
+                    vt.getDescription().copy().formatted(getProviderColor()),
+                    mouseX, mouseY);
         }
 
-        // --- 文件列表页：滚动条拖拽 ---
-        int listTop = 46;
-        int listBottom = this.height - 30;
-        fileListPanel.setBounds(listTop, listBottom, leftX + SCROLLBAR_X_OFFSET);
-
-        if (fileListPanel.handleClick(mouseX, mouseY, dbFiles.size())) {
-            return true;
+        // 筛选按钮 tooltip
+        if (filterButton != null && filterButton.isMouseOver(mouseX, mouseY)) {
+            Formatting color = currentView != null && currentView.isFilterActive()
+                    ? Formatting.GREEN : Formatting.GRAY;
+            context.drawTooltip(textRenderer,
+                    Text.translatable("chunkscanner.gui.filter.tooltip").formatted(color),
+                    mouseX, mouseY);
         }
 
-        // --- 文件列表项按钮 ---
-        int x = leftX + 4;
-        int maxVisible = fileListPanel.getMaxVisible(dbFiles.size());
-        for (int i = 0; i < maxVisible; i++) {
-            int idx = fileListPanel.getOffset() + i;
-            if (idx >= dbFiles.size()) break;
-            DbPackage.Info meta = dbFiles.get(idx);
-            int rowY = listTop + i * ITEM_HEIGHT;
-
-            int btnRight = x + WIDTH - 8;
-            int rebootBtnRight = btnRight - 20;
-            int rebootBtnLeft = btnRight - 38;
-            int delBtnLeft = btnRight - 18;
-            int delBtnRight = btnRight;
-
-            // 恢复扫描按钮 [↺]（左）
-            if (mouseX >= rebootBtnLeft && mouseX <= rebootBtnRight
-                    && mouseY >= rowY && mouseY < rowY + ITEM_HEIGHT) {
-                doRebootScan(meta);
-                return true;
+        // KV 视图悬停 tooltip（位置列 / 物品图标 / 单元格）
+        if (layout instanceof TableLayout table) {
+            // JEI 风格物品图标 tooltip（优先于文字 tooltip）
+            ItemStack hoveredStack = table.getHoveredItemStack();
+            if (hoveredStack != null && !hoveredStack.isEmpty()) {
+                MinecraftClient client = MinecraftClient.getInstance();
+                if (client.player != null) {
+                    List<Text> itemTooltip = Screen.getTooltipFromItem(client, hoveredStack);
+                    context.drawTooltip(textRenderer, itemTooltip,
+                            hoveredStack.getTooltipData(), mouseX, mouseY);
+                }
+                return;
             }
 
-            // 删除按钮 [✕]（右）
-            if (mouseX >= delBtnLeft && mouseX <= delBtnRight
-                    && mouseY >= rowY && mouseY < rowY + ITEM_HEIGHT) {
-                confirmDeleteDbFile(meta);
-                return true;
-            }
-
-            // 打开数据库
-            if (GuiUtil.isInRect(mouseX, mouseY, x, rowY, WIDTH - 52, ITEM_HEIGHT)) {
-                openDatabase(meta);
-                return true;
-            }
-        }
-        return super.mouseClicked(mouseX, mouseY, button);
-    }
-
-    /** 计算 KV 视图的数据区域 top（含特化视图表头高度，与 renderKvView 保持一致）。 */
-    private int computeKvListTop() {
-        int listTop = 44; // infoY(28) + 16
-        if (layout != null) {
-            listTop += layout.getHeaderHeight();
-        }
-        return listTop;
-    }
-
-    private boolean handleKvClick(double mouseX, double mouseY, int button) {
-        int listTop = computeKvListTop();
-        int listBottomV = this.height - 34 - SCROLLBAR_RESERVE;
-        int kvSize = layout != null ? layout.getItemCount() : 0;
-
-        // KV 垂直滚动条
-        kvPanel.setBounds(listTop, listBottomV, this.width - 6);
-        if (kvPanel.handleClick(mouseX, mouseY, kvSize)) {
-            return true;
-        }
-
-        // KV 水平滚动条（铺满全屏）
-        int hY = this.height - 38;
-        int hLeft = 4;
-        int hRight = this.width - 6;
-        int visibleW = horizVisibleWidth();
-        int totalW = Math.max(computeContentWidth(), visibleW + 1);
-        if (kvHScroll.handleHorizontalClick(mouseX, mouseY, hY, hLeft, hRight, totalW)) {
-            return true;
-        }
-
-        // 位置列右键点击：加入导航队列
-        if (button == 1 && hoveredKvIdx >= 0 && hoveredKvCol >= 0
-                && layout != null
-                && layout.isPositionColumn(hoveredKvCol)
-                && currentView != null) {
-            LocatedPosition pos = layout.getPositionAt(hoveredKvIdx);
-            if (pos != null) {
-                ChunkScannerNavigation nav = ChunkScannerNavigation.get();
-                nav.enqueue(pos.x(), pos.y(), pos.z(), pos.dimensionId());
-                ChunkScannerMod.LOGGER.info("Nav enqueue: ({}, {}, {}) dim={} queue size={}",
-                        pos.x(), pos.y(), pos.z(), pos.dimensionId(), nav.size());
-                return true;
+            // 位置列 tooltip / 单元格 tooltip
+            int row = table.getHoveredRow();
+            int col = table.getHoveredCol();
+            if (row >= 0 && col >= 0) {
+                if (table.isPositionColumn(col)) {
+                    String key = XaeroWaypointHelper.isAvailable()
+                            ? "chunkscanner.tooltip.create_waypoint"
+                            : "chunkscanner.tooltip.print_coords";
+                    context.drawTooltip(textRenderer,
+                            Text.translatable(key).formatted(Formatting.AQUA),
+                            mouseX, mouseY);
+                } else {
+                    List<Text> cellTooltip = table.getCellTooltip(row, col);
+                    if (cellTooltip != null && !cellTooltip.isEmpty()) {
+                        context.drawTooltip(textRenderer, cellTooltip, mouseX, mouseY);
+                    }
+                }
             }
         }
-
-        // 位置列左键点击：创建 Xaero 路径点（支持 {key} 占位符替换）
-        if (hoveredKvIdx >= 0 && hoveredKvCol >= 0
-                && layout != null
-                && layout.isPositionColumn(hoveredKvCol)
-                && currentView != null) {
-            LocatedPosition pos = layout.getPositionAt(hoveredKvIdx);
-            if (pos != null) {
-                // 合并全局配置与 DB 中存储的任务配置（任务配置优先）
-                ChunkScannerConfig cfg = cachedTaskConfig != null
-                        ? cachedTaskConfig.applyTo(ChunkScannerMod.getConfig())
-                        : ChunkScannerMod.getConfig();
-                String[] headers = layout.getHeaders();
-                String[] row = layout.getRowAt(hoveredKvIdx);
-                if (headers == null || row == null) return true;
-                String wpName = CoreUtil.replacePlaceholders(cfg.integration.xaero.name, headers, row);
-                String wpInit = CoreUtil.replacePlaceholders(cfg.integration.xaero.initials, headers, row);
-                String wpGroup = CoreUtil.replacePlaceholders(cfg.integration.xaero.group, headers, row);
-                XaeroWaypointHelper.tryCreateWaypoint(pos, wpName, wpInit, wpGroup);
-                ChunkScannerMod.LOGGER.info("Waypoint created: name template='{}' -> '{}', initials='{}', group='{}'",
-                        cfg.integration.xaero.name, wpName, wpInit, wpGroup);
-                return true;
-            }
-        }
-
-        return super.mouseClicked(mouseX, mouseY, button);
-    }
-
-    @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
-        if (!showingKvView) {
-            // 文件列表垂直拖拽
-            int centerX = this.width / 2;
-            int leftX = centerX - WIDTH / 2;
-            int listTop = 46;
-            int listBottom = this.height - 30;
-            fileListPanel.setBounds(listTop, listBottom, leftX + SCROLLBAR_X_OFFSET);
-            if (fileListPanel.handleDrag(mouseY, dbFiles.size())) {
-                return true;
-            }
-        } else {
-            // KV 垂直拖拽
-            int listTop = computeKvListTop();
-            int listBottomV = this.height - 34 - SCROLLBAR_RESERVE;
-            int kvSize = layout != null ? layout.getItemCount() : 0;
-            kvPanel.setBounds(listTop, listBottomV, this.width - 6);
-            if (kvPanel.handleDrag(mouseY, kvSize)) {
-                return true;
-            }
-
-            // KV 水平拖拽（铺满全屏）
-            int hLeft = 4;
-            int hRight = this.width - 6;
-            int visibleW = horizVisibleWidth();
-            int totalW = Math.max(computeContentWidth(), visibleW + 1);
-            if (kvHScroll.handleHorizontalDrag(mouseX, hLeft, hRight, totalW)) {
-                return true;
-            }
-        }
-        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
-    }
-
-    @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (button == 0) {
-            fileListPanel.endDrag();
-            kvPanel.endDrag();
-            kvHScroll.endDrag();
-        }
-        return super.mouseReleased(mouseX, mouseY, button);
-    }
-
-    @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
-        if (showingKvView) {
-            return handleKvScroll(amount);
-        }
-
-        int centerX = this.width / 2;
-        int leftX = centerX - WIDTH / 2;
-        int listTop = 46;
-        int listBottom = this.height - 30;
-        fileListPanel.setBounds(listTop, listBottom, leftX + SCROLLBAR_X_OFFSET);
-        fileListPanel.handleScroll(amount, dbFiles.size());
-        return true;
-    }
-
-    private boolean handleKvScroll(double amount) {
-        int listTop = computeKvListTop();
-        int listBottomV = this.height - 34 - SCROLLBAR_RESERVE;
-        int kvSize = layout != null ? layout.getItemCount() : 0;
-
-        if (hasShiftDown()) {
-            int visibleW = horizVisibleWidth();
-            int totalW = Math.max(computeContentWidth(), visibleW + 1);
-            kvHScroll.handleHorizontalScroll(amount * 10, totalW, visibleW);
-        } else {
-            kvPanel.setBounds(listTop, listBottomV, this.width - 6);
-            kvPanel.handleScroll(amount, kvSize);
-        }
-        return true;
     }
 
     // ==================== 操作 ====================
@@ -1040,6 +751,7 @@ public class DatabaseScreen extends Screen {
             scanDbFiles();
             clearChildren();
             rebuildFileListButtons();
+            buildLayout();
         } catch (IOException e) {
             ChunkScannerMod.LOGGER.warn("Failed to delete DB: {}", e.getMessage());
         }
