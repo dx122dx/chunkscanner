@@ -78,3 +78,9 @@ local/
 
 # Binaries
 bin/
+
+# Decompiled
+/com/
+/net/
+/io/
+/org/

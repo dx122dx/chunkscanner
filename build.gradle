@@ -1,5 +1,5 @@
 plugins {
-    id 'fabric-loom' version '1.5.8'
+    id 'fabric-loom' version "${loom_version}"
     id 'maven-publish'
 }
 
@@ -44,6 +44,11 @@ repositories {
     maven {
         name = 'TerraformersMC'
         url = 'https://maven.terraformersmc.com/'
+    }
+    // SpruceUI 由 Gegy 仓库提供（infrastructure 的传递依赖，四仓统一）
+    maven {
+        name = 'Gegy'
+        url = 'https://maven.gegy.dev/releases/'
     }
     maven {
         name = 'Shedaniel'
@@ -184,7 +189,10 @@ publishing {
 }
 
 jar {
+    def projectName = project.name
+    inputs.property "projectName", projectName
+
     from("LICENSE") {
-        rename { "${it}_${project.archivesBaseName}" }
+        rename { "${it}_$projectName" }
     }
 }
