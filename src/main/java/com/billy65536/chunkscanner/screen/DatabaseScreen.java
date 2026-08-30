@@ -39,9 +39,13 @@ import com.billy65536.chunkscanner.core.navigation.NavigationEntry;
 import com.billy65536.chunkscanner.gui.GuiUtil;
 import com.billy65536.chunkscanner.integration.XaeroWaypointHelper;
 import com.billy65536.infrastructure.core.gui.ScreenContainer;
+import com.billy65536.infrastructure.core.gui.filelist.FileListTableBuilder;
+import com.billy65536.infrastructure.core.gui.filelist.FileMeta;
+import com.billy65536.infrastructure.core.gui.filelist.IFileMetaParser;
+import com.billy65536.infrastructure.core.gui.layout.ButtonCell;
+import com.billy65536.infrastructure.core.gui.layout.IContentCell;
 import com.billy65536.infrastructure.core.gui.layout.ILayout;
 import com.billy65536.infrastructure.core.gui.layout.TableLayout;
-import com.billy65536.infrastructure.core.gui.layout.TableLayoutBuilder;
 
 /**
  * 数据库浏览器 GUI。
@@ -61,8 +65,6 @@ public class DatabaseScreen extends ScreenContainer {
     private static final int HEADER_Y = 28;
     /** 底部操作按钮区预留高度。 */
     private static final int FOOTER_H = 30;
-    /** 文件列表操作按钮列宽。 */
-    private static final int FILE_ACTION_COL_W = 36;
     /** 底部区域纵向起始（按钮区）。 */
     private static final int BUTTON_Y_OFFSET = FOOTER_H + 4;
 
@@ -137,7 +139,8 @@ public class DatabaseScreen extends ScreenContainer {
         }
 
         rebuildFileListButtons();
-        setLayout(buildFileListLayout());
+        layout = buildFileListLayout();
+        setLayout(layout);
         super.init();
         applyLayoutBounds();
     }
@@ -257,7 +260,7 @@ public class DatabaseScreen extends ScreenContainer {
 
     /** 按当前页面重排布局：给 layout 设置相对容器坐标并触发列宽 reflow（或通用 layout）。 */
     private void applyLayoutBounds() {
-        applyLayoutBounds(layout);
+        applyLayoutBounds(layout != null ? layout : getLayout());
     }
 
     /** 对目标布局设置内容区 bounds；{@link TableLayout} 需显式 reflow 计算列宽（其 layout() 为空实现）。 */
@@ -379,41 +382,39 @@ public class DatabaseScreen extends ScreenContainer {
 
     /** 构建当前页面布局并注入容器（文件列表页 / KV 视图页二选一）。 */
     private void buildLayout() {
-        ILayout newLayout = showingKvView ? buildKvLayout() : buildFileListLayout();
-        setLayout(newLayout);
-        applyLayoutBounds(newLayout);
+        layout = showingKvView ? buildKvLayout() : buildFileListLayout();
+        setLayout(layout);
+        applyLayoutBounds();
     }
 
-    /** 文件列表页：scanId / 大小 / [↺] / [✕]。 */
+    /** 文件列表页：scanId / 大小 / [↺] / [✕]（经 infrastructure 通用文件列表抽象层组装）。 */
     private ILayout buildFileListLayout() {
         if (dbFiles == null) return null;
-        TableLayout.ColumnSpec[] specs = {
-                TableLayout.ColumnSpec.ofWeight(1, TableLayout.ColumnSpec.Align.LEFT).elastic().floorWidth(80),
-                TableLayout.ColumnSpec.ofFixed(70, TableLayout.ColumnSpec.Align.RIGHT),
-                TableLayout.ColumnSpec.ofFixed(FILE_ACTION_COL_W, TableLayout.ColumnSpec.Align.CENTER),
-                TableLayout.ColumnSpec.ofFixed(FILE_ACTION_COL_W, TableLayout.ColumnSpec.Align.CENTER),
-        };
-        String[] headers = {
+        List<FileMeta> metas = IFileMetaParser.parseAll(DbFileMetaParser.INSTANCE, dbFiles);
+        return new FileListTableBuilder(textRenderer,
                 Text.translatable("chunkscanner.gui.database.file").getString(),
-                Text.translatable("chunkscanner.gui.database.size").getString(),
-                "", "",
-        };
-        TableLayoutBuilder lb = new TableLayoutBuilder(textRenderer, headers, specs);
+                Text.translatable("chunkscanner.gui.database.size").getString())
+                .fileCellRenderer(this::renderFileCell)
+                .actionColumn("", meta -> ButtonCell.of("[↺]", () -> doRebootScan(sourceOf(meta))))
+                .actionColumn("", meta -> new ButtonCell(
+                        Text.literal("[✕]"), 0xFFFF5555, 0xFFFF8888, () -> confirmDeleteDbFile(sourceOf(meta))))
+                .build(metas);
+    }
 
-        for (DbPackage.Info meta : dbFiles) {
-            MutableText label = Text.literal(meta.scanId());
-            Identifier analyzerId = meta.analyzerId();
-            if (analyzerId != null && !ChunkScannerMod.ID_UNKNOWN.equals(analyzerId)) {
-                label = label.append(" [").append(GuiUtil.getAnalyzerDisplayName(analyzerId)).append("]").formatted(Formatting.YELLOW);
-            }
-            lb.addRow()
-                    .button(label, () -> openDatabase(meta))
-                    .text(Text.literal(GuiUtil.formatSize(meta.size())).formatted(Formatting.GRAY))
-                    .button("[↺]", () -> doRebootScan(meta))
-                    .button(Text.literal("[✕]"), 0xFFFF5555, 0xFFFF8888, () -> confirmDeleteDbFile(meta))
-                    .done();
+    /** 文件列单元格：scanId + [分析器] 按钮（点击打开数据库）。 */
+    private IContentCell renderFileCell(FileMeta meta) {
+        DbPackage.Info info = sourceOf(meta);
+        MutableText label = Text.literal(meta.fileName());
+        Identifier analyzerId = info.analyzerId();
+        if (analyzerId != null && !ChunkScannerMod.ID_UNKNOWN.equals(analyzerId)) {
+            label = label.append(" [").append(GuiUtil.getAnalyzerDisplayName(analyzerId)).append("]").formatted(Formatting.YELLOW);
         }
-        return lb.build();
+        return ButtonCell.of(label, () -> openDatabase(info));
+    }
+
+    /** 从 FileMeta 取回 DB 包摘要（列表抽象层的 source 扩展点）。 */
+    private static DbPackage.Info sourceOf(FileMeta meta) {
+        return (DbPackage.Info) meta.source();
     }
 
     /** KV 视图页：直接使用 provider 返回的布局。 */
@@ -620,7 +621,7 @@ public class DatabaseScreen extends ScreenContainer {
     /** KV 视图页覆层：records 行 + 导航队列指示器 + tooltip。 */
     private void renderKvOverlays(DrawContext context, int mouseX, int mouseY, int centerX) {
         int margin = 4;
-        int infoY = HEADER_Y - 6;
+        int infoY = HEADER_Y - 16;
 
         int kvSize = layout instanceof TableLayout table ? table.getRowCount() : 0;
         Text aName = openedPackage != null ? GuiUtil.getAnalyzerDisplayName(openedPackage.getAnalyzerId()) : Text.empty();
